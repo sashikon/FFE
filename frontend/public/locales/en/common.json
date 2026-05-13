@@ -1,0 +1,41 @@
+{
+  "nav": {
+    "admin": "Admin"
+  },
+  "gallery": {
+    "title": "Fashion Semiotics",
+    "subtitle": "Select an outfit to analyse",
+    "outfitAlt": "Outfit",
+    "play": "Play →",
+    "loadMore": "Load more",
+    "error": "Failed to load outfits"
+  },
+  "status": {
+    "pending": "Processing…",
+    "ready": "Ready",
+    "error": "Error"
+  },
+  "game": {
+    "title": "FIND THE ODD ONE OUT",
+    "outfitAlt": "Outfit being analysed",
+    "zoomHint": "Click to zoom",
+    "uploadPhoto": "Upload photo",
+    "instruction": "Choose the word that",
+    "instructionEmphasis": "does not belong",
+    "correct": "Correct!",
+    "wrong": "Wrong. Right answer:",
+    "next": "Next row",
+    "finish": "Finish analysis"
+  },
+  "result": {
+    "title": "Analysis complete",
+    "subtitle": "You have decoded the semiotic layers of this outfit.",
+    "perfect": "Perfect! You're a true fashion expert. ✨",
+    "good": "Great result! You have a good eye for aesthetics.",
+    "keep_trying": "There's room to grow in reading fashion codes."
+  },
+  "share": "Share result",
+  "copied": "Copied!",
+  "restart": "Play again",
+  "shareText": "I read fashion codes at {{score}}/{{total}}! 🖤\nCan you find all the odd meanings?"
+}
