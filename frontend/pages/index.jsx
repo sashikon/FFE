@@ -101,9 +101,13 @@ export default function GalleryPage() {
 }
 
 export async function getStaticProps({ locale }) {
-  return {
-    props: {
-      ...(await serverSideTranslations(locale, ['common'])),
-    },
-  };
+  try {
+    return {
+      props: {
+        ...(await serverSideTranslations(locale ?? 'ru', ['common'])),
+      },
+    };
+  } catch {
+    return { props: {} };
+  }
 }

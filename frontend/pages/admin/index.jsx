@@ -167,9 +167,13 @@ export default function AdminPage() {
 }
 
 export async function getServerSideProps({ locale }) {
-  return {
-    props: {
-      ...(await serverSideTranslations(locale, ['common'])),
-    },
-  };
+  try {
+    return {
+      props: {
+        ...(await serverSideTranslations(locale ?? 'ru', ['common'])),
+      },
+    };
+  } catch {
+    return { props: {} };
+  }
 }
