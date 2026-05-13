@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const pool = require('./db');
 
 const outfitsRouter = require('./routes/outfits');
 const uploadRouter = require('./routes/upload');
@@ -33,4 +36,11 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => console.log(`FFE backend listening on :${PORT}`));
+async function start() {
+  const sql = fs.readFileSync(path.join(__dirname, 'db/migrations/001_init.sql'), 'utf8');
+  await pool.query(sql);
+  console.log('DB migration OK');
+  app.listen(PORT, () => console.log(`FFE backend listening on :${PORT}`));
+}
+
+start().catch((err) => { console.error(err); process.exit(1); });
