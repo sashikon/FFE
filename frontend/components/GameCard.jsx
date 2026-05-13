@@ -1,6 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle2, XCircle, ArrowRight, ZoomIn, Upload } from 'lucide-react';
 import { useTranslation } from 'next-i18next/pages';
+
+const FALLBACK = {
+  'game.title': 'НАЙДИ ЛИШНЕЕ',
+  'game.outfitAlt': 'Анализируемый образ',
+  'game.zoomHint': 'Нажмите для увеличения',
+  'game.uploadPhoto': 'Загрузить фото',
+  'game.instruction': 'Выберите слово, которое',
+  'game.instructionEmphasis': 'не относится',
+  'game.correct': 'Верно!',
+  'game.wrong': 'Ошибка. Правильный ответ:',
+  'game.next': 'Следующий ряд',
+  'game.finish': 'Завершить анализ',
+};
 import ImageViewer from './ImageViewer';
 import ProgressBar from './ProgressBar';
 import ResultScreen from './ResultScreen';
@@ -15,7 +28,8 @@ const shuffleArray = (array) => {
 };
 
 export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId, isMobile, isDesktop }) {
-  const { t } = useTranslation('common');
+  const { t: tRaw } = useTranslation('common');
+  const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);

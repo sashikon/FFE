@@ -2,6 +2,18 @@ import { RotateCcw, Share2, Check } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'next-i18next/pages';
 
+const FALLBACK = {
+  'result.title': 'Анализ завершён',
+  'result.subtitle': 'Вы успешно разобрали семиотические коды образа.',
+  'result.perfect': 'Идеально! Вы настоящий эксперт моды. ✨',
+  'result.good': 'Хороший результат! Вы чувствуете эстетику.',
+  'result.keep_trying': 'Есть куда расти в понимании модных кодов.',
+  'share': 'Поделиться результатом',
+  'copied': 'Скопировано!',
+  'restart': 'Пройти заново',
+  'shareText': 'Я читаю язык моды! 🖤',
+};
+
 const Confetti = () => {
   const colors = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ffffff'];
   const pieces = Array.from({ length: 70 }).map((_, i) => ({
@@ -42,7 +54,8 @@ const Confetti = () => {
 };
 
 export default function ResultScreen({ score, total, onRestart }) {
-  const { t } = useTranslation('common');
+  const { t: tRaw } = useTranslation('common');
+  const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [isCopied, setIsCopied] = useState(false);
   const perfect = score === total;
 
