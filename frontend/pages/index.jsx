@@ -10,8 +10,9 @@ export default function GalleryPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
 
+  const lang = i18n.language || 'ru';
   const { data, error, isLoading } = useSWR(
-    `/api/outfits?lang=${i18n.language}&page=${page}`,
+    `/api/outfits?lang=${lang}&page=${page}`,
     fetcher
   );
 

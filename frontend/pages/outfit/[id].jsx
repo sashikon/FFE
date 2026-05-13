@@ -19,8 +19,9 @@ export default function OutfitPage() {
   const { i18n } = useTranslation('common');
   const [viewFormat, setViewFormat] = useState('mobile');
 
+  const lang = i18n.language || 'ru';
   const { data, error } = useSWR(
-    id ? `/api/outfit/${id}?lang=${i18n.language}` : null,
+    id ? `/api/outfit/${id}?lang=${lang}` : null,
     fetcher,
     { refreshInterval: (d) => (!d || !d.game_rows ? 3000 : 0) }
   );
