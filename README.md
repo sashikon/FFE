@@ -1,2 +1,0 @@
-# FFE
-Fashion Semiotic game
