@@ -83,11 +83,14 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
   const saveSession = (finalResults, finalScore) => {
     const answers = finalResults.map((correct, i) => ({ row_index: i, correct: !!correct }));
     const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+    console.log('[saveSession]', { outfitId, lang: i18n.language, finalScore, BASE });
     fetch(`${BASE}/api/game/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outfit_id: outfitId, lang: i18n.language || 'ru', score: finalScore, total: gameData.length, answers }),
-    }).catch(() => {});
+    }).then((r) => {
+      if (!r.ok) r.text().then((t) => console.error('[saveSession] error', r.status, t));
+    }).catch((e) => console.error('[saveSession] fetch failed', e));
   };
 
   const handleNext = () => {
