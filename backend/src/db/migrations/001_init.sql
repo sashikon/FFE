@@ -20,8 +20,13 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   score      INTEGER NOT NULL,
   total      INTEGER NOT NULL,
   answers    JSONB,
+  session_id TEXT,
+  user_agent TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
 
 CREATE TABLE IF NOT EXISTS outfit_translations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
