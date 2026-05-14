@@ -3,8 +3,12 @@ CREATE TABLE IF NOT EXISTS outfits (
   image_url   TEXT NOT NULL,
   thumb_url   TEXT,
   title       TEXT,
+  file_hash   TEXT,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE outfits ADD COLUMN IF NOT EXISTS file_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS outfits_file_hash_idx ON outfits(file_hash) WHERE file_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS outfit_translations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
