@@ -8,6 +8,7 @@ const pool = require('./db');
 const outfitsRouter = require('./routes/outfits');
 const uploadRouter = require('./routes/upload');
 const adminRouter = require('./routes/admin');
+const statsRouter = require('./routes/stats');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,6 +29,7 @@ app.use(express.json());
 app.use('/api', outfitsRouter);
 app.use('/api', uploadRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api', statsRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
