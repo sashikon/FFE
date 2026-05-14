@@ -9,6 +9,8 @@ const outfitsRouter = require('./routes/outfits');
 const uploadRouter = require('./routes/upload');
 const adminRouter = require('./routes/admin');
 const statsRouter = require('./routes/stats');
+const { analyzeOutfit } = require('./llm/pipeline');
+const { enqueue } = require('./queue');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,10 +40,28 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
+async function recoverPending() {
+  const { rows } = await pool.query(`
+    SELECT DISTINCT o.id, o.image_url
+    FROM outfits o
+    JOIN outfit_translations t ON t.outfit_id = o.id
+    WHERE t.status = 'pending'
+  `);
+  if (rows.length) {
+    console.log(`Recovering ${rows.length} pending outfit(s)...`);
+    rows.forEach(({ id, image_url }) => {
+      enqueue(() => analyzeOutfit(image_url, id)).catch((e) =>
+        console.error('recover analyzeOutfit failed', id, e)
+      );
+    });
+  }
+}
+
 async function start() {
   const sql = fs.readFileSync(path.join(__dirname, 'db/migrations/001_init.sql'), 'utf8');
   await pool.query(sql);
   console.log('DB migration OK');
+  await recoverPending();
   app.listen(PORT, () => console.log(`FFE backend listening on :${PORT}`));
 }
 
