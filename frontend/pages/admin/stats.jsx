@@ -52,8 +52,11 @@ export default function StatsPage() {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-zinc-200 truncate">{outfit.title || outfit.id}</p>
-                    <div className="flex items-center gap-4 mt-1 text-xs text-zinc-500">
+                    <div className="flex flex-wrap items-center gap-4 mt-1 text-xs text-zinc-500">
                       <span>Партий: <span className="text-zinc-300 font-medium">{outfit.plays}</span></span>
+                      {outfit.unique_players > 0 && (
+                        <span>~Игроков: <span className="text-zinc-300 font-medium">{outfit.unique_players}</span></span>
+                      )}
                       {outfit.plays > 0 && (
                         <span>Средний балл: <span className="text-zinc-300 font-medium">{outfit.avg_score} / {outfit.total}</span></span>
                       )}
@@ -73,6 +76,19 @@ export default function StatsPage() {
                         <span className="text-xs text-zinc-600 w-16 text-right shrink-0">{row.plays} отв.</span>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {outfit.devices && Object.keys(outfit.devices).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-zinc-800">
+                    <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2">Устройства</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(outfit.devices).sort((a, b) => b[1] - a[1]).map(([device, count]) => (
+                        <span key={device} className="text-xs bg-zinc-800 text-zinc-300 px-2 py-1 rounded-full">
+                          {device} · {count}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
