@@ -16,21 +16,21 @@ function RowsTable({ rows }) {
     <table className="w-full text-xs border-collapse">
       <thead>
         <tr className="text-zinc-500 border-b border-zinc-800">
-          <th className="text-left py-1 pr-3 font-normal w-24">Колонка</th>
-          <th className="text-left py-1 font-normal">Слова (лишнее выделено)</th>
+          <th className="text-left py-1 pr-3 font-normal w-28">Тема</th>
+          <th className="text-left py-1 font-normal">Варианты (лишнее выделено)</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row, i) => (
           <tr key={i} className="border-b border-zinc-800/50">
-            <td className="py-1.5 pr-3 text-zinc-400 align-top">{row.column}</td>
+            <td className="py-1.5 pr-3 text-zinc-400 align-top">{row.theme}</td>
             <td className="py-1.5">
               <div className="flex flex-wrap gap-1">
-                {Array.isArray(row.words) && row.words.map((word, wi) => (
+                {Array.isArray(row.options) && row.options.map((word, wi) => (
                   <span
                     key={wi}
                     className={`px-1.5 py-0.5 rounded text-xs ${
-                      wi === row.odd_index
+                      word === row.correct
                         ? 'bg-rose-900/60 text-rose-300 line-through'
                         : 'bg-zinc-800 text-zinc-300'
                     }`}
@@ -39,6 +39,9 @@ function RowsTable({ rows }) {
                   </span>
                 ))}
               </div>
+              {row.explanation && (
+                <p className="mt-1 text-zinc-600 italic">{row.explanation}</p>
+              )}
             </td>
           </tr>
         ))}
