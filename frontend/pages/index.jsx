@@ -33,12 +33,6 @@ export default function GalleryPage() {
           >
             {i18n.language === 'ru' ? 'EN' : 'RU'}
           </button>
-          <a
-            href="/admin"
-            className="text-sm text-zinc-400 hover:text-white transition-colors"
-          >
-            {t('nav.admin')}
-          </a>
         </div>
       </header>
 
