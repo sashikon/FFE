@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS outfits (
 ALTER TABLE outfits ADD COLUMN IF NOT EXISTS file_hash TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS outfits_file_hash_idx ON outfits(file_hash) WHERE file_hash IS NOT NULL;
 
+-- Fix existing thumbnails: replace crop=fill with crop=fit
+UPDATE outfits SET thumb_url = REPLACE(thumb_url, 'c_fill', 'c_fit') WHERE thumb_url LIKE '%c_fill%';
+
 CREATE TABLE IF NOT EXISTS outfit_translations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   outfit_id   UUID REFERENCES outfits(id) ON DELETE CASCADE,

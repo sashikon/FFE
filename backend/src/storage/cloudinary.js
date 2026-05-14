@@ -15,7 +15,7 @@ async function uploadImage(filePath) {
   const thumbUrl = cloudinary.url(result.public_id, {
     width: 400,
     height: 533,
-    crop: 'fill',
+    crop: 'fit',
     quality: 'auto',
     fetch_format: 'auto',
   });
