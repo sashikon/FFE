@@ -236,9 +236,10 @@ export default function AdminPage() {
     <div className="min-h-screen bg-black text-white font-sans">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-serif tracking-wide">FFE Admin</h1>
-        <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">
-          ← Галерея
-        </a>
+        <div className="flex items-center gap-4">
+          <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+          <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
+        </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-10">

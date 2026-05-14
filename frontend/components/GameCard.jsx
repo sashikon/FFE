@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle2, XCircle, ArrowRight, ZoomIn, Upload } from 'lucide-react';
 import { useTranslation } from 'next-i18next/pages';
+import { fetcher } from '../lib/api';
 
 const FALLBACK = {
   'game.title': 'НАЙДИ ЛИШНЕЕ',
@@ -28,7 +29,7 @@ const shuffleArray = (array) => {
 };
 
 export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId, isMobile, isDesktop, onNext }) {
-  const { t: tRaw } = useTranslation('common');
+  const { t: tRaw, i18n } = useTranslation('common');
   const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
@@ -79,11 +80,24 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
     });
   };
 
+  const saveSession = (finalResults, finalScore) => {
+    const answers = finalResults.map((correct, i) => ({ row_index: i, correct: !!correct }));
+    const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+    fetch(`${BASE}/api/game/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outfit_id: outfitId, lang: i18n.language || 'ru', score: finalScore, total: gameData.length, answers }),
+    }).catch(() => {});
+  };
+
   const handleNext = () => {
     if (currentStep < gameData.length - 1) {
       setCurrentStep((s) => s + 1);
       setSelectedOption(null);
     } else {
+      const finalResults = stepResults.map((r, i) => i === currentStep ? selectedOption === currentData.correct : r);
+      const finalScore = finalResults.filter(Boolean).length;
+      saveSession(finalResults, finalScore);
       setIsGameOver(true);
     }
   };
