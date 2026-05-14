@@ -189,27 +189,35 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
+  const [uploadItems, setUploadItems] = useState([]); // [{name, status, duplicate}]
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
     refreshInterval: 5000,
   });
 
-  const handleUpload = async (file) => {
-    if (!file || !file.type.startsWith('image/')) return;
-    setUploading(true);
-    setUploadError(null);
+  const handleUpload = async (files) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+
+    setUploadItems(imageFiles.map((f) => ({ name: f.name, status: 'uploading' })));
+
+    const form = new FormData();
+    imageFiles.forEach((f) => form.append('image', f));
+
     try {
-      const form = new FormData();
-      form.append('image', file);
-      await apiPost('/api/admin/upload', form);
+      const data = await apiPost('/api/admin/upload', form);
+      setUploadItems(
+        data.results.map((r) => ({
+          name: r.filename,
+          status: r.duplicate ? 'duplicate' : 'done',
+          duplicate: r.duplicate,
+        }))
+      );
       mutate('/api/admin/outfits');
+      setTimeout(() => setUploadItems([]), 5000);
     } catch (err) {
-      setUploadError(err.message || 'Ошибка загрузки');
-    } finally {
-      setUploading(false);
+      setUploadItems((prev) => prev.map((i) => ({ ...i, status: 'error', error: err.message })));
     }
   };
 
@@ -236,7 +244,7 @@ export default function AdminPage() {
       <main className="max-w-4xl mx-auto px-6 py-10">
 
         <div
-          className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200 mb-10 ${
+          className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200 mb-4 ${
             isDragging ? 'border-zinc-400 bg-zinc-900' : 'border-zinc-700 hover:border-zinc-500'
           }`}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -244,21 +252,41 @@ export default function AdminPage() {
           onDrop={(e) => {
             e.preventDefault();
             setIsDragging(false);
-            handleUpload(e.dataTransfer.files[0]);
+            handleUpload(e.dataTransfer.files);
           }}
         >
           <Upload size={32} className="mx-auto mb-3 text-zinc-500" />
-          <p className="text-zinc-300 mb-2">Перетащите изображение или</p>
+          <p className="text-zinc-300 mb-1">Перетащите изображения или</p>
+          <p className="text-zinc-600 text-xs mb-3">Можно загрузить несколько файлов сразу</p>
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            disabled={uploadItems.some((i) => i.status === 'uploading')}
             className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors border border-zinc-700 text-sm disabled:opacity-50"
           >
-            {uploading ? 'Загружаю…' : 'Выбрать файл'}
+            {uploadItems.some((i) => i.status === 'uploading') ? 'Загружаю…' : 'Выбрать файлы'}
           </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files[0])} />
-          {uploadError && <p className="mt-3 text-rose-400 text-sm">{uploadError}</p>}
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleUpload(e.target.files)} />
         </div>
+
+        {uploadItems.length > 0 && (
+          <div className="mb-8 space-y-1.5">
+            {uploadItems.map((item, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                {item.status === 'uploading' && <Clock size={14} className="text-zinc-400 animate-spin shrink-0" />}
+                {item.status === 'done' && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
+                {item.status === 'duplicate' && <XCircle size={14} className="text-yellow-400 shrink-0" />}
+                {item.status === 'error' && <XCircle size={14} className="text-rose-400 shrink-0" />}
+                <span className="text-zinc-300 truncate flex-1">{item.name}</span>
+                <span className="text-xs shrink-0 text-zinc-500">
+                  {item.status === 'uploading' && 'Загружаю…'}
+                  {item.status === 'done' && 'Загружено'}
+                  {item.status === 'duplicate' && 'Дубликат'}
+                  {item.status === 'error' && 'Ошибка'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <h2 className="text-lg font-medium mb-4 text-zinc-300">Образы</h2>
 
