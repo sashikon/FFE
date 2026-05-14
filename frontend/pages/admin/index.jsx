@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
 import useSWR, { mutate } from 'swr';
-import { serverSideTranslations } from 'next-i18next/pages/serverSideTranslations';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, Edit3 } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
+import { withAuth } from '../../lib/withAuth';
 
 const STATUS_ICON = {
   ready: <CheckCircle2 size={14} className="text-emerald-400" />,
@@ -10,11 +10,55 @@ const STATUS_ICON = {
   error: <XCircle size={14} className="text-rose-400" />,
 };
 
+function RowsEditor({ outfitId, lang, initialRows }) {
+  const [rows, setRows] = useState(JSON.stringify(initialRows, null, 2));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const parsed = JSON.parse(rows);
+      await apiPost(`/api/admin/outfit/${outfitId}/rows`, { lang, game_rows: parsed });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      mutate('/api/admin/outfits');
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      <textarea
+        value={rows}
+        onChange={(e) => setRows(e.target.value)}
+        className="w-full h-48 bg-zinc-950 text-zinc-300 text-xs font-mono p-3 rounded-lg border border-zinc-700 resize-y"
+      />
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs rounded-lg transition-colors disabled:opacity-50"
+      >
+        <Save size={12} /> {saved ? 'Сохранено!' : saving ? 'Сохраняю…' : `Сохранить ${lang.toUpperCase()}`}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [expandedRows, setExpandedRows] = useState({});
   const fileRef = useRef(null);
+
+  const toggleRows = (id, lang) => {
+    const key = `${id}-${lang}`;
+    setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
     refreshInterval: 5000,
@@ -121,14 +165,29 @@ export default function AdminPage() {
                   </p>
                   <div className="flex items-center gap-3 mt-1">
                     {(['ru', 'en']).map((lang) => {
-                      const status = outfit.translations?.[lang]?.status || 'pending';
+                      const t = outfit.translations?.[lang];
+                      const status = t?.status || 'pending';
+                      const key = `${outfit.id}-${lang}`;
                       return (
-                        <span key={lang} className="flex items-center gap-1 text-xs text-zinc-500">
+                        <button
+                          key={lang}
+                          onClick={() => status === 'ready' && toggleRows(outfit.id, lang)}
+                          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                          title={status === 'ready' ? 'Просмотр/редактирование рядов' : status}
+                        >
                           {STATUS_ICON[status]} {lang.toUpperCase()}
-                        </span>
+                          {status === 'ready' && (expandedRows[key] ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
+                        </button>
                       );
                     })}
                   </div>
+                  {(['ru', 'en']).map((lang) => {
+                    const key = `${outfit.id}-${lang}`;
+                    const rows = outfit.translations?.[lang]?.game_rows;
+                    return expandedRows[key] && rows ? (
+                      <RowsEditor key={key} outfitId={outfit.id} lang={lang} initialRows={rows} />
+                    ) : null;
+                  })}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <a
@@ -166,14 +225,8 @@ export default function AdminPage() {
   );
 }
 
-export async function getServerSideProps({ locale }) {
-  try {
-    return {
-      props: {
-        ...(await serverSideTranslations(locale ?? 'ru', ['common'])),
-      },
-    };
-  } catch {
-    return { props: {} };
-  }
+export async function getServerSideProps(ctx) {
+  const redirect = await withAuth(ctx);
+  if (redirect) return redirect;
+  return { props: {} };
 }

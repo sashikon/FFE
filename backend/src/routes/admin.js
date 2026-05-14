@@ -12,7 +12,7 @@ router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at,
-              json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg))
+              json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations
        FROM outfits o
        LEFT JOIN outfit_translations t ON t.outfit_id = o.id
