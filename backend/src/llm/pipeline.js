@@ -5,7 +5,13 @@ const { SYSTEM_PROMPT, USER_PROMPT, SUPPORTED_LANGS } = require('./prompts');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+function resizeCloudinaryUrl(url, maxPx = 1568) {
+  // Insert Cloudinary transformation to limit max dimension
+  return url.replace('/upload/', `/upload/c_limit,w_${maxPx},h_${maxPx}/`);
+}
+
 async function generateForLanguage(imageUrl, outfitId, lang) {
+  const safeUrl = resizeCloudinaryUrl(imageUrl);
   // Mark as pending
   await pool.query(
     `INSERT INTO outfit_translations (outfit_id, lang, status)
@@ -23,7 +29,7 @@ async function generateForLanguage(imageUrl, outfitId, lang) {
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'url', url: imageUrl } },
+            { type: 'image', source: { type: 'url', url: safeUrl } },
             { type: 'text', text: USER_PROMPT(lang) },
           ],
         },
