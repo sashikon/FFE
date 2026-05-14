@@ -14,7 +14,8 @@ const FRAME_CLASS = {
 };
 
 export default function OutfitPage() {
-  const { query } = useRouter();
+  const router = useRouter();
+  const { query } = router;
   const { id } = query;
   const { i18n } = useTranslation('common');
   const [viewFormat, setViewFormat] = useState('mobile');
@@ -25,6 +26,14 @@ export default function OutfitPage() {
     fetcher,
     { refreshInterval: (d) => (!d || !d.game_rows ? 3000 : 0) }
   );
+  const { data: listData } = useSWR(`/api/outfits?lang=${lang}&page=1`, fetcher);
+
+  const handleNext = () => {
+    const others = (listData?.outfits || []).filter((o) => o.id !== id && o.status !== 'pending');
+    if (!others.length) { router.push('/'); return; }
+    const next = others[Math.floor(Math.random() * others.length)];
+    router.push(`/outfit/${next.id}`);
+  };
 
   const isMobile = viewFormat === 'mobile';
   const isDesktop = viewFormat === 'desktop';
@@ -67,6 +76,7 @@ export default function OutfitPage() {
           outfitId={id}
           isMobile={isMobile}
           isDesktop={isDesktop}
+          onNext={handleNext}
         />
       </div>
     </div>

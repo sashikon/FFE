@@ -1,4 +1,4 @@
-import { RotateCcw, Share2, Check } from 'lucide-react';
+import { RotateCcw, Share2, Check, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'next-i18next/pages';
 
@@ -11,6 +11,7 @@ const FALLBACK = {
   'share': 'Поделиться результатом',
   'copied': 'Скопировано!',
   'restart': 'Пройти заново',
+  'next': 'Следующий образ',
   'shareText': 'Я читаю язык моды! 🖤',
 };
 
@@ -53,7 +54,7 @@ const Confetti = () => {
   );
 };
 
-export default function ResultScreen({ score, total, onRestart }) {
+export default function ResultScreen({ score, total, onRestart, onNext }) {
   const { t: tRaw } = useTranslation('common');
   const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [isCopied, setIsCopied] = useState(false);
@@ -103,11 +104,19 @@ export default function ResultScreen({ score, total, onRestart }) {
             {isCopied ? <Check size={20} /> : <Share2 size={20} />}
             {isCopied ? t('copied') : t('share')}
           </button>
+          {onNext && (
+            <button
+              onClick={onNext}
+              className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-zinc-200 py-3 rounded-lg font-medium hover:bg-zinc-700 transition-colors border border-zinc-700"
+            >
+              <ArrowRight size={20} /> {t('next')}
+            </button>
+          )}
           <button
             onClick={onRestart}
-            className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-zinc-200 py-3 rounded-lg font-medium hover:bg-zinc-700 transition-colors border border-zinc-700"
+            className="w-full flex items-center justify-center gap-2 bg-zinc-800/50 text-zinc-500 py-2.5 rounded-lg font-medium hover:bg-zinc-700 hover:text-zinc-200 transition-colors text-sm"
           >
-            <RotateCcw size={20} /> {t('restart')}
+            <RotateCcw size={16} /> {t('restart')}
           </button>
         </div>
       </div>

@@ -27,7 +27,7 @@ const shuffleArray = (array) => {
   return arr;
 };
 
-export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId, isMobile, isDesktop }) {
+export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId, isMobile, isDesktop, onNext }) {
   const { t: tRaw } = useTranslation('common');
   const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [currentStep, setCurrentStep] = useState(0);
@@ -110,7 +110,7 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
   };
 
   if (isGameOver) {
-    return <ResultScreen score={score} total={gameData.length} onRestart={handleRestart} />;
+    return <ResultScreen score={score} total={gameData.length} onRestart={handleRestart} onNext={onNext} />;
   }
 
   return (
