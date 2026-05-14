@@ -5,15 +5,15 @@ import { fetcher } from '../lib/api';
 
 const FALLBACK = {
   'game.title': 'НАЙДИ ЛИШНЕЕ',
-  'game.outfitAlt': 'Анализируемый образ',
+  'game.outfitAlt': 'Образ',
   'game.zoomHint': 'Нажмите для увеличения',
-  'game.uploadPhoto': 'Загрузить фото',
-  'game.instruction': 'Выберите слово, которое',
-  'game.instructionEmphasis': 'не относится',
-  'game.correct': 'Верно!',
-  'game.wrong': 'Ошибка. Правильный ответ:',
-  'game.next': 'Следующий ряд',
-  'game.finish': 'Завершить анализ',
+  'game.uploadPhoto': 'Загрузить своё фото',
+  'game.instruction': 'Одно слово — чужое. Найди его:',
+  'game.instructionEmphasis': '',
+  'game.correct': 'Точно!',
+  'game.wrong': 'Не угадала. Лишнее — ',
+  'game.next': 'Следующий слой',
+  'game.finish': 'Раскрыть шифр',
 };
 import ImageViewer from './ImageViewer';
 import ProgressBar from './ProgressBar';

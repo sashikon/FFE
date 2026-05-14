@@ -3,16 +3,16 @@ import { useState } from 'react';
 import { useTranslation } from 'next-i18next/pages';
 
 const FALLBACK = {
-  'result.title': 'Анализ завершён',
-  'result.subtitle': 'Вы успешно разобрали семиотические коды образа.',
-  'result.perfect': 'Идеально! Вы настоящий эксперт моды. ✨',
-  'result.good': 'Хороший результат! Вы чувствуете эстетику.',
-  'result.keep_trying': 'Есть куда расти в понимании модных кодов.',
+  'result.title': 'Шифр разгадан',
+  'result.subtitle': 'Ты только что прочитала этот образ изнутри.',
+  'result.perfect': 'Безупречно — ты мыслишь как стилист. ✨',
+  'result.good': 'Хорошая интуиция! Чувствуешь моду.',
+  'result.keep_trying': 'Язык моды раскрывается постепенно — играй ещё.',
   'share': 'Поделиться результатом',
   'copied': 'Скопировано!',
-  'restart': 'Пройти заново',
+  'restart': 'Сыграть заново',
   'next': 'Следующий образ',
-  'shareText': 'Я читаю язык моды! 🖤',
+  'shareText': 'Разгадала шифр на {{score}}/{{total}} 🖤\nСможешь лучше?',
 };
 
 const Confetti = () => {
