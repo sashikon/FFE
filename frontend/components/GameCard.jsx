@@ -123,9 +123,12 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
     setShuffledOptions(shuffleArray(gameData[0].options));
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) setImageSrc(URL.createObjectURL(file));
+  const [showComingSoon, setShowComingSoon] = useState(false);
+
+  const handleUploadClick = (e) => {
+    e.stopPropagation();
+    setShowComingSoon(true);
+    setTimeout(() => setShowComingSoon(false), 2500);
   };
 
   const getButtonStyles = (option) => {
@@ -181,13 +184,19 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
                 <ZoomIn className={`text-white ${isMobile ? 'w-10 h-10' : 'w-12 h-12'}`} />
               </div>
               {isMobile && (
-                <label
-                  className="cursor-pointer absolute -bottom-3 -right-3 p-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600 shadow-xl z-10"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Upload size={16} />
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                </label>
+                <div className="absolute -bottom-3 -right-3 z-10">
+                  <button
+                    onClick={handleUploadClick}
+                    className="p-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600 shadow-xl"
+                  >
+                    <Upload size={16} />
+                  </button>
+                  {showComingSoon && (
+                    <div className="absolute bottom-12 right-0 bg-zinc-700 text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                      Скоро ✦
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             {!isMobile && (
@@ -195,10 +204,20 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
                 <p className="text-zinc-500 text-sm italic flex items-center gap-2">
                   <ZoomIn size={14} /> {t('game.zoomHint')}
                 </p>
-                <label className="cursor-pointer py-3 px-4 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg flex items-center gap-2 transition-colors border border-zinc-700">
-                  <Upload size={14} /> <span>{t('game.uploadPhoto')}</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                </label>
+                <div className="relative">
+                  <button
+                    onClick={handleUploadClick}
+                    className="py-3 px-4 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg flex items-center gap-2 transition-colors border border-zinc-700"
+                  >
+                    <Upload size={14} /> <span>{t('game.uploadPhoto')}</span>
+                    <span className="text-zinc-600 text-[10px]">скоро</span>
+                  </button>
+                  {showComingSoon && (
+                    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-zinc-700 text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                      Функция появится совсем скоро ✦
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
