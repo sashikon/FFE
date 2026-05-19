@@ -6,6 +6,7 @@
     "title": "The Language of Fashion",
     "subtitle": "Every outfit is a secret code. Can you crack it?",
     "outfitAlt": "Outfit",
+    "description": "FFE builds visual literacy in fashion. Look at an outfit, read its layers — form, details, colour, meaning — and find the word that breaks the style code. Five rounds per outfit. No theory — just reading.",
     "play": "Decode →",
     "loadMore": "More outfits",
     "error": "Failed to load outfits"
@@ -20,7 +21,7 @@
     "outfitAlt": "Outfit",
     "zoomHint": "Click to zoom",
     "uploadPhoto": "Upload your photo",
-    "instruction": "One word doesn't belong. Find it:",
+    "instruction": "One word doesn't belong. Find it",
     "instructionEmphasis": "",
     "correct": "Exactly!",
     "wrong": "Not quite. The odd one is ",
@@ -31,12 +32,12 @@
     "title": "Code cracked",
     "subtitle": "You just read this outfit from the inside out.",
     "perfect": "Flawless — you think like a stylist. ✨",
-    "good": "Sharp eye! You feel fashion.",
+    "good": "Sharp eye — three layers read. The code is opening up.",
     "keep_trying": "Fashion speaks in layers — keep playing."
   },
   "share": "Share result",
   "copied": "Copied!",
   "restart": "Play again",
   "next": "Next outfit",
-  "shareText": "Cracked the code {{score}}/{{total}} 🖤\nCan you do better?"
+  "shareText": "Cracked the code {{score}}/{{total}} 🖤\nCan you read it too?"
 }

@@ -142,7 +142,8 @@ export default function GalleryPage() {
         <main className="max-w-6xl mx-auto px-6 py-12">
           <div className="mb-10">
             <h2 className="text-4xl font-serif mb-3">{t('gallery.title')}</h2>
-            <p className="text-zinc-400">{t('gallery.subtitle')}</p>
+            <p className="text-zinc-400 mb-4">{t('gallery.subtitle')}</p>
+            <p className="text-zinc-500 text-sm max-w-xl leading-relaxed">{t('gallery.description')}</p>
           </div>
 
           {error && (
