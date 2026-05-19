@@ -107,13 +107,18 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
         />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-zinc-200 truncate">{outfit.title || outfit.id}</p>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             {(['ru', 'en']).map((lang) => {
               const t = outfit.translations?.[lang];
               const status = t?.status || 'pending';
               return (
                 <span key={lang} className="flex items-center gap-1 text-xs text-zinc-500">
                   {STATUS_ICON[status]} {lang.toUpperCase()}
+                  {status === 'error' && t?.error_msg && (
+                    <span className="text-rose-400 ml-1 max-w-[200px] truncate" title={t.error_msg}>
+                      — {t.error_msg}
+                    </span>
+                  )}
                 </span>
               );
             })}
