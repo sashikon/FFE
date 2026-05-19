@@ -294,7 +294,24 @@ export default function AdminPage() {
           </div>
         )}
 
-        <h2 className="text-lg font-medium mb-4 text-zinc-300">Образы</h2>
+        {data?.outfits && (() => {
+          const total = data.outfits.length;
+          const ready = data.outfits.filter((o) => ['ru', 'en'].every((l) => o.translations?.[l]?.status === 'ready')).length;
+          const pending = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'pending')).length;
+          const error = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'error')).length;
+          return (
+            <div className="flex items-center gap-4 mb-4 flex-wrap">
+              <h2 className="text-lg font-medium text-zinc-300">Образы</h2>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-zinc-400">{total} всего</span>
+                <span className="text-emerald-400">{ready} готово</span>
+                {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
+                {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
+              </div>
+            </div>
+          );
+        })()}
+        {!data?.outfits && <h2 className="text-lg font-medium mb-4 text-zinc-300">Образы</h2>}
 
         {isLoading && (
           <div className="space-y-3">
