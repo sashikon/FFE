@@ -33,6 +33,7 @@ router.post('/admin/upload', requireAdminToken, upload.array('image', 20), async
       }
 
       const { imageUrl, thumbUrl } = await uploadImage(file.path);
+      fs.unlink(file.path, () => {});
       const { rows } = await pool.query(
         'INSERT INTO outfits (image_url, thumb_url, file_hash) VALUES ($1, $2, $3) RETURNING id',
         [imageUrl, thumbUrl, hash]

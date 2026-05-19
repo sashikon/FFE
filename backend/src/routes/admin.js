@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
+const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -45,7 +46,7 @@ router.post('/outfit/:id/retry', async (req, res, next) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
     await invalidate(id);
-    analyzeOutfit(rows[0].image_url, id).catch((err) =>
+    enqueue(() => analyzeOutfit(rows[0].image_url, id)).catch((err) =>
       console.error('retry analyzeOutfit failed', id, err)
     );
 
@@ -55,8 +56,8 @@ router.post('/outfit/:id/retry', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/outfit/:id/rows — manual edit of game rows
-router.patch('/outfit/:id/rows', async (req, res, next) => {
+// POST /api/admin/outfit/:id/rows — manual edit of game rows
+router.post('/outfit/:id/rows', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { lang, game_rows } = req.body;
