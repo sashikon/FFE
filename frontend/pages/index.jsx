@@ -199,6 +199,16 @@ export default function GalleryPage() {
             </div>
           )}
         </main>
+        <footer className="border-t border-zinc-800 px-6 py-8 text-center">
+          {!isRu && (
+            <a
+              href="/what-does-your-outfit-say"
+              className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+            >
+              What does your outfit say about you? →
+            </a>
+          )}
+        </footer>
       </div>
     </>
   );
