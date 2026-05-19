@@ -77,7 +77,7 @@ export default function GalleryPage() {
         <meta name="description" content={meta.description} />
         <meta name="robots" content="index, follow" />
         <link rel="canonical" href={siteUrl} />
-        <link rel="alternate" hrefLang="ru" href={`${siteUrl}/ru`} />
+        <link rel="alternate" hrefLang="ru" href={siteUrl} />
         <link rel="alternate" hrefLang="en" href={`${siteUrl}/en`} />
         <link rel="alternate" hrefLang="x-default" href={siteUrl} />
 
