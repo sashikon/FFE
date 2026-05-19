@@ -3,7 +3,7 @@ const pool = require('../db');
 const { setGameRows } = require('../cache');
 const { SYSTEM_PROMPT, USER_PROMPT, SUPPORTED_LANGS } = require('./prompts');
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 90_000 });
 
 function resizeCloudinaryUrl(url, maxPx = 1568) {
   // Insert Cloudinary transformation to limit max dimension

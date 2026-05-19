@@ -45,6 +45,12 @@ router.post('/outfit/:id/retry', async (req, res, next) => {
     const { rows } = await pool.query('SELECT image_url FROM outfits WHERE id = $1', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
+    // Reset stuck translations so recoverPending / pipeline sets them fresh
+    await pool.query(
+      `UPDATE outfit_translations SET status = 'error', error_msg = 'manual retry'
+       WHERE outfit_id = $1 AND status = 'pending'`,
+      [id]
+    );
     await invalidate(id);
     enqueue(() => analyzeOutfit(rows[0].image_url, id)).catch((err) =>
       console.error('retry analyzeOutfit failed', id, err)
