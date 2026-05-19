@@ -8,7 +8,7 @@ const FALLBACK = {
   'game.outfitAlt': 'Образ',
   'game.zoomHint': 'Нажмите для увеличения',
   'game.uploadPhoto': 'Загрузить своё фото',
-  'game.instruction': 'Одно слово — чужое. Найди его:',
+  'game.instruction': 'Одно слово — чужое. Найди его',
   'game.instructionEmphasis': '',
   'game.correct': 'Точно!',
   'game.wrong': 'Не угадала. Лишнее — ',

@@ -63,7 +63,7 @@ export default function GalleryPage() {
         <h1 className="text-2xl font-serif tracking-wide">FFE</h1>
         <button
           onClick={toggleLang}
-          className="hidden md:flex text-sm text-zinc-400 hover:text-white transition-colors border border-zinc-700 px-3 py-1.5 rounded-full"
+          className="flex text-sm text-zinc-400 hover:text-white transition-colors border border-zinc-700 px-3 py-1.5 rounded-full"
         >
           {i18n.language === 'ru' ? 'EN' : 'RU'}
         </button>

@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import useSWR from 'swr';
 import { useTranslation } from 'next-i18next/pages';
 import { serverSideTranslations } from 'next-i18next/pages/serverSideTranslations';
+import { ArrowLeft } from 'lucide-react';
 import GameCard from '../../components/GameCard';
 import ViewSwitcher from '../../components/ViewSwitcher';
 import { fetcher } from '../../lib/api';
@@ -67,6 +68,12 @@ export default function OutfitPage() {
 
   return (
     <div className={`min-h-screen bg-black flex flex-col items-center ${!isDesktop ? 'justify-center p-2 pt-20' : 'pt-20'} font-sans relative overflow-hidden`}>
+      <button
+        onClick={() => router.push('/')}
+        className="absolute top-4 left-4 flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm z-50"
+      >
+        <ArrowLeft size={16} /> Галерея
+      </button>
       <ViewSwitcher value={viewFormat} onChange={setViewFormat} />
 
       <div className={`transition-all duration-500 bg-zinc-950 overflow-y-auto overflow-x-hidden relative flex flex-col ${frameClass}`}>
