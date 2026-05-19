@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
 import useSWR from 'swr';
 import { useTranslation } from 'next-i18next/pages';
@@ -57,7 +58,27 @@ export default function GalleryPage() {
     router.push(router.asPath, router.asPath, { locale: next });
   };
 
+  const title = i18n.language === 'en' ? 'The Language of Fashion' : 'Язык моды';
+  const description = i18n.language === 'en'
+    ? 'Every outfit is a secret code. Can you crack it?'
+    : 'Каждый образ — это тайный шифр. Умеешь ли ты его читать?';
+  const ogImage = 'https://ffe-blush.vercel.app/og-image.png';
+
   return (
+    <>
+      <Head>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:url" content="https://ffe-blush.vercel.app" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={ogImage} />
+      </Head>
     <div className="min-h-screen bg-black text-white font-sans">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-2xl font-serif tracking-wide">FFE</h1>
@@ -130,6 +151,7 @@ export default function GalleryPage() {
         )}
       </main>
     </div>
+    </>
   );
 }
 

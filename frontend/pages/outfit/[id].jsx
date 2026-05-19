@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
 import useSWR from 'swr';
 import { useTranslation } from 'next-i18next/pages';
@@ -66,7 +67,26 @@ export default function OutfitPage() {
     );
   }
 
+  const isEn = i18n.language === 'en';
+  const ogTitle = isEn ? 'The Language of Fashion — crack the code' : 'Язык моды — разгадай шифр';
+  const ogDesc = isEn ? 'Every outfit is a secret code. Can you crack it?' : 'Каждый образ — это тайный шифр. Умеешь ли ты его читать?';
+  const ogImage = data?.thumb_url || data?.image_url || 'https://ffe-blush.vercel.app/og-image.png';
+
   return (
+    <>
+      <Head>
+        <title>{ogTitle}</title>
+        <meta name="description" content={ogDesc} />
+        <meta property="og:title" content={ogTitle} />
+        <meta property="og:description" content={ogDesc} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:url" content={`https://ffe-blush.vercel.app/outfit/${id}`} />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={ogTitle} />
+        <meta name="twitter:description" content={ogDesc} />
+        <meta name="twitter:image" content={ogImage} />
+      </Head>
     <div className={`min-h-screen bg-black flex flex-col items-center ${!isDesktop ? 'justify-center p-2 pt-20' : 'pt-20'} font-sans relative overflow-hidden`}>
       <button
         onClick={() => router.push('/')}
@@ -87,6 +107,7 @@ export default function OutfitPage() {
         />
       </div>
     </div>
+    </>
   );
 }
 
