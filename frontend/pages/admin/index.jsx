@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save, Edit3, Eye } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
@@ -241,6 +242,11 @@ export default function AdminPage() {
   };
 
   return (
+    <>
+      <Head>
+        <title>Admin | FFE</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Head>
     <div className="min-h-screen bg-black text-white font-sans">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-serif tracking-wide">FFE Admin</h1>
@@ -338,6 +344,7 @@ export default function AdminPage() {
         )}
       </main>
     </div>
+    </>
   );
 }
 

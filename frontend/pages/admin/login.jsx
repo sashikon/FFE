@@ -1,8 +1,14 @@
 import { signIn } from 'next-auth/react';
+import Head from 'next/head';
 import { getServerSideProps as getAuthProps } from '../../lib/withAuth';
 
 export default function LoginPage() {
   return (
+    <>
+      <Head>
+        <title>Admin Login | FFE</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Head>
     <div className="min-h-screen bg-black flex items-center justify-center">
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center max-w-sm w-full">
         <h1 className="text-2xl font-serif mb-2">FFE Admin</h1>
@@ -15,6 +21,7 @@ export default function LoginPage() {
         </button>
       </div>
     </div>
+    </>
   );
 }
 

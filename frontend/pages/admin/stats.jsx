@@ -1,4 +1,5 @@
 import useSWR from 'swr';
+import Head from 'next/head';
 import { adminFetcher } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
@@ -18,6 +19,11 @@ export default function StatsPage() {
   const { data, isLoading } = useSWR('/api/admin/stats', adminFetcher, { refreshInterval: 30000 });
 
   return (
+    <>
+      <Head>
+        <title>Stats | FFE</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Head>
     <div className="min-h-screen bg-black text-white font-sans">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-serif tracking-wide">FFE Stats</h1>
@@ -101,6 +107,7 @@ export default function StatsPage() {
         )}
       </main>
     </div>
+    </>
   );
 }
 

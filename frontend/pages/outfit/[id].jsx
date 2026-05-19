@@ -67,46 +67,107 @@ export default function OutfitPage() {
     );
   }
 
-  const isEn = i18n.language === 'en';
-  const ogTitle = isEn ? 'The Language of Fashion — crack the code' : 'Язык моды — разгадай шифр';
-  const ogDesc = isEn ? 'Every outfit is a secret code. Can you crack it?' : 'Каждый образ — это тайный шифр. Умеешь ли ты его читать?';
-  const ogImage = data?.thumb_url || data?.image_url || 'https://ffe-blush.vercel.app/og-image.png';
+  const isRu = i18n.language === 'ru';
+  const siteUrl = 'https://ffe-blush.vercel.app';
+  const outfitTitle = data?.title;
+
+  const meta = isRu
+    ? {
+        title: outfitTitle
+          ? `${outfitTitle} — расшифруй образ | FFE`
+          : 'Расшифруй этот образ | FFE — Язык моды',
+        description:
+          'Одно слово лишнее — найдёшь его? Проверь свой стилевой слух в игре FFE и узнай, насколько хорошо ты говоришь на языке моды.',
+      }
+    : {
+        title: outfitTitle
+          ? `${outfitTitle} — Decode This Outfit | FFE`
+          : 'Decode This Outfit | FFE — The Language of Fashion',
+        description:
+          "One word doesn't belong. Can you find it? Play FFE's fashion decoding game and see how well you speak the language of style.",
+      };
+
+  const canonicalUrl = `${siteUrl}/outfit/${id}`;
+  const ogImage = data?.image_url || `${siteUrl}/og-image.png`;
 
   return (
     <>
       <Head>
-        <title>{ogTitle}</title>
-        <meta name="description" content={ogDesc} />
-        <meta property="og:title" content={ogTitle} />
-        <meta property="og:description" content={ogDesc} />
-        <meta property="og:image" content={ogImage} />
-        <meta property="og:url" content={`https://ffe-blush.vercel.app/outfit/${id}`} />
-        <meta property="og:type" content="website" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={ogTitle} />
-        <meta name="twitter:description" content={ogDesc} />
-        <meta name="twitter:image" content={ogImage} />
-      </Head>
-    <div className={`min-h-screen bg-black flex flex-col items-center ${!isDesktop ? 'justify-center p-2 pt-20' : 'pt-20'} font-sans relative overflow-hidden`}>
-      <button
-        onClick={() => router.push('/')}
-        className="absolute top-4 left-4 flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm z-50"
-      >
-        <ArrowLeft size={16} /> Галерея
-      </button>
-      <ViewSwitcher value={viewFormat} onChange={setViewFormat} />
+        <title>{meta.title}</title>
+        <meta name="description" content={meta.description} />
+        <meta name="robots" content="index, follow" />
+        <link rel="canonical" href={canonicalUrl} />
+        <link rel="alternate" hrefLang="ru" href={canonicalUrl} />
+        <link rel="alternate" hrefLang="en" href={canonicalUrl} />
+        <link rel="alternate" hrefLang="x-default" href={canonicalUrl} />
 
-      <div className={`transition-all duration-500 bg-zinc-950 overflow-y-auto overflow-x-hidden relative flex flex-col ${frameClass}`}>
-        <GameCard
-          imageSrc={data.image_url}
-          gameData={data.game_rows}
-          outfitId={id}
-          isMobile={isMobile}
-          isDesktop={isDesktop}
-          onNext={handleNext}
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:title" content={meta.title} />
+        <meta property="og:description" content={meta.description} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:site_name" content="FFE" />
+        <meta property="og:locale" content={isRu ? 'ru_RU' : 'en_US'} />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={meta.title} />
+        <meta name="twitter:description" content={meta.description} />
+        <meta name="twitter:image" content={ogImage} />
+
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify([
+              {
+                '@context': 'https://schema.org',
+                '@type': 'BreadcrumbList',
+                itemListElement: [
+                  {
+                    '@type': 'ListItem',
+                    position: 1,
+                    name: isRu ? 'Галерея' : 'Gallery',
+                    item: `${siteUrl}${isRu ? '' : '/en'}`,
+                  },
+                  {
+                    '@type': 'ListItem',
+                    position: 2,
+                    name: meta.title,
+                    item: canonicalUrl,
+                  },
+                ],
+              },
+              {
+                '@context': 'https://schema.org',
+                '@type': 'ImageObject',
+                contentUrl: data?.image_url,
+                description: meta.description,
+                name: meta.title,
+                url: canonicalUrl,
+              },
+            ]),
+          }}
         />
+      </Head>
+      <div className={`min-h-screen bg-black flex flex-col items-center ${!isDesktop ? 'justify-center p-2 pt-20' : 'pt-20'} font-sans relative overflow-hidden`}>
+        <button
+          onClick={() => router.push('/')}
+          className="absolute top-4 left-4 flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm z-50"
+        >
+          <ArrowLeft size={16} /> Галерея
+        </button>
+        <ViewSwitcher value={viewFormat} onChange={setViewFormat} />
+
+        <div className={`transition-all duration-500 bg-zinc-950 overflow-y-auto overflow-x-hidden relative flex flex-col ${frameClass}`}>
+          <GameCard
+            imageSrc={data.image_url}
+            gameData={data.game_rows}
+            outfitId={id}
+            isMobile={isMobile}
+            isDesktop={isDesktop}
+            onNext={handleNext}
+          />
+        </div>
       </div>
-    </div>
     </>
   );
 }

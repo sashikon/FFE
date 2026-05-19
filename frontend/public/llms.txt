@@ -1,0 +1,33 @@
+# FFE — The Language of Fashion
+
+> FFE is an interactive fashion literacy game where players decode outfit photos by identifying which descriptive word doesn't belong to the outfit's style language. Think of it as a "spot the odd one out" game built around fashion aesthetics. Available in Russian (default) and English.
+
+## What is FFE?
+
+Each outfit in FFE is annotated with a set of fashion-related words describing its style (e.g. "minimalist", "romantic", "structured", "monochrome"). One word is intentionally out of place — it belongs to a different fashion language. Players must identify the odd word to "crack the code" of the outfit.
+
+The game is designed to develop fashion intuition and vocabulary — the ability to read and articulate what an outfit communicates.
+
+## Pages
+
+- [Gallery](https://ffe-blush.vercel.app/): Browse the full collection of outfit photos available to decode
+- [Outfit game](https://ffe-blush.vercel.app/outfit/[id]): Play the decoding game for a specific outfit — find the word that doesn't belong
+
+## Languages
+
+- Russian (`/`) — default language
+- English (`/en`) — English version of all pages
+
+## Key concepts
+
+- **Fashion language** (язык моды): the idea that every outfit communicates meaning through a consistent visual and stylistic code
+- **Decoding an outfit**: identifying the dominant aesthetic of a look by understanding which elements are coherent and which create dissonance
+- **Style layers**: each outfit is analysed across multiple stylistic dimensions (silhouette, mood, occasion, etc.)
+
+## Content
+
+FFE features curated outfit photography analysed by AI to generate style word sets. Outfits span a range of aesthetics including minimalism, romanticism, streetwear, classic, avant-garde, and more.
+
+## Intended audience
+
+People interested in fashion, personal style development, styling education, and fashion aesthetics — primarily Russian-speaking users, with an English-speaking audience.

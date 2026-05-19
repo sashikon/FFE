@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+
+# AI crawlers — welcome
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://ffe-blush.vercel.app/sitemap.xml
