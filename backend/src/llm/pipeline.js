@@ -37,10 +37,17 @@ async function generateForLanguage(imageUrl, outfitId, lang) {
     });
 
     const raw = response.content[0].text.trim();
-    const parsed = JSON.parse(raw);
+    // Claude sometimes wraps JSON in ```json ... ``` blocks
+    const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e) {
+      throw new Error(`JSON parse failed: ${e.message}. Raw: ${jsonStr.slice(0, 200)}`);
+    }
 
     if (!Array.isArray(parsed.game_rows) || parsed.game_rows.length !== 5) {
-      throw new Error('LLM returned invalid game_rows structure');
+      throw new Error(`Invalid game_rows: expected 5 rows, got ${parsed.game_rows?.length ?? 'none'}. Keys: ${Object.keys(parsed)}`);
     }
 
     await pool.query(
