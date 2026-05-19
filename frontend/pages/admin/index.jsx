@@ -94,7 +94,10 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 
   const ruReady = outfit.translations?.ru?.status === 'ready';
   const enReady = outfit.translations?.en?.status === 'ready';
-  const hasError = ['ru', 'en'].some((l) => ['error', 'pending'].includes(outfit.translations?.[l]?.status));
+  const hasError = ['ru', 'en'].some((l) => {
+    const status = outfit.translations?.[l]?.status;
+    return !status || ['error', 'pending'].includes(status);
+  });
   const canExpand = ruReady || enReady;
 
   return (
