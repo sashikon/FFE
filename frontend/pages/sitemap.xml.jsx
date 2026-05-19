@@ -21,6 +21,7 @@ export async function getServerSideProps({ res }) {
   const staticUrls = [
     { loc: `${SITE}/`, priority: '1.0', changefreq: 'daily', ru: `${SITE}/`, en: `${SITE}/en` },
     { loc: `${SITE}/en`, priority: '0.9', changefreq: 'daily', ru: `${SITE}/`, en: `${SITE}/en` },
+    { loc: `${SITE}/what-does-your-outfit-say`, priority: '0.8', changefreq: 'monthly', ru: `${SITE}/what-does-your-outfit-say`, en: `${SITE}/what-does-your-outfit-say` },
   ];
 
   const outfitUrls = outfitIds.flatMap((id) => [
