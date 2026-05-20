@@ -240,7 +240,7 @@ export default function GameCard({ imageSrc: initialImageSrc, gameData, outfitId
                     disabled={isAnswered}
                     className={`relative overflow-hidden w-full ${isMobile ? 'px-2 py-3 text-[12px] leading-tight min-h-[60px]' : 'p-4 text-lg tracking-wide'} rounded-xl border transition-all duration-300 font-medium ${getButtonStyles(option)}`}
                   >
-                    {!isMobile && !isAnswered && (
+                    {isDesktop && !isAnswered && (
                       <span className="absolute top-2 left-2 text-[10px] font-mono text-zinc-400 border border-zinc-300 rounded px-1.5 py-0.5">
                         {idx + 1}
                       </span>
