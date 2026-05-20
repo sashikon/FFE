@@ -38,20 +38,76 @@ export default function WhatDoesYourOutfitSay() {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              '@context': 'https://schema.org',
-              '@type': 'Article',
-              headline: 'What Does Your Outfit Say About You? How to Read Fashion Like a Language',
-              description:
-                'Every outfit transmits a code — silhouette, detail, colour, meaning. Learn how to read fashion as a language and develop your visual literacy.',
-              url: `${SITE_URL}/what-does-your-outfit-say`,
-              publisher: {
-                '@type': 'Organization',
-                name: 'FFE',
-                url: SITE_URL,
+            __html: JSON.stringify([
+              {
+                '@context': 'https://schema.org',
+                '@type': 'Article',
+                headline: 'What Does Your Outfit Say About You? How to Read Fashion Like a Language',
+                description:
+                  'Every outfit transmits a code — silhouette, detail, colour, meaning. Learn how to read fashion as a language and develop your visual literacy.',
+                url: `${SITE_URL}/what-does-your-outfit-say`,
+                publisher: {
+                  '@type': 'Organization',
+                  name: 'FFE',
+                  url: SITE_URL,
+                },
+                inLanguage: 'en',
               },
-              inLanguage: 'en',
-            }),
+              {
+                '@context': 'https://schema.org',
+                '@type': 'FAQPage',
+                mainEntity: [
+                  {
+                    '@type': 'Question',
+                    name: 'What does your outfit say about you?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Your outfit transmits a code across five layers: form (silhouette and volume), detail (hardware, seams, embellishment), colour (temperature and contrast), meaning (cultural codes embedded in garments), and associations (the world the outfit points toward). Every element is a word in a visual sentence — whether you intend it or not.',
+                    },
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'What is visual literacy in fashion?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Visual literacy in fashion — sometimes called насмотренность in Russian — is the ability to read an outfit accurately: to identify its dominant style code, locate contradictions, and understand what each element transmits. It is built through sustained, active looking rather than studying theory.',
+                    },
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'What does wearing black say about you?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Black is not a neutral choice — it is a code. Depending on silhouette and detail, it transmits authority (a structured black blazer), minimalism (a column-cut dress), mourning, rebellion, or anonymity. The colour carries meaning only in combination with the other layers of an outfit.',
+                    },
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'How do you develop a fashion eye?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Look at outfits actively, not passively. Name what you see — not what you feel about it, but what is structurally present. Identify the dominant style code. Then find what contradicts it. Repeat across different aesthetics and eras. The vocabulary builds through practice, not theory.',
+                    },
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'What are the main fashion aesthetics?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Fashion aesthetics are clusters of codes that form recognisable style languages: minimalism (restraint, clean line, monochrome), romanticism (soft volume, floral, lace), streetwear (athletic codes, oversized silhouette, graphic detail), classic (tailoring, neutral palette, structured form), and avant-garde (proportion play, deconstruction, conceptual reference). Each is a system with its own grammar.',
+                    },
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'Can you learn to read fashion without studying it formally?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Yes. Visual literacy in fashion is built through practice, not formal study. The most effective method: look at an outfit, describe each layer in one word, identify the dominant code, then find what breaks it. Done repeatedly across many outfits, this builds the pattern recognition that stylists develop over years.',
+                    },
+                  },
+                ],
+              },
+            ]),
           }}
         />
       </Head>
@@ -192,6 +248,40 @@ export default function WhatDoesYourOutfitSay() {
             <p className="text-zinc-300 leading-relaxed mb-8">
               No theory. No lectures. Just reading, layer by layer, until the code opens up.
             </p>
+
+            <h2 className="text-2xl font-serif mt-16 mb-8">Common questions</h2>
+            <div className="space-y-0 mb-12">
+              {[
+                {
+                  q: 'What does wearing black say about you?',
+                  a: 'Black is not a neutral choice — it is a code. Depending on silhouette and detail, it transmits authority, minimalism, mourning, rebellion, or anonymity. The colour carries meaning only in combination with the other layers of an outfit.',
+                },
+                {
+                  q: 'How do you develop a fashion eye?',
+                  a: 'Look at outfits actively, not passively. Name what you see — not what you feel about it, but what is structurally present. Identify the dominant style code. Then find what contradicts it. Repeat across different aesthetics and eras.',
+                },
+                {
+                  q: 'What are the main fashion aesthetics?',
+                  a: 'Minimalism (restraint, clean line, monochrome), romanticism (soft volume, floral, lace), streetwear (athletic codes, oversized silhouette), classic (tailoring, structured form), avant-garde (deconstruction, conceptual reference). Each is a system with its own grammar.',
+                },
+                {
+                  q: 'Can you learn to read fashion without studying it formally?',
+                  a: 'Yes. Visual literacy is built through practice, not formal study. Look at an outfit, describe each layer in one word, find what breaks the code. Done repeatedly, this builds the pattern recognition that stylists develop over years.',
+                },
+              ].map(({ q, a }) => (
+                <details
+                  key={q}
+                  className="border-t border-zinc-800 group"
+                >
+                  <summary className="py-5 cursor-pointer list-none flex items-center justify-between text-white hover:text-zinc-300 transition-colors">
+                    <span className="font-medium pr-4">{q}</span>
+                    <span className="text-zinc-600 group-open:rotate-45 transition-transform duration-200 text-xl shrink-0">+</span>
+                  </summary>
+                  <p className="text-zinc-400 leading-relaxed pb-5 text-sm">{a}</p>
+                </details>
+              ))}
+              <div className="border-t border-zinc-800" />
+            </div>
 
             <div className="border border-zinc-800 rounded-xl p-8 text-center mt-10">
               <p className="text-zinc-400 text-sm tracking-widest uppercase mb-3">The Language of Fashion</p>
