@@ -1,12 +1,18 @@
 {
   "nav": {
-    "admin": "Admin"
+    "admin": "Admin",
+    "gallery": "Gallery"
+  },
+  "outfit": {
+    "errorLoading": "Failed to load outfit",
+    "analyzing": "Decoding the outfit…",
+    "autoRefresh": "The page will refresh automatically"
   },
   "gallery": {
     "title": "The Language of Fashion",
     "subtitle": "Every outfit is a secret code. Can you crack it?",
     "outfitAlt": "Outfit",
-    "description": "FFE builds visual literacy in fashion. Look at an outfit, read its layers — form, details, colour, meaning — and find the word that breaks the style code. Five rounds per outfit. No theory — just reading.",
+    "description": "Look at an outfit. Read its layers — form, detail, colour, meaning. Find the word that breaks the style code. Five rounds per outfit. No theory — just reading.",
     "play": "Decode →",
     "loadMore": "More outfits",
     "error": "Failed to load outfits"

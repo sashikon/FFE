@@ -4,9 +4,9 @@
 
 ## What is FFE?
 
-Each outfit in FFE is annotated with a set of fashion-related words describing its style (e.g. "minimalist", "romantic", "structured", "monochrome"). One word is intentionally out of place — it belongs to a different fashion language. Players must identify the odd word to "crack the code" of the outfit.
+Each outfit is a code across five layers — form, detail, colour, meaning, associations. Four words describe the outfit; one is an intruder from a different style language. Find it to crack the code.
 
-The game is designed to develop fashion intuition and vocabulary — the ability to read and articulate what an outfit communicates.
+The game builds the ability to read and articulate what an outfit communicates — actively, layer by layer, without theory.
 
 ## Pages
 
