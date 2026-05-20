@@ -19,7 +19,7 @@ export default function OutfitPage() {
   const router = useRouter();
   const { query } = router;
   const { id } = query;
-  const { i18n } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const [viewFormat, setViewFormat] = useState('mobile');
 
   const lang = i18n.language || 'ru';
@@ -44,7 +44,7 @@ export default function OutfitPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center text-rose-400">
-        Ошибка загрузки образа
+        {t('outfit.errorLoading')}
       </div>
     );
   }
@@ -61,8 +61,8 @@ export default function OutfitPage() {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
         <div className="w-16 h-16 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-        <p className="text-zinc-400 text-sm">Анализируем образ, подождите…</p>
-        <p className="text-zinc-600 text-xs">Страница обновится автоматически</p>
+        <p className="text-zinc-400 text-sm">{t('outfit.analyzing')}</p>
+        <p className="text-zinc-600 text-xs">{t('outfit.autoRefresh')}</p>
       </div>
     );
   }
@@ -153,7 +153,7 @@ export default function OutfitPage() {
           onClick={() => router.push('/')}
           className="absolute top-4 left-4 flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm z-50"
         >
-          <ArrowLeft size={16} /> Галерея
+          <ArrowLeft size={16} /> {t('nav.gallery')}
         </button>
         <ViewSwitcher value={viewFormat} onChange={setViewFormat} />
 
