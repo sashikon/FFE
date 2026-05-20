@@ -1,6 +1,5 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { serverSideTranslations } from 'next-i18next/pages/serverSideTranslations';
 
 const SITE_URL = 'https://ffe-blush.vercel.app';
 
@@ -216,10 +215,6 @@ export default function WhatDoesYourOutfitSay() {
   );
 }
 
-export async function getServerSideProps({ locale }) {
-  return {
-    props: {
-      ...(await serverSideTranslations(locale ?? 'en', ['common'])),
-    },
-  };
+export async function getServerSideProps() {
+  return { props: {} };
 }
