@@ -161,17 +161,84 @@ router.get('/pinterest-export', async (req, res, next) => {
     function csvRow(cells) { return cells.map(csvCell).join(','); }
 
     function buildTitle(gameRows) {
-      // Take one option word from rows at indices 0, 2, 4 — each maps to a different
-      // semantic layer (silhouette · colour/fabric · associations) for maximum diversity.
-      // Example: "One word out: column · ivory · gala"
       if (!Array.isArray(gameRows) || !gameRows.length) return null;
-      const words = [0, 2, 4]
-        .filter(i => i < gameRows.length)
-        .map(i => (gameRows[i]?.options || [])[0])
-        .filter(Boolean);
-      if (!words.length) return null;
-      const hook = lang === 'ru' ? 'Лишнее: ' : 'One word out: ';
-      return `${hook}${words.join(' · ')}`.slice(0, TITLE_MAX);
+
+      const silhouette  = (gameRows[0]?.options || [])[0] || '';
+      const assocRow    = gameRows.length > 4 ? gameRows[4] : gameRows[gameRows.length - 1];
+      const association = (assocRow?.options || [])[0] || '';
+
+      if (!silhouette && !association) return null;
+
+      const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+
+      if (lang === 'ru') {
+        // RU: «Ассоциация · Силуэт»
+        return `${cap(association)} · ${silhouette}`.slice(0, TITLE_MAX);
+      }
+
+      // EN — collect all text for trend matching
+      const allText = [];
+      for (const row of gameRows) {
+        for (const opt of (row.options || [])) if (opt) allText.push(opt.toLowerCase());
+        if (row.theme) allText.push(row.theme.toLowerCase());
+      }
+      const has = terms => terms.some(m => allText.some(t => t.includes(m)));
+
+      // Trending 2025 (Pinterest Predicts) — first match wins
+      const trends = [
+        { test: ['medieval', 'armor', 'chainmail'],              label: 'Medieval Core'       },
+        { test: ['vamp', 'vampire', 'noir', 'dark academia'],    label: 'Vamp Romantic'       },
+        { test: ['rococo', 'baroque', 'ornate', 'embroidered'],  label: 'Rococo'              },
+        { test: ['fisherman', 'nautical', 'maritime', 'sailor'], label: 'Fisherman Aesthetic' },
+        { test: ['moto', 'biker', 'motorcycle'],                 label: 'Moto Boho'           },
+        { test: ['witchery', 'ethereal', 'mystical'],            label: 'Sea Witchery'        },
+        { test: ['cherry', 'scarlet'],                           label: 'Cherry Coded'        },
+        { test: ['korean', 'hanbok'],                            label: 'Korean Fashion'      },
+        { test: ['boho', 'bohemian', 'western'],                 label: 'Boho'                },
+        { test: ['y2k', 'retro', '2000s'],                       label: 'Y2K'                 },
+        { test: ['preppy', 'ivy league', 'collegiate'],          label: 'Preppy'              },
+        // gothic without medieval falls through as association ("gothic editorial")
+        { test: ['gothic', 'couture', 'theatrical'],             label: 'Gothic Editorial'    },
+      ];
+
+      const trend = trends.find(({ test }) => has(test));
+
+      if (trend) {
+        // "Vamp Romantic Outfit · Fitted"
+        return `${trend.label} Outfit · ${cap(silhouette)}`.slice(0, TITLE_MAX);
+      }
+
+      // No trend — use association with natural phrasing
+      const assocLabels = {
+        'cocktail':    'Cocktail Party',
+        'gala':        'Gala Evening',
+        'red carpet':  'Red Carpet',
+        'redcarpet':   'Red Carpet',
+        'evening':     'Evening',
+        'night out':   'Night Out',
+        'boardroom':   'Boardroom',
+        'office':      'Office',
+        'beach':       'Beach',
+        'resort':      'Resort',
+        'couture':     'Couture',
+        'runway':      'Runway',
+        'wedding':     'Wedding',
+        'ceremony':    'Ceremony',
+        'opera':       'Opera',
+        'party':       'Party',
+        'sportswear':  'Sporty',
+        'streetwear':  'Streetwear',
+      };
+      const assocLabel = assocLabels[association.toLowerCase()] || cap(association);
+
+      // "Cocktail Party Outfit · Fitted Midi"
+      // Length hint: scan remaining options in the form row (row 0) for a length word
+      const lengthWords  = new Set(['midi', 'maxi', 'mini', 'floor-length', 'cropped', 'long', 'short']);
+      const formOptions  = (gameRows[0]?.options || []).slice(1);  // options after silhouette
+      const lengthWord   = formOptions.find(o => o && lengthWords.has(o.toLowerCase())) || '';
+      const lengthHint   = lengthWord ? ` ${cap(lengthWord)}` : '';
+
+      return `${assocLabel} Outfit · ${cap(silhouette)}${lengthHint}`.slice(0, TITLE_MAX);
     }
 
     function buildDescription(gameRows) {
@@ -183,14 +250,63 @@ router.get('/pinterest-export', async (req, res, next) => {
 
     function buildKeywords(gameRows) {
       const base = lang === 'ru'
-        ? ['мода', 'образ', 'стиль', 'насмотренность']
-        : ['fashion', 'outfit', 'style', 'fashion game', 'fashion literacy'];
+        ? ['мода', 'образ', 'стиль', 'насмотренность', 'идеи образов', 'эстетика',
+           'что одеть', 'осенняя мода', 'осенние образы', 'стили в одежде']
+        : [
+            // high-frequency discovery
+            'outfit ideas', 'dress to impress', 'aesthetic clothes', 'cute outfit ideas',
+            // style literacy
+            'aesthetic outfits types', 'clothing style names aesthetic', 'style genres', 'fashion style quiz',
+            // fall/seasonal — peaks annually, good to index year-round
+            'fall fashion outfits', 'fall fashion trends', 'neutral palette outfit', 'cream aesthetic',
+            // evergreen
+            'fashion', 'outfit', 'style', 'fashion game', 'fashion literacy',
+          ];
+
       const words = new Set(base);
+
+      // Collect all option text + themes from game_rows for matching
+      const allText = [];
       for (const row of (gameRows || [])) {
         for (const opt of (row.options || [])) {
-          if (opt && opt.length <= 30) words.add(opt.toLowerCase());
+          if (opt && opt.length <= 30) {
+            words.add(opt.toLowerCase());
+            allText.push(opt.toLowerCase());
+          }
+        }
+        if (row.theme) allText.push(row.theme.toLowerCase());
+      }
+
+      // Trending 2025 (Pinterest Predicts) — added only when outfit content matches
+      if (lang === 'en') {
+        const trends = [
+          { match: ['rococo', 'baroque', 'ornate', 'embroidered'],           add: ['rococo outfit'] },
+          { match: ['medieval', 'gothic', 'armor', 'chainmail'],             add: ['medieval core'] },
+          { match: ['fisherman', 'nautical', 'maritime', 'sailor'],          add: ['fisherman aesthetic'] },
+          { match: ['moto', 'biker', 'motorcycle'],                          add: ['moto boho', 'moto boots'] },
+          { match: ['boho', 'bohemian', 'festival', 'western'],              add: ['moto boho'] },
+          { match: ['vamp', 'vampire', 'noir', 'dark academia'],             add: ['vamp romantic'] },
+          { match: ['cherry', 'scarlet'],                                    add: ['cherry vibes', 'cherry coded'] },
+          { match: ['sea', 'ocean', 'witchery', 'ethereal', 'mystical'],     add: ['sea witchery'] },
+          { match: ['korea', 'korean', 'hanbok'],                            add: ['korean casual outfits'] },
+          { match: ['baggy', 'wide-leg', 'wide leg'],                        add: ['baggy outfit ideas', 'baggy pants outfit'] },
+          { match: ['y2k', 'retro', '2000s'],                                add: ['y2k winter jacket'] },
+          { match: ['fur', 'shearling', 'teddy coat'],                       add: ['fur coat vintage'] },
+          { match: ['vintage', 'thrift', 'secondhand'],                      add: ['dream thrift finds', 'vintage fall aesthetic'] },
+          { match: ['preppy', 'ivy league', 'collegiate'],                   add: ["women's preppy outfits"] },
+          { match: ['camel', 'tan', 'coffee', 'mocha', 'brown'],            add: ['coffee brown pants outfit'] },
+          { match: ['puff sleeve', 'bubble', 'balloon sleeve'],              add: ['puff skirt outfit'] },
+          { match: ['lace', 'corset'],                                       add: ['lace corset outfit'] },
+          { match: ['leopard', 'animal print', 'cheetah'],                   add: ['leopard print jeans'] },
+        ];
+
+        for (const { match, add } of trends) {
+          if (match.some(m => allText.some(t => t.includes(m)))) {
+            for (const kw of add) words.add(kw);
+          }
         }
       }
+
       return [...words].join(', ');
     }
 
