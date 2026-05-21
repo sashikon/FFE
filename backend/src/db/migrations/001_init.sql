@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
 
+CREATE TABLE IF NOT EXISTS outfit_renders (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  outfit_id   UUID NOT NULL REFERENCES outfits(id) ON DELETE CASCADE,
+  image_url   TEXT NOT NULL,
+  thumb_url   TEXT,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS outfit_translations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   outfit_id   UUID REFERENCES outfits(id) ON DELETE CASCADE,

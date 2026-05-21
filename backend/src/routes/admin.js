@@ -1,9 +1,14 @@
 const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
+const { uploadImage } = require('../storage/cloudinary');
+
+const upload = multer({ dest: '/tmp/ffe-uploads/' });
 
 const router = express.Router();
 router.use(requireAdminToken);
@@ -14,13 +19,50 @@ router.get('/outfits', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
-                FILTER (WHERE t.lang IS NOT NULL) AS translations
+                FILTER (WHERE t.lang IS NOT NULL) AS translations,
+              COALESCE(json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url))
+                FILTER (WHERE r.id IS NOT NULL), '[]') AS renders
        FROM outfits o
        LEFT JOIN outfit_translations t ON t.outfit_id = o.id
+       LEFT JOIN outfit_renders r ON r.outfit_id = o.id
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     );
     res.json({ outfits: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/renders — upload renders
+router.post('/outfit/:id/renders', upload.array('render', 20), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No files provided' });
+
+    const results = await Promise.all(files.map(async (file) => {
+      const { imageUrl, thumbUrl } = await uploadImage(file.path);
+      fs.unlink(file.path, () => {});
+      const { rows } = await pool.query(
+        'INSERT INTO outfit_renders (outfit_id, image_url, thumb_url) VALUES ($1, $2, $3) RETURNING id, image_url, thumb_url',
+        [id, imageUrl, thumbUrl]
+      );
+      return rows[0];
+    }));
+
+    res.status(201).json({ renders: results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/admin/render/:renderId
+router.delete('/render/:renderId', async (req, res, next) => {
+  try {
+    const { renderId } = req.params;
+    await pool.query('DELETE FROM outfit_renders WHERE id = $1', [renderId]);
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
