@@ -194,6 +194,12 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
                 </span>
               );
             })}
+            {outfit.renders?.length > 0 && (
+              <span className="flex items-center gap-1 text-xs text-zinc-500" title="ИИ рендеры">
+                <ImagePlus size={11} className="text-zinc-600" />
+                {outfit.renders.length}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
