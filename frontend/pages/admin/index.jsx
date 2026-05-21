@@ -275,6 +275,7 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadItems, setUploadItems] = useState([]); // [{name, status, duplicate}]
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -384,6 +385,9 @@ export default function AdminPage() {
           const ready = data.outfits.filter((o) => ['ru', 'en'].every((l) => o.translations?.[l]?.status === 'ready')).length;
           const pending = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'pending')).length;
           const error = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'error')).length;
+          const hashCounts = {};
+          data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
+          const dupCount = data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1).length;
           return (
             <div className="flex items-center gap-4 mb-4 flex-wrap">
               <h2 className="text-lg font-medium text-zinc-300">Образы</h2>
@@ -392,6 +396,14 @@ export default function AdminPage() {
                 <span className="text-emerald-400">{ready} готово</span>
                 {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
                 {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
+                {dupCount > 0 && (
+                  <button
+                    onClick={() => setShowDuplicates((v) => !v)}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${showDuplicates ? 'border-yellow-500 text-yellow-400 bg-yellow-950' : 'border-zinc-600 text-yellow-500 hover:border-yellow-500'}`}
+                  >
+                    {dupCount} дубликатов
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -406,18 +418,42 @@ export default function AdminPage() {
           </div>
         )}
 
-        {data?.outfits && (
-          <div className="space-y-3">
-            {data.outfits.map((outfit) => (
-              <OutfitCard
-                key={outfit.id}
-                outfit={outfit}
-                onDelete={handleDelete}
-                onRetry={handleRetry}
-              />
-            ))}
-          </div>
-        )}
+        {data?.outfits && (() => {
+          const hashCounts = {};
+          data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
+          const visible = showDuplicates
+            ? data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1)
+            : data.outfits;
+
+          // Group duplicates by hash for visual separation
+          if (showDuplicates) {
+            const groups = {};
+            visible.forEach((o) => {
+              if (!groups[o.file_hash]) groups[o.file_hash] = [];
+              groups[o.file_hash].push(o);
+            });
+            return (
+              <div className="space-y-4">
+                {Object.values(groups).map((group) => (
+                  <div key={group[0].file_hash} className="rounded-xl border border-yellow-800/50 bg-yellow-950/20 p-3 space-y-2">
+                    <p className="text-xs text-yellow-600 font-mono truncate px-1">hash: {group[0].file_hash}</p>
+                    {group.map((outfit) => (
+                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-3">
+              {visible.map((outfit) => (
+                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+              ))}
+            </div>
+          );
+        })()}
       </main>
     </div>
     </>
