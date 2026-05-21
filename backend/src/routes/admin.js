@@ -161,12 +161,14 @@ router.get('/pinterest-export', async (req, res, next) => {
     function csvRow(cells) { return cells.map(csvCell).join(','); }
 
     function buildTitle(gameRows) {
-      // Use 2 options from first row + 1 from last row — unique per outfit, brand-voice aligned.
-      // Example: "One word out: column · bishop sleeve · gala"
+      // Take one option word from rows at indices 0, 2, 4 — each maps to a different
+      // semantic layer (silhouette · colour/fabric · associations) for maximum diversity.
+      // Example: "One word out: column · ivory · gala"
       if (!Array.isArray(gameRows) || !gameRows.length) return null;
-      const first = (gameRows[0]?.options || []).slice(0, 2).filter(Boolean);
-      const last  = (gameRows[gameRows.length - 1]?.options || []).slice(0, 1).filter(Boolean);
-      const words = [...first, ...last];
+      const words = [0, 2, 4]
+        .filter(i => i < gameRows.length)
+        .map(i => (gameRows[i]?.options || [])[0])
+        .filter(Boolean);
       if (!words.length) return null;
       const hook = lang === 'ru' ? 'Лишнее: ' : 'One word out: ';
       return `${hook}${words.join(' · ')}`.slice(0, TITLE_MAX);
@@ -197,21 +199,37 @@ router.get('/pinterest-export', async (req, res, next) => {
     const header = ['Title', 'Pinterest board', 'Media URL', 'Thumbnail', 'Description', 'Link', 'Publish date', 'Keywords'];
     const lines  = [csvRow(header)];
 
-    for (const [i, outfit] of rows.entries()) {
-      const gameRows    = outfit.game_rows || [];
-      // Prefer outfit.title; fall back to generated title from game_rows; then indexed fallback
-      const title       = (
+    // Pass 1: generate raw titles for every outfit
+    const rawTitles = rows.map((outfit, i) => {
+      const gameRows = outfit.game_rows || [];
+      return (
         outfit.title ||
         buildTitle(gameRows) ||
         (lang === 'ru' ? `Образ ${i + 1}` : `Outfit ${i + 1}`)
       ).slice(0, TITLE_MAX);
+    });
+
+    // Deduplicate: when the same base title appears more than once, number all copies
+    const titleFreq = new Map();
+    for (const t of rawTitles) titleFreq.set(t, (titleFreq.get(t) || 0) + 1);
+    const titleSeen = new Map();
+    const finalTitles = rawTitles.map(t => {
+      if (titleFreq.get(t) === 1) return t;               // unique — keep as-is
+      const n = (titleSeen.get(t) || 0) + 1;
+      titleSeen.set(t, n);
+      return `${t.slice(0, TITLE_MAX - 4)} (${n})`;       // e.g. "One word out: … (2)"
+    });
+
+    // Pass 2: build CSV rows
+    for (const [i, outfit] of rows.entries()) {
+      const gameRows    = outfit.game_rows || [];
       const mediaUrl    = outfit.render_url || outfit.image_url;
       const description = buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
       const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
 
       // Thumbnail left blank — only required for video pins
-      lines.push(csvRow([title, board, mediaUrl, '', description, link, '', keywords]));
+      lines.push(csvRow([finalTitles[i], board, mediaUrl, '', description, link, '', keywords]));
     }
 
     // No BOM — Pinterest's parser doesn't strip it and reads first header as '﻿Title'
