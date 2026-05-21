@@ -4,6 +4,7 @@ const fs = require('fs');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
+const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const { uploadImage } = require('../storage/cloudinary');
@@ -21,7 +22,7 @@ router.get('/outfits', async (req, res, next) => {
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders
        FROM outfits o
@@ -356,6 +357,38 @@ router.get('/pinterest-export', async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/render/:id/analyze — run aesthetics analysis on a single render
+router.post('/render/:id/analyze', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT image_url FROM outfit_renders WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+
+    const aesthetics = await analyzeAesthetics(rows[0].image_url);
+    await pool.query('UPDATE outfit_renders SET aesthetics = $1 WHERE id = $2', [JSON.stringify(aesthetics), id]);
+    res.json({ aesthetics });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/coverage — all analyzed renders grouped for coverage board
+router.get('/coverage', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.image_url, r.thumb_url, r.aesthetics,
+              o.id AS outfit_id, o.title, o.thumb_url AS outfit_thumb
+       FROM outfit_renders r
+       JOIN outfits o ON o.id = r.outfit_id
+       WHERE r.aesthetics IS NOT NULL
+       ORDER BY o.created_at DESC`
+    );
+    res.json({ renders: rows });
   } catch (err) {
     next(err);
   }
