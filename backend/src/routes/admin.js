@@ -160,6 +160,18 @@ router.get('/pinterest-export', async (req, res, next) => {
     }
     function csvRow(cells) { return cells.map(csvCell).join(','); }
 
+    function buildTitle(gameRows) {
+      // Use 2 options from first row + 1 from last row — unique per outfit, brand-voice aligned.
+      // Example: "One word out: column · bishop sleeve · gala"
+      if (!Array.isArray(gameRows) || !gameRows.length) return null;
+      const first = (gameRows[0]?.options || []).slice(0, 2).filter(Boolean);
+      const last  = (gameRows[gameRows.length - 1]?.options || []).slice(0, 1).filter(Boolean);
+      const words = [...first, ...last];
+      if (!words.length) return null;
+      const hook = lang === 'ru' ? 'Лишнее: ' : 'One word out: ';
+      return `${hook}${words.join(' · ')}`.slice(0, TITLE_MAX);
+    }
+
     function buildDescription(gameRows) {
       if (!Array.isArray(gameRows) || !gameRows.length) return '';
       const themes = gameRows.map((r) => r.theme).filter(Boolean).join(' · ');
@@ -180,27 +192,36 @@ router.get('/pinterest-export', async (req, res, next) => {
       return [...words].join(', ');
     }
 
+    // Pinterest requires exact English column names regardless of interface language.
+    // Thumbnail is only relevant for video pins — leave empty for image pins.
     const header = ['Title', 'Pinterest board', 'Media URL', 'Thumbnail', 'Description', 'Link', 'Publish date', 'Keywords'];
     const lines  = [csvRow(header)];
 
-    for (const outfit of rows) {
+    for (const [i, outfit] of rows.entries()) {
       const gameRows    = outfit.game_rows || [];
-      const title       = (outfit.title || (lang === 'ru' ? 'Читай образ' : 'Read this outfit')).slice(0, TITLE_MAX);
+      // Prefer outfit.title; fall back to generated title from game_rows; then indexed fallback
+      const title       = (
+        outfit.title ||
+        buildTitle(gameRows) ||
+        (lang === 'ru' ? `Образ ${i + 1}` : `Outfit ${i + 1}`)
+      ).slice(0, TITLE_MAX);
       const mediaUrl    = outfit.render_url || outfit.image_url;
-      const thumbnail   = outfit.thumb_url || '';
       const description = buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
       const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
 
-      lines.push(csvRow([title, board, mediaUrl, thumbnail, description, link, '', keywords]));
+      // Thumbnail left blank — only required for video pins
+      lines.push(csvRow([title, board, mediaUrl, '', description, link, '', keywords]));
     }
 
-    const csv = lines.join('\n');
+    // No BOM — Pinterest's parser doesn't strip it and reads first header as '﻿Title'
+    // CRLF line endings per RFC 4180
+    const csv = lines.join('\r\n');
     const filename = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send('﻿' + csv); // BOM for Excel/Sheets compatibility
+    res.send(csv);
   } catch (err) {
     next(err);
   }
