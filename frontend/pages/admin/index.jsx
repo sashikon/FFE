@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save, Edit3, Eye } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
@@ -89,6 +89,74 @@ function RowsEditor({ outfitId, lang, initialRows }) {
   );
 }
 
+function RendersSection({ outfitId, initialRenders }) {
+  const [renders, setRenders] = useState(initialRenders || []);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleUpload = async (files) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      imageFiles.forEach((f) => form.append('render', f));
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/renders`, form);
+      setRenders((prev) => [...prev, ...data.renders]);
+    } catch (e) {
+      alert('Ошибка загрузки: ' + e.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (renderId) => {
+    await apiDelete(`/api/admin/render/${renderId}`);
+    setRenders((prev) => prev.filter((r) => r.id !== renderId));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          Рендеры ({renders.length})
+        </span>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+        >
+          <ImagePlus size={12} /> {uploading ? 'Загружаю…' : 'Добавить'}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => handleUpload(e.target.files)} />
+      </div>
+      {renders.length === 0 ? (
+        <p className="text-xs text-zinc-600 italic">Нет рендеров</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {renders.map((r) => (
+            <div key={r.id} className="relative group">
+              <img
+                src={r.thumb_url || r.image_url}
+                alt=""
+                className="w-16 h-20 object-cover rounded-lg bg-zinc-800 border border-zinc-700"
+              />
+              <button
+                onClick={() => handleDelete(r.id)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                title="Удалить рендер"
+              >
+                <XCircle size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OutfitCard({ outfit, onDelete, onRetry }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
@@ -99,7 +167,7 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
     const status = outfit.translations?.[l]?.status;
     return !status || ['error', 'pending'].includes(status);
   });
-  const canExpand = ruReady || enReady;
+  const canExpand = true; // always expandable to manage renders
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800">
@@ -167,29 +235,37 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
       </div>
 
       {expanded && (
-        <div className="border-t border-zinc-800 p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-          {(['ru', 'en']).map((lang) => {
-            const t = outfit.translations?.[lang];
-            if (!t || t.status !== 'ready') return null;
-            return (
-              <div key={lang}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{lang}</span>
-                  <button
-                    onClick={() => setEditingLang(editingLang === lang ? null : lang)}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    {editingLang === lang ? 'Отмена' : 'Редактировать JSON'}
-                  </button>
-                </div>
-                {editingLang === lang ? (
-                  <RowsEditor outfitId={outfit.id} lang={lang} initialRows={t.game_rows} />
-                ) : (
-                  <RowsTable rows={t.game_rows} />
-                )}
-              </div>
-            );
-          })}
+        <div className="border-t border-zinc-800 p-4 space-y-6">
+          {/* Renders */}
+          <RendersSection outfitId={outfit.id} initialRenders={outfit.renders || []} />
+
+          {/* Game rows per language */}
+          {(ruReady || enReady) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800/60">
+              {(['ru', 'en']).map((lang) => {
+                const t = outfit.translations?.[lang];
+                if (!t || t.status !== 'ready') return null;
+                return (
+                  <div key={lang}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{lang}</span>
+                      <button
+                        onClick={() => setEditingLang(editingLang === lang ? null : lang)}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        {editingLang === lang ? 'Отмена' : 'Редактировать JSON'}
+                      </button>
+                    </div>
+                    {editingLang === lang ? (
+                      <RowsEditor outfitId={outfit.id} lang={lang} initialRows={t.game_rows} />
+                    ) : (
+                      <RowsTable rows={t.game_rows} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
