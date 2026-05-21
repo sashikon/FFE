@@ -1,9 +1,24 @@
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
+
+const AESTHETICS = [
+  'Cocktail Party Outfit Ideas',
+  'Gala & Formal Dresses',
+  'Red Carpet Evening Gowns',
+  'Evening Outfit Ideas',
+  'Night Out Outfits',
+  'Boardroom & Office Fashion',
+  'Beach & Resort Outfits',
+  'Wedding Guest Dresses',
+  'Runway & Couture Looks',
+  'Streetwear Fashion',
+  'Sporty & Casual Outfits',
+  'Party Outfit Ideas',
+];
 
 const STATUS_ICON = {
   ready: <CheckCircle2 size={14} className="text-emerald-400" />,
@@ -89,6 +104,90 @@ function RowsEditor({ outfitId, lang, initialRows }) {
   );
 }
 
+function RenderCard({ render, onDelete, onAnalyzed }) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const top = render.aesthetics?.top;
+
+  const handleAnalyze = async (e) => {
+    e.stopPropagation();
+    setAnalyzing(true);
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/analyze`);
+      onAnalyzed(render.id, data.aesthetics);
+    } catch (err) {
+      alert('Ошибка анализа: ' + err.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="relative group flex flex-col gap-1.5" style={{ width: 72 }}>
+      <div className="relative">
+        <img
+          src={render.thumb_url || render.image_url}
+          alt=""
+          className="w-[72px] h-[90px] object-cover rounded-lg bg-zinc-800 border border-zinc-700"
+        />
+        <button
+          onClick={() => onDelete(render.id)}
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+          title="Удалить"
+        >
+          <XCircle size={12} />
+        </button>
+        {analyzing ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-lg">
+            <Loader2 size={16} className="animate-spin text-white" />
+          </div>
+        ) : !top ? (
+          <button
+            onClick={handleAnalyze}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity text-white"
+            title="Анализировать эстетику"
+          >
+            <Sparkles size={14} />
+            <span className="text-[9px]">Анализ</span>
+          </button>
+        ) : (
+          <button
+            onClick={handleAnalyze}
+            className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity"
+            title="Переанализировать"
+          >
+            <RefreshCw size={12} className="text-white/70" />
+          </button>
+        )}
+        {top && !analyzing && (
+          <div className="absolute bottom-0 left-0 right-0 h-1.5 rounded-b-lg overflow-hidden flex">
+            <div className="bg-violet-500 h-full" style={{ width: `${top[0]?.score ?? 0}%` }} />
+          </div>
+        )}
+      </div>
+
+      {top?.map((item, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <span className="text-[8px] text-zinc-600 w-2 shrink-0">{i + 1}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-0.5 mb-0.5">
+              <span className="text-[8px] text-zinc-400 truncate leading-tight" title={item.name}>
+                {item.name.replace(/ Outfit Ideas| Dresses| Gowns| Looks| Fashion/, '')}
+              </span>
+              <span className="text-[8px] text-zinc-600 shrink-0">{item.score}</span>
+            </div>
+            <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${i === 0 ? 'bg-violet-500' : i === 1 ? 'bg-violet-700' : 'bg-violet-900'}`}
+                style={{ width: `${item.score}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RendersSection({ outfitId, initialRenders }) {
   const [renders, setRenders] = useState(initialRenders || []);
   const [uploading, setUploading] = useState(false);
@@ -115,44 +214,119 @@ function RendersSection({ outfitId, initialRenders }) {
     setRenders((prev) => prev.filter((r) => r.id !== renderId));
   };
 
+  const handleAnalyzed = (renderId, aesthetics) => {
+    setRenders((prev) => prev.map((r) => r.id === renderId ? { ...r, aesthetics } : r));
+  };
+
+  const handleAnalyzeAll = async () => {
+    for (const r of renders.filter((r) => !r.aesthetics)) {
+      try {
+        const data = await apiPost(`/api/admin/render/${r.id}/analyze`);
+        handleAnalyzed(r.id, data.aesthetics);
+      } catch (e) {
+        console.error('analyze failed', r.id, e);
+      }
+    }
+  };
+
+  const unanalyzed = renders.filter((r) => !r.aesthetics).length;
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
           Рендеры ({renders.length})
         </span>
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
-        >
-          <ImagePlus size={12} /> {uploading ? 'Загружаю…' : 'Добавить'}
-        </button>
+        <div className="flex items-center gap-3">
+          {unanalyzed > 0 && (
+            <button
+              onClick={handleAnalyzeAll}
+              className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+            >
+              <Sparkles size={11} /> Анализ всех ({unanalyzed})
+            </button>
+          )}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+          >
+            <ImagePlus size={12} /> {uploading ? 'Загружаю…' : 'Добавить'}
+          </button>
+        </div>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => handleUpload(e.target.files)} />
       </div>
       {renders.length === 0 ? (
         <p className="text-xs text-zinc-600 italic">Нет рендеров</p>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           {renders.map((r) => (
-            <div key={r.id} className="relative group">
-              <img
-                src={r.thumb_url || r.image_url}
-                alt=""
-                className="w-16 h-20 object-cover rounded-lg bg-zinc-800 border border-zinc-700"
-              />
-              <button
-                onClick={() => handleDelete(r.id)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                title="Удалить рендер"
-              >
-                <XCircle size={12} />
-              </button>
-            </div>
+            <RenderCard key={r.id} render={r} onDelete={handleDelete} onAnalyzed={handleAnalyzed} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CoverageBoard() {
+  const { data, isLoading } = useSWR('/api/admin/coverage', adminFetcher);
+
+  const byAesthetic = {};
+  AESTHETICS.forEach((a) => { byAesthetic[a] = []; });
+  (data?.renders || []).forEach((render) => {
+    render.aesthetics?.top?.forEach((item, rank) => {
+      if (byAesthetic[item.name]) byAesthetic[item.name].push({ ...render, rank, score: item.score });
+    });
+  });
+
+  const total = data?.renders?.length ?? 0;
+
+  if (isLoading) return (
+    <div className="space-y-2">
+      {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-zinc-900 rounded-xl animate-pulse" />)}
+    </div>
+  );
+
+  if (total === 0) return (
+    <div className="text-center py-20 text-zinc-600">
+      <Sparkles size={32} className="mx-auto mb-3 opacity-30" />
+      <p className="text-sm">Нет проанализированных рендеров.</p>
+      <p className="text-xs mt-1">Откройте карточку образа → наведите на рендер → нажмите «Анализ»</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-zinc-600 mb-4">{total} рендеров проанализировано</p>
+      {AESTHETICS.map((aesthetic) => {
+        const primary = (byAesthetic[aesthetic] || []).filter((r) => r.rank === 0);
+        const pct = total > 0 ? Math.round((primary.length / total) * 100) : 0;
+        return (
+          <div key={aesthetic} className="flex items-center gap-4 p-3 bg-zinc-900 rounded-xl border border-zinc-800">
+            <div className="w-56 shrink-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs text-zinc-200 leading-tight">{aesthetic}</p>
+                <span className="text-xs text-zinc-600 ml-2 shrink-0">{primary.length}</span>
+              </div>
+              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full bg-violet-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            {primary.length === 0 ? (
+              <p className="text-xs text-zinc-700 italic">—</p>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap">
+                {primary.slice(0, 10).map((r) => (
+                  <img key={r.id} src={r.thumb_url || r.image_url} alt="" className="w-9 h-11 object-cover rounded bg-zinc-800" title={r.title || r.outfit_id} />
+                ))}
+                {primary.length > 10 && <span className="text-xs text-zinc-600 self-center">+{primary.length - 10}</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -283,6 +457,7 @@ export default function AdminPage() {
   const [uploadItems, setUploadItems] = useState([]);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
+  const [view, setView] = useState('outfits'); // 'outfits' | 'coverage'
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -358,6 +533,20 @@ export default function AdminPage() {
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-serif tracking-wide">FFE Admin</h1>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+            <button
+              onClick={() => setView('outfits')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'outfits' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+            >
+              <Upload size={13} /> Образы
+            </button>
+            <button
+              onClick={() => setView('coverage')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'coverage' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+            >
+              <LayoutGrid size={13} /> Coverage
+            </button>
+          </div>
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
           <div className="flex items-center gap-1">
             <button
@@ -381,7 +570,8 @@ export default function AdminPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-10">
-
+        {view === 'coverage' && <CoverageBoard />}
+        {view === 'outfits' && (<>
         <div
           className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200 mb-4 ${
             isDragging ? 'border-zinc-400 bg-zinc-900' : 'border-zinc-700 hover:border-zinc-500'
@@ -500,6 +690,7 @@ export default function AdminPage() {
             </div>
           );
         })()}
+        </>)}
       </main>
     </div>
     </>
