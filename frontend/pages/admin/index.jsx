@@ -280,8 +280,9 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadItems, setUploadItems] = useState([]); // [{name, status, duplicate}]
+  const [uploadItems, setUploadItems] = useState([]);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -324,6 +325,29 @@ export default function AdminPage() {
     mutate('/api/admin/outfits');
   };
 
+  const handlePinterestExport = async (lang = 'en') => {
+    try {
+      setCsvExporting(true);
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const res = await fetch(`${BASE}/api/admin/pinterest-export?lang=${lang}&board=FFE`, {
+        headers: token ? { 'x-admin-token': token } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Ошибка экспорта: ' + e.message);
+    } finally {
+      setCsvExporting(false);
+    }
+  };
+
   return (
     <>
       <Head>
@@ -335,6 +359,23 @@ export default function AdminPage() {
         <h1 className="text-xl font-serif tracking-wide">FFE Admin</h1>
         <div className="flex items-center gap-4">
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handlePinterestExport('en')}
+              disabled={csvExporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="Скачать CSV для Pinterest (EN)"
+            >
+              <Upload size={12} />
+              {csvExporting ? 'Готовлю…' : 'Pinterest CSV'}
+            </button>
+            <button
+              onClick={() => handlePinterestExport('ru')}
+              disabled={csvExporting}
+              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="RU-версия"
+            >RU</button>
+          </div>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
         </div>
       </header>
@@ -431,7 +472,6 @@ export default function AdminPage() {
             ? data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1)
             : data.outfits;
 
-          // Group duplicates by hash for visual separation
           if (showDuplicates) {
             const groups = {};
             visible.forEach((o) => {

@@ -127,4 +127,83 @@ router.post('/outfit/:id/rows', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/pinterest-export?lang=en&board=FFE
+// Returns a ready-to-upload CSV file for Pinterest bulk pin creation.
+// Uses first render from outfit_renders per outfit; falls back to image_url (sketch).
+router.get('/pinterest-export', async (req, res, next) => {
+  try {
+    const lang  = req.query.lang  || 'en';
+    const board = req.query.board || 'FFE';
+    const BASE_URL = 'https://ffe-blush.vercel.app';
+    const TITLE_MAX = 100;
+    const DESC_MAX  = 500;
+
+    const { rows } = await pool.query(
+      `SELECT o.id, o.image_url, o.thumb_url, o.title,
+              t.game_rows,
+              (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS render_url
+       FROM outfits o
+       JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
+       WHERE t.status = 'ready'
+       ORDER BY o.created_at DESC`,
+      [lang]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: `No ready outfits for lang="${lang}"` });
+    }
+
+    function csvCell(v) {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return /[",\n\r]/.test(s) ? `"${s}"` : s;
+    }
+    function csvRow(cells) { return cells.map(csvCell).join(','); }
+
+    function buildDescription(gameRows) {
+      if (!Array.isArray(gameRows) || !gameRows.length) return '';
+      const themes = gameRows.map((r) => r.theme).filter(Boolean).join(' · ');
+      const hook = lang === 'ru' ? 'Пять слоёв. Одно лишнее слово.' : 'Five layers. One odd word.';
+      return `${hook} ${themes}`.slice(0, DESC_MAX);
+    }
+
+    function buildKeywords(gameRows) {
+      const base = lang === 'ru'
+        ? ['мода', 'образ', 'стиль', 'насмотренность']
+        : ['fashion', 'outfit', 'style', 'fashion game', 'fashion literacy'];
+      const words = new Set(base);
+      for (const row of (gameRows || [])) {
+        for (const opt of (row.options || [])) {
+          if (opt && opt.length <= 30) words.add(opt.toLowerCase());
+        }
+      }
+      return [...words].join(', ');
+    }
+
+    const header = ['Title', 'Pinterest board', 'Media URL', 'Thumbnail', 'Description', 'Link', 'Publish date', 'Keywords'];
+    const lines  = [csvRow(header)];
+
+    for (const outfit of rows) {
+      const gameRows    = outfit.game_rows || [];
+      const title       = (outfit.title || (lang === 'ru' ? 'Читай образ' : 'Read this outfit')).slice(0, TITLE_MAX);
+      const mediaUrl    = outfit.render_url || outfit.image_url;
+      const thumbnail   = outfit.thumb_url || '';
+      const description = buildDescription(gameRows);
+      const keywords    = buildKeywords(gameRows);
+      const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
+
+      lines.push(csvRow([title, board, mediaUrl, thumbnail, description, link, '', keywords]));
+    }
+
+    const csv = lines.join('\n');
+    const filename = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('﻿' + csv); // BOM for Excel/Sheets compatibility
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
