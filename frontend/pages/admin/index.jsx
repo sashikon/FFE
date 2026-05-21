@@ -458,6 +458,7 @@ export default function AdminPage() {
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
   const [view, setView] = useState('outfits'); // 'outfits' | 'coverage'
+  const [sort, setSort] = useState('date'); // 'date' | 'renders'
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -628,7 +629,7 @@ export default function AdminPage() {
           return (
             <div className="flex items-center gap-4 mb-4 flex-wrap">
               <h2 className="text-lg font-medium text-zinc-300">Образы</h2>
-              <div className="flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-3 text-sm flex-wrap">
                 <span className="text-zinc-400">{total} всего</span>
                 <span className="text-emerald-400">{ready} готово</span>
                 {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
@@ -641,6 +642,16 @@ export default function AdminPage() {
                     {dupCount} дубликатов
                   </button>
                 )}
+                <div className="flex items-center gap-1 ml-auto">
+                  <button
+                    onClick={() => setSort('date')}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'date' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                  >по дате</button>
+                  <button
+                    onClick={() => setSort('renders')}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'renders' ? 'border-violet-500 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                  >с рендерами</button>
+                </div>
               </div>
             </div>
           );
@@ -658,9 +669,12 @@ export default function AdminPage() {
         {data?.outfits && (() => {
           const hashCounts = {};
           data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
-          const visible = showDuplicates
-            ? data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1)
+          const sorted = sort === 'renders'
+            ? [...data.outfits].sort((a, b) => (b.renders?.length || 0) - (a.renders?.length || 0))
             : data.outfits;
+          const visible = showDuplicates
+            ? sorted.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1)
+            : sorted;
 
           if (showDuplicates) {
             const groups = {};
