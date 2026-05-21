@@ -23,16 +23,8 @@ async function uploadImage(filePath) {
   return { imageUrl: result.secure_url, thumbUrl };
 }
 
-async function uploadRender(filePath) {
-  const result = await cloudinary.uploader.upload(filePath, {
-    folder: 'ffe/renders',
-    transformation: [{ quality: 'auto', fetch_format: 'auto' }],
-  });
-  return { renderUrl: result.secure_url };
-}
-
 async function deleteImage(publicId) {
   await cloudinary.uploader.destroy(publicId);
 }
 
-module.exports = { uploadImage, uploadRender, deleteImage };
+module.exports = { uploadImage, deleteImage };

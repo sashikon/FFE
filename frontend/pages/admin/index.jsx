@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save, Edit3, Eye, Image, Link, X } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
@@ -89,103 +89,70 @@ function RowsEditor({ outfitId, lang, initialRows }) {
   );
 }
 
-function RenderSection({ outfit }) {
-  const [mode, setMode] = useState(null); // null | 'url' | 'file'
-  const [urlInput, setUrlInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+function RendersSection({ outfitId, initialRenders }) {
+  const [renders, setRenders] = useState(initialRenders || []);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
-  const hasRender = Boolean(outfit.render_url);
-
-  const handleSaveUrl = async () => {
-    if (!urlInput.trim()) return;
+  const handleUpload = async (files) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+    setUploading(true);
     try {
-      setSaving(true); setError('');
-      await apiPost(`/api/admin/outfit/${outfit.id}/render`, { render_url: urlInput.trim() });
-      mutate('/api/admin/outfits');
-      setMode(null); setUrlInput('');
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
-  };
-
-  const handleFileUpload = async (file) => {
-    if (!file) return;
-    try {
-      setSaving(true); setError('');
       const form = new FormData();
-      form.append('render', file);
-      await apiPost(`/api/admin/outfit/${outfit.id}/render`, form);
-      mutate('/api/admin/outfits');
-      setMode(null);
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+      imageFiles.forEach((f) => form.append('render', f));
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/renders`, form);
+      setRenders((prev) => [...prev, ...data.renders]);
+    } catch (e) {
+      alert('Ошибка загрузки: ' + e.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleRemove = async () => {
-    if (!confirm('Удалить рендер?')) return;
-    await apiDelete(`/api/admin/outfit/${outfit.id}/render`);
-    mutate('/api/admin/outfits');
+  const handleDelete = async (renderId) => {
+    await apiDelete(`/api/admin/render/${renderId}`);
+    setRenders((prev) => prev.filter((r) => r.id !== renderId));
   };
 
   return (
-    <div className="border-t border-zinc-800 px-4 py-3">
+    <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-zinc-500 flex items-center gap-1.5">
-          <Image size={12} /> ИИ-рендер
-          {hasRender
-            ? <span className="text-emerald-400 ml-1">✓ есть</span>
-            : <span className="text-zinc-600 ml-1">нет</span>}
+        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          Рендеры ({renders.length})
         </span>
-        <div className="flex items-center gap-2">
-          {hasRender && (
-            <>
-              <a href={outfit.render_url} target="_blank" rel="noreferrer"
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">открыть</a>
-              <button onClick={handleRemove}
-                className="p-1 text-zinc-600 hover:text-rose-400 transition-colors"><X size={12} /></button>
-            </>
-          )}
-          {!saving && (
-            <>
-              <button
-                onClick={() => setMode(mode === 'url' ? null : 'url')}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-              ><Link size={11} /> URL</button>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-              ><Upload size={11} /> Файл</button>
-            </>
-          )}
-          {saving && <span className="text-xs text-zinc-500">Загружаю…</span>}
-        </div>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+        >
+          <ImagePlus size={12} /> {uploading ? 'Загружаю…' : 'Добавить'}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => handleUpload(e.target.files)} />
       </div>
-
-      {hasRender && mode === null && (
-        <img src={outfit.render_url} alt="render" className="w-full max-h-40 object-contain rounded-lg bg-zinc-950 mb-1" />
-      )}
-
-      {mode === 'url' && (
-        <div className="flex gap-2 mt-1">
-          <input
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="https://..."
-            className="flex-1 bg-zinc-950 border border-zinc-700 text-zinc-300 text-xs px-3 py-1.5 rounded-lg"
-            onKeyDown={(e) => e.key === 'Enter' && handleSaveUrl()}
-          />
-          <button
-            onClick={handleSaveUrl}
-            disabled={saving}
-            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs rounded-lg disabled:opacity-50"
-          >ОК</button>
+      {renders.length === 0 ? (
+        <p className="text-xs text-zinc-600 italic">Нет рендеров</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {renders.map((r) => (
+            <div key={r.id} className="relative group">
+              <img
+                src={r.thumb_url || r.image_url}
+                alt=""
+                className="w-16 h-20 object-cover rounded-lg bg-zinc-800 border border-zinc-700"
+              />
+              <button
+                onClick={() => handleDelete(r.id)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                title="Удалить рендер"
+              >
+                <XCircle size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
-
-      {error && <p className="text-rose-400 text-xs mt-1">{error}</p>}
-      <input ref={fileRef} type="file" accept="image/*" className="hidden"
-        onChange={(e) => handleFileUpload(e.target.files?.[0])} />
     </div>
   );
 }
@@ -200,7 +167,7 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
     const status = outfit.translations?.[l]?.status;
     return !status || ['error', 'pending'].includes(status);
   });
-  const canExpand = ruReady || enReady;
+  const canExpand = true; // always expandable to manage renders
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800">
@@ -227,6 +194,12 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
                 </span>
               );
             })}
+            {outfit.renders?.length > 0 && (
+              <span className="flex items-center gap-1 text-xs text-zinc-500" title="ИИ рендеры">
+                <ImagePlus size={11} className="text-zinc-600" />
+                {outfit.renders.length}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -267,32 +240,38 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
         </div>
       </div>
 
-      <RenderSection outfit={outfit} />
-
       {expanded && (
-        <div className="border-t border-zinc-800 p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-          {(['ru', 'en']).map((lang) => {
-            const t = outfit.translations?.[lang];
-            if (!t || t.status !== 'ready') return null;
-            return (
-              <div key={lang}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{lang}</span>
-                  <button
-                    onClick={() => setEditingLang(editingLang === lang ? null : lang)}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    {editingLang === lang ? 'Отмена' : 'Редактировать JSON'}
-                  </button>
-                </div>
-                {editingLang === lang ? (
-                  <RowsEditor outfitId={outfit.id} lang={lang} initialRows={t.game_rows} />
-                ) : (
-                  <RowsTable rows={t.game_rows} />
-                )}
-              </div>
-            );
-          })}
+        <div className="border-t border-zinc-800 p-4 space-y-6">
+          {/* Renders */}
+          <RendersSection outfitId={outfit.id} initialRenders={outfit.renders || []} />
+
+          {/* Game rows per language */}
+          {(ruReady || enReady) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800/60">
+              {(['ru', 'en']).map((lang) => {
+                const t = outfit.translations?.[lang];
+                if (!t || t.status !== 'ready') return null;
+                return (
+                  <div key={lang}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{lang}</span>
+                      <button
+                        onClick={() => setEditingLang(editingLang === lang ? null : lang)}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        {editingLang === lang ? 'Отмена' : 'Редактировать JSON'}
+                      </button>
+                    </div>
+                    {editingLang === lang ? (
+                      <RowsEditor outfitId={outfit.id} lang={lang} initialRows={t.game_rows} />
+                    ) : (
+                      <RowsTable rows={t.game_rows} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -301,32 +280,10 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadItems, setUploadItems] = useState([]); // [{name, status, duplicate}]
+  const [uploadItems, setUploadItems] = useState([]);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
   const fileRef = useRef(null);
-
-  const handlePinterestExport = async (lang = 'en') => {
-    try {
-      setCsvExporting(true);
-      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
-      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
-      const res = await fetch(`${BASE}/api/admin/pinterest-export?lang=${lang}&board=FFE`, {
-        headers: token ? { 'x-admin-token': token } : {},
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('Ошибка экспорта: ' + e.message);
-    } finally {
-      setCsvExporting(false);
-    }
-  };
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
     refreshInterval: 5000,
@@ -366,6 +323,29 @@ export default function AdminPage() {
   const handleRetry = async (id) => {
     await apiPost(`/api/admin/outfit/${id}/retry`);
     mutate('/api/admin/outfits');
+  };
+
+  const handlePinterestExport = async (lang = 'en') => {
+    try {
+      setCsvExporting(true);
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const res = await fetch(`${BASE}/api/admin/pinterest-export?lang=${lang}&board=FFE`, {
+        headers: token ? { 'x-admin-token': token } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Ошибка экспорта: ' + e.message);
+    } finally {
+      setCsvExporting(false);
+    }
   };
 
   return (
@@ -452,6 +432,9 @@ export default function AdminPage() {
           const ready = data.outfits.filter((o) => ['ru', 'en'].every((l) => o.translations?.[l]?.status === 'ready')).length;
           const pending = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'pending')).length;
           const error = data.outfits.filter((o) => ['ru', 'en'].some((l) => o.translations?.[l]?.status === 'error')).length;
+          const hashCounts = {};
+          data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
+          const dupCount = data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1).length;
           return (
             <div className="flex items-center gap-4 mb-4 flex-wrap">
               <h2 className="text-lg font-medium text-zinc-300">Образы</h2>
@@ -460,6 +443,14 @@ export default function AdminPage() {
                 <span className="text-emerald-400">{ready} готово</span>
                 {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
                 {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
+                {dupCount > 0 && (
+                  <button
+                    onClick={() => setShowDuplicates((v) => !v)}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${showDuplicates ? 'border-yellow-500 text-yellow-400 bg-yellow-950' : 'border-zinc-600 text-yellow-500 hover:border-yellow-500'}`}
+                  >
+                    {dupCount} дубликатов
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -474,18 +465,41 @@ export default function AdminPage() {
           </div>
         )}
 
-        {data?.outfits && (
-          <div className="space-y-3">
-            {data.outfits.map((outfit) => (
-              <OutfitCard
-                key={outfit.id}
-                outfit={outfit}
-                onDelete={handleDelete}
-                onRetry={handleRetry}
-              />
-            ))}
-          </div>
-        )}
+        {data?.outfits && (() => {
+          const hashCounts = {};
+          data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
+          const visible = showDuplicates
+            ? data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1)
+            : data.outfits;
+
+          if (showDuplicates) {
+            const groups = {};
+            visible.forEach((o) => {
+              if (!groups[o.file_hash]) groups[o.file_hash] = [];
+              groups[o.file_hash].push(o);
+            });
+            return (
+              <div className="space-y-4">
+                {Object.values(groups).map((group) => (
+                  <div key={group[0].file_hash} className="rounded-xl border border-yellow-800/50 bg-yellow-950/20 p-3 space-y-2">
+                    <p className="text-xs text-yellow-600 font-mono truncate px-1">hash: {group[0].file_hash}</p>
+                    {group.map((outfit) => (
+                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-3">
+              {visible.map((outfit) => (
+                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+              ))}
+            </div>
+          );
+        })()}
       </main>
     </div>
     </>

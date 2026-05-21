@@ -1,12 +1,12 @@
 const express = require('express');
-const fs = require('fs');
 const multer = require('multer');
+const fs = require('fs');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
-const { uploadRender } = require('../storage/cloudinary');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
+const { uploadImage } = require('../storage/cloudinary');
 
 const upload = multer({ dest: '/tmp/ffe-uploads/' });
 
@@ -17,15 +17,53 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.render_url, o.title, o.created_at,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
-                FILTER (WHERE t.lang IS NOT NULL) AS translations
+                FILTER (WHERE t.lang IS NOT NULL) AS translations,
+              COALESCE((
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url))
+                FROM outfit_renders r WHERE r.outfit_id = o.id
+              ), '[]') AS renders
        FROM outfits o
        LEFT JOIN outfit_translations t ON t.outfit_id = o.id
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     );
     res.json({ outfits: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/renders — upload renders
+router.post('/outfit/:id/renders', upload.array('render', 20), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No files provided' });
+
+    const results = await Promise.all(files.map(async (file) => {
+      const { imageUrl, thumbUrl } = await uploadImage(file.path);
+      fs.unlink(file.path, () => {});
+      const { rows } = await pool.query(
+        'INSERT INTO outfit_renders (outfit_id, image_url, thumb_url) VALUES ($1, $2, $3) RETURNING id, image_url, thumb_url',
+        [id, imageUrl, thumbUrl]
+      );
+      return rows[0];
+    }));
+
+    res.status(201).json({ renders: results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/admin/render/:renderId
+router.delete('/render/:renderId', async (req, res, next) => {
+  try {
+    const { renderId } = req.params;
+    await pool.query('DELETE FROM outfit_renders WHERE id = $1', [renderId]);
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -67,44 +105,6 @@ router.post('/outfit/:id/retry', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/outfit/:id/render — attach AI render (file upload OR external URL)
-router.post('/outfit/:id/render', upload.single('render'), async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    // Check outfit exists
-    const { rows } = await pool.query('SELECT id FROM outfits WHERE id = $1', [id]);
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-
-    let renderUrl = req.body?.render_url?.trim() || null;
-
-    if (req.file) {
-      // File uploaded — push to Cloudinary ffe/renders/
-      const result = await uploadRender(req.file.path);
-      fs.unlink(req.file.path, () => {});
-      renderUrl = result.renderUrl;
-    }
-
-    if (!renderUrl) return res.status(400).json({ error: 'Provide render_url or upload a file' });
-
-    await pool.query('UPDATE outfits SET render_url = $1 WHERE id = $2', [renderUrl, id]);
-    res.json({ ok: true, render_url: renderUrl });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// DELETE /api/admin/outfit/:id/render — remove render
-router.delete('/outfit/:id/render', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    await pool.query('UPDATE outfits SET render_url = NULL WHERE id = $1', [id]);
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-});
-
 // POST /api/admin/outfit/:id/rows — manual edit of game rows
 router.post('/outfit/:id/rows', async (req, res, next) => {
   try {
@@ -129,6 +129,7 @@ router.post('/outfit/:id/rows', async (req, res, next) => {
 
 // GET /api/admin/pinterest-export?lang=en&board=FFE
 // Returns a ready-to-upload CSV file for Pinterest bulk pin creation.
+// Uses first render from outfit_renders per outfit; falls back to image_url (sketch).
 router.get('/pinterest-export', async (req, res, next) => {
   try {
     const lang  = req.query.lang  || 'en';
@@ -138,8 +139,9 @@ router.get('/pinterest-export', async (req, res, next) => {
     const DESC_MAX  = 500;
 
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.render_url, o.title,
-              t.game_rows
+      `SELECT o.id, o.image_url, o.thumb_url, o.title,
+              t.game_rows,
+              (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS render_url
        FROM outfits o
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
@@ -182,13 +184,13 @@ router.get('/pinterest-export', async (req, res, next) => {
     const lines  = [csvRow(header)];
 
     for (const outfit of rows) {
-      const gameRows   = outfit.game_rows || [];
-      const title      = (outfit.title || (lang === 'ru' ? 'Читай образ' : 'Read this outfit')).slice(0, TITLE_MAX);
-      const mediaUrl   = outfit.render_url || outfit.image_url;
-      const thumbnail  = outfit.thumb_url || '';
+      const gameRows    = outfit.game_rows || [];
+      const title       = (outfit.title || (lang === 'ru' ? 'Читай образ' : 'Read this outfit')).slice(0, TITLE_MAX);
+      const mediaUrl    = outfit.render_url || outfit.image_url;
+      const thumbnail   = outfit.thumb_url || '';
       const description = buildDescription(gameRows);
-      const keywords   = buildKeywords(gameRows);
-      const link       = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
+      const keywords    = buildKeywords(gameRows);
+      const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
 
       lines.push(csvRow([title, board, mediaUrl, thumbnail, description, link, '', keywords]));
     }

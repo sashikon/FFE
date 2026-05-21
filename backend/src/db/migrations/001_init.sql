@@ -10,9 +10,6 @@ CREATE TABLE IF NOT EXISTS outfits (
 ALTER TABLE outfits ADD COLUMN IF NOT EXISTS file_hash TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS outfits_file_hash_idx ON outfits(file_hash) WHERE file_hash IS NOT NULL;
 
--- AI render (generated externally, used for social media / Pinterest)
-ALTER TABLE outfits ADD COLUMN IF NOT EXISTS render_url TEXT;
-
 -- Fix existing thumbnails: replace crop=fill with crop=fit
 UPDATE outfits SET thumb_url = REPLACE(thumb_url, 'c_fill', 'c_fit') WHERE thumb_url LIKE '%c_fill%';
 
@@ -30,6 +27,14 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 
 ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
+
+CREATE TABLE IF NOT EXISTS outfit_renders (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  outfit_id   UUID NOT NULL REFERENCES outfits(id) ON DELETE CASCADE,
+  image_url   TEXT NOT NULL,
+  thumb_url   TEXT,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS outfit_translations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
