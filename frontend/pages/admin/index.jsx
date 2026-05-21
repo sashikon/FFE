@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save, Edit3, Eye } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Save, Edit3, Eye, Image, Link, X } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
@@ -89,6 +89,107 @@ function RowsEditor({ outfitId, lang, initialRows }) {
   );
 }
 
+function RenderSection({ outfit }) {
+  const [mode, setMode] = useState(null); // null | 'url' | 'file'
+  const [urlInput, setUrlInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef(null);
+
+  const hasRender = Boolean(outfit.render_url);
+
+  const handleSaveUrl = async () => {
+    if (!urlInput.trim()) return;
+    try {
+      setSaving(true); setError('');
+      await apiPost(`/api/admin/outfit/${outfit.id}/render`, { render_url: urlInput.trim() });
+      mutate('/api/admin/outfits');
+      setMode(null); setUrlInput('');
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    try {
+      setSaving(true); setError('');
+      const form = new FormData();
+      form.append('render', file);
+      await apiPost(`/api/admin/outfit/${outfit.id}/render`, form);
+      mutate('/api/admin/outfits');
+      setMode(null);
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleRemove = async () => {
+    if (!confirm('Удалить рендер?')) return;
+    await apiDelete(`/api/admin/outfit/${outfit.id}/render`);
+    mutate('/api/admin/outfits');
+  };
+
+  return (
+    <div className="border-t border-zinc-800 px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-zinc-500 flex items-center gap-1.5">
+          <Image size={12} /> ИИ-рендер
+          {hasRender
+            ? <span className="text-emerald-400 ml-1">✓ есть</span>
+            : <span className="text-zinc-600 ml-1">нет</span>}
+        </span>
+        <div className="flex items-center gap-2">
+          {hasRender && (
+            <>
+              <a href={outfit.render_url} target="_blank" rel="noreferrer"
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">открыть</a>
+              <button onClick={handleRemove}
+                className="p-1 text-zinc-600 hover:text-rose-400 transition-colors"><X size={12} /></button>
+            </>
+          )}
+          {!saving && (
+            <>
+              <button
+                onClick={() => setMode(mode === 'url' ? null : 'url')}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+              ><Link size={11} /> URL</button>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+              ><Upload size={11} /> Файл</button>
+            </>
+          )}
+          {saving && <span className="text-xs text-zinc-500">Загружаю…</span>}
+        </div>
+      </div>
+
+      {hasRender && mode === null && (
+        <img src={outfit.render_url} alt="render" className="w-full max-h-40 object-contain rounded-lg bg-zinc-950 mb-1" />
+      )}
+
+      {mode === 'url' && (
+        <div className="flex gap-2 mt-1">
+          <input
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            placeholder="https://..."
+            className="flex-1 bg-zinc-950 border border-zinc-700 text-zinc-300 text-xs px-3 py-1.5 rounded-lg"
+            onKeyDown={(e) => e.key === 'Enter' && handleSaveUrl()}
+          />
+          <button
+            onClick={handleSaveUrl}
+            disabled={saving}
+            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs rounded-lg disabled:opacity-50"
+          >ОК</button>
+        </div>
+      )}
+
+      {error && <p className="text-rose-400 text-xs mt-1">{error}</p>}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden"
+        onChange={(e) => handleFileUpload(e.target.files?.[0])} />
+    </div>
+  );
+}
+
 function OutfitCard({ outfit, onDelete, onRetry }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
@@ -166,6 +267,8 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
         </div>
       </div>
 
+      <RenderSection outfit={outfit} />
+
       {expanded && (
         <div className="border-t border-zinc-800 p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
           {(['ru', 'en']).map((lang) => {
@@ -199,7 +302,31 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
 export default function AdminPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadItems, setUploadItems] = useState([]); // [{name, status, duplicate}]
+  const [csvExporting, setCsvExporting] = useState(false);
   const fileRef = useRef(null);
+
+  const handlePinterestExport = async (lang = 'en') => {
+    try {
+      setCsvExporting(true);
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const res = await fetch(`${BASE}/api/admin/pinterest-export?lang=${lang}&board=FFE`, {
+        headers: token ? { 'x-admin-token': token } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Ошибка экспорта: ' + e.message);
+    } finally {
+      setCsvExporting(false);
+    }
+  };
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
     refreshInterval: 5000,
@@ -252,6 +379,23 @@ export default function AdminPage() {
         <h1 className="text-xl font-serif tracking-wide">FFE Admin</h1>
         <div className="flex items-center gap-4">
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handlePinterestExport('en')}
+              disabled={csvExporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="Скачать CSV для Pinterest (EN)"
+            >
+              <Upload size={12} />
+              {csvExporting ? 'Готовлю…' : 'Pinterest CSV'}
+            </button>
+            <button
+              onClick={() => handlePinterestExport('ru')}
+              disabled={csvExporting}
+              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="RU-версия"
+            >RU</button>
+          </div>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
         </div>
       </header>
