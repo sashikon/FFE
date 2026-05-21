@@ -20,11 +20,12 @@ router.get('/outfits', async (req, res, next) => {
       `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
-              COALESCE(json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url))
-                FILTER (WHERE r.id IS NOT NULL), '[]') AS renders
+              COALESCE((
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url))
+                FROM outfit_renders r WHERE r.outfit_id = o.id
+              ), '[]') AS renders
        FROM outfits o
        LEFT JOIN outfit_translations t ON t.outfit_id = o.id
-       LEFT JOIN outfit_renders r ON r.outfit_id = o.id
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     );
