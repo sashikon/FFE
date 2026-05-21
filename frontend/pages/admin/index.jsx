@@ -283,50 +283,82 @@ function CoverageBoard() {
 
   const total = data?.renders?.length ?? 0;
 
-  if (isLoading) return (
-    <div className="space-y-2">
-      {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-zinc-900 rounded-xl animate-pulse" />)}
-    </div>
-  );
-
-  if (total === 0) return (
-    <div className="text-center py-20 text-zinc-600">
-      <Sparkles size={32} className="mx-auto mb-3 opacity-30" />
-      <p className="text-sm">Нет проанализированных рендеров.</p>
-      <p className="text-xs mt-1">Откройте карточку образа → наведите на рендер → нажмите «Анализ»</p>
-    </div>
-  );
-
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-zinc-600 mb-4">{total} рендеров проанализировано</p>
-      {AESTHETICS.map((aesthetic) => {
-        const primary = (byAesthetic[aesthetic] || []).filter((r) => r.rank === 0);
-        const pct = total > 0 ? Math.round((primary.length / total) * 100) : 0;
-        return (
-          <div key={aesthetic} className="flex items-center gap-4 p-3 bg-zinc-900 rounded-xl border border-zinc-800">
-            <div className="w-56 shrink-0">
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs text-zinc-200 leading-tight">{aesthetic}</p>
-                <span className="text-xs text-zinc-600 ml-2 shrink-0">{primary.length}</span>
-              </div>
-              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                <div className="h-full bg-violet-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
-              </div>
+    <div>
+      {/* Description */}
+      <div className="mb-8 p-5 rounded-2xl bg-zinc-900 border border-zinc-800">
+        <div className="flex items-start gap-3">
+          <LayoutGrid size={18} className="text-violet-400 shrink-0 mt-0.5" />
+          <div className="space-y-2 text-sm">
+            <p className="text-zinc-200 font-medium">Coverage — покрытие трендовых эстетик</p>
+            <p className="text-zinc-400 leading-relaxed">
+              Каждый ИИ рендер анализируется Claude Vision и относится к одной из 12 трендовых категорий Pinterest.
+              Этот раздел показывает, какие эстетики уже охвачены контентом, а где дыры — туда нужно досъёмить.
+            </p>
+            <div className="pt-1 space-y-1 text-zinc-500 text-xs leading-relaxed">
+              <p>
+                <span className="text-zinc-300">Зачем это нужно для Pinterest:</span>{' '}
+                Pinterest — поисковик визуального контента. Пользователи ищут именно по этим категориям:
+                «Gala & Formal Dresses», «Streetwear Fashion», «Red Carpet Evening Gowns» и т.д.
+                Чем шире покрытие эстетик — тем больше точек входа в аккаунт FFE из органического поиска.
+              </p>
+              <p>
+                <span className="text-zinc-300">Как использовать:</span>{' '}
+                Смотришь какие строки пустые или с малым числом → идёшь снимать рендеры именно в этой эстетике →
+                загружаешь в карточку образа → запускаешь «Анализ» → рендер попадает в нужную строку здесь.
+                Далее экспортируешь Pinterest CSV с этими рендерами.
+              </p>
             </div>
-            {primary.length === 0 ? (
-              <p className="text-xs text-zinc-700 italic">—</p>
-            ) : (
-              <div className="flex gap-1.5 flex-wrap">
-                {primary.slice(0, 10).map((r) => (
-                  <img key={r.id} src={r.thumb_url || r.image_url} alt="" className="w-9 h-11 object-cover rounded bg-zinc-800" title={r.title || r.outfit_id} />
-                ))}
-                {primary.length > 10 && <span className="text-xs text-zinc-600 self-center">+{primary.length - 10}</span>}
-              </div>
-            )}
           </div>
-        );
-      })}
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-zinc-900 rounded-xl animate-pulse" />)}
+        </div>
+      )}
+
+      {!isLoading && total === 0 && (
+        <div className="text-center py-16 text-zinc-600">
+          <Sparkles size={32} className="mx-auto mb-3 opacity-30" />
+          <p className="text-sm">Нет проанализированных рендеров.</p>
+          <p className="text-xs mt-1">Откройте карточку образа → наведите на рендер → нажмите «Анализ»</p>
+        </div>
+      )}
+
+      {!isLoading && total > 0 && (<>
+      <p className="text-xs text-zinc-600 mb-4">{total} рендеров проанализировано</p>
+      <div className="space-y-2">
+        {AESTHETICS.map((aesthetic) => {
+          const primary = (byAesthetic[aesthetic] || []).filter((r) => r.rank === 0);
+          const pct = total > 0 ? Math.round((primary.length / total) * 100) : 0;
+          return (
+            <div key={aesthetic} className="flex items-center gap-4 p-3 bg-zinc-900 rounded-xl border border-zinc-800">
+              <div className="w-56 shrink-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs text-zinc-200 leading-tight">{aesthetic}</p>
+                  <span className="text-xs text-zinc-600 ml-2 shrink-0">{primary.length}</span>
+                </div>
+                <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-violet-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+              {primary.length === 0 ? (
+                <p className="text-xs text-zinc-700 italic">—</p>
+              ) : (
+                <div className="flex gap-1.5 flex-wrap">
+                  {primary.slice(0, 10).map((r) => (
+                    <img key={r.id} src={r.thumb_url || r.image_url} alt="" className="w-9 h-11 object-cover rounded bg-zinc-800" title={r.title || r.outfit_id} />
+                  ))}
+                  {primary.length > 10 && <span className="text-xs text-zinc-600 self-center">+{primary.length - 10}</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      </>)}
     </div>
   );
 }
