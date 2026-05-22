@@ -132,8 +132,9 @@ router.post('/outfit/:id/rows', async (req, res, next) => {
 // Returns JSON list of outfits that would be included in a Pinterest export.
 router.get('/pinterest-preview', async (req, res, next) => {
   try {
-    const lang    = req.query.lang || 'en';
-    const onlyNew = req.query.new === 'true';
+    const lang         = req.query.lang || 'en';
+    const onlyNew      = req.query.new === 'true';
+    const rendersOnly  = req.query.renders === 'true';
 
     const { rows } = await pool.query(
       `SELECT o.id, o.thumb_url, o.image_url, o.title,
@@ -149,8 +150,12 @@ router.get('/pinterest-preview', async (req, res, next) => {
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
+         AND ($4 = false OR EXISTS (
+               SELECT 1 FROM outfit_renders r
+               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL
+             ))
        ORDER BY o.created_at DESC`,
-      [lang, onlyNew, lang]
+      [lang, onlyNew, lang, rendersOnly]
     );
 
     res.json({ outfits: rows });
@@ -170,14 +175,14 @@ router.get('/pinterest-export', async (req, res, next) => {
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
 
-    const onlyNew = req.query.new === 'true';
-    const ids = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
+    const onlyNew      = req.query.new === 'true';
+    const rendersOnly  = req.query.renders === 'true'; // outfits with Pinterest-marked renders
+    const ids          = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
 
     const { rows } = await pool.query(
       `SELECT o.id, o.image_url, o.thumb_url, o.title,
               t.game_rows,
               o.pinterest_exported,
-              -- prefer render marked as pinterest-exported, then most recent
               COALESCE(
                 (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
                 (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
@@ -190,9 +195,13 @@ router.get('/pinterest-export', async (req, res, next) => {
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
-         AND ($4::uuid[] IS NULL OR o.id = ANY($4::uuid[]))
+         AND ($4 = false OR EXISTS (
+               SELECT 1 FROM outfit_renders r
+               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL
+             ))
+         AND ($5::uuid[] IS NULL OR o.id = ANY($5::uuid[]))
        ORDER BY o.created_at DESC`,
-      [lang, onlyNew, lang, ids]
+      [lang, onlyNew, lang, rendersOnly, ids]
     );
 
     if (!rows.length) {
