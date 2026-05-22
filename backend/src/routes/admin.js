@@ -129,12 +129,28 @@ router.post('/outfit/:id/rows', async (req, res, next) => {
 });
 
 // GET /api/admin/pinterest-preview?lang=en&new=true
-// Returns JSON list of outfits that would be included in a Pinterest export.
+// Returns JSON list of outfits (or renders) that would be included in a Pinterest export.
 router.get('/pinterest-preview', async (req, res, next) => {
   try {
     const lang         = req.query.lang || 'en';
     const onlyNew      = req.query.new === 'true';
     const rendersOnly  = req.query.renders === 'true';
+
+    if (rendersOnly) {
+      // Per-render mode: one row per un-exported render
+      const { rows } = await pool.query(
+        `SELECT r.id, r.thumb_url AS render_thumb, r.image_url AS render_url,
+                o.id AS outfit_id, o.thumb_url, o.image_url, o.title
+         FROM outfit_renders r
+         JOIN outfits o ON o.id = r.outfit_id
+         JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
+         WHERE t.status = 'ready'
+           AND r.pinterest_exported_at IS NULL
+         ORDER BY o.created_at DESC, r.created_at DESC`,
+        [lang]
+      );
+      return res.json({ outfits: rows });
+    }
 
     const { rows } = await pool.query(
       `SELECT o.id, o.thumb_url, o.image_url, o.title,
@@ -144,12 +160,8 @@ router.get('/pinterest-preview', async (req, res, next) => {
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
-         AND ($4 = false OR EXISTS (
-               SELECT 1 FROM outfit_renders r
-               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL
-             ))
        ORDER BY o.created_at DESC`,
-      [lang, onlyNew, lang, rendersOnly]
+      [lang, onlyNew, lang]
     );
 
     res.json({ outfits: rows });
@@ -170,33 +182,48 @@ router.get('/pinterest-export', async (req, res, next) => {
     const DESC_MAX  = 500;
 
     const onlyNew      = req.query.new === 'true';
-    const rendersOnly  = req.query.renders === 'true'; // outfits with Pinterest-marked renders
+    const rendersOnly  = req.query.renders === 'true';
     const ids          = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
 
-    const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title,
-              t.game_rows,
-              o.pinterest_exported,
-              COALESCE(
-                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL ORDER BY r.created_at DESC LIMIT 1),
-                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
-              ) AS render_url,
-              COALESCE(
-                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL ORDER BY r.created_at DESC LIMIT 1),
-                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
-              ) AS render_thumb_url
-       FROM outfits o
-       JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
-       WHERE t.status = 'ready'
-         AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
-         AND ($4 = false OR EXISTS (
-               SELECT 1 FROM outfit_renders r
-               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL
-             ))
-         AND ($5::uuid[] IS NULL OR o.id = ANY($5::uuid[]))
-       ORDER BY o.created_at DESC`,
-      [lang, onlyNew, lang, rendersOnly, ids]
-    );
+    let rows;
+
+    if (rendersOnly) {
+      // Per-render export: ids are render IDs
+      const renderFilter = ids && ids.length ? ids : null;
+      const result = await pool.query(
+        `SELECT r.id AS render_id, r.image_url AS render_url, r.thumb_url AS render_thumb_url,
+                o.id, o.image_url, o.thumb_url, o.title,
+                t.game_rows, o.pinterest_exported
+         FROM outfit_renders r
+         JOIN outfits o ON o.id = r.outfit_id
+         JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
+         WHERE t.status = 'ready'
+           AND r.pinterest_exported_at IS NULL
+           AND ($2::uuid[] IS NULL OR r.id = ANY($2::uuid[]))
+         ORDER BY o.created_at DESC, r.created_at DESC`,
+        [lang, renderFilter]
+      );
+      rows = result.rows;
+    } else {
+      const result = await pool.query(
+        `SELECT o.id, o.image_url, o.thumb_url, o.title,
+                t.game_rows,
+                o.pinterest_exported,
+                COALESCE(
+                  (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1),
+                  o.image_url
+                ) AS render_url,
+                o.thumb_url AS render_thumb_url
+         FROM outfits o
+         JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
+         WHERE t.status = 'ready'
+           AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
+           AND ($4::uuid[] IS NULL OR o.id = ANY($4::uuid[]))
+         ORDER BY o.created_at DESC`,
+        [lang, onlyNew, lang, ids]
+      );
+      rows = result.rows;
+    }
 
     if (!rows.length) {
       return res.status(404).json({ error: `No ready outfits for lang="${lang}"` });
@@ -388,7 +415,9 @@ router.get('/pinterest-export', async (req, res, next) => {
     // Pass 2: build CSV rows
     for (const [i, outfit] of rows.entries()) {
       const gameRows    = outfit.game_rows || [];
-      const mediaUrl    = outfit.render_url || outfit.image_url;
+      const mediaUrl    = rendersOnly
+        ? (outfit.render_url || outfit.image_url)   // specific render image
+        : (outfit.render_url || outfit.image_url);  // best render or sketch
       const description = buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
       const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
@@ -400,17 +429,28 @@ router.get('/pinterest-export', async (req, res, next) => {
     // No BOM — Pinterest's parser doesn't strip it and reads first header as '﻿Title'
     // CRLF line endings per RFC 4180
     const csv = lines.join('\r\n');
-    const filename = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `pinterest_${lang}_${rendersOnly ? '_renders' : ''}_${new Date().toISOString().slice(0, 10)}.csv`;
 
-    // Mark all exported outfits so the admin knows what's already been sent to Pinterest
+    // Mark exported items
     try {
-      const exportedIds = rows.map((r) => r.id);
-      await pool.query(
-        `UPDATE outfits
-         SET pinterest_exported = COALESCE(pinterest_exported, '{}') || $1::jsonb
-         WHERE id = ANY($2::uuid[])`,
-        [JSON.stringify({ [lang]: new Date().toISOString() }), exportedIds]
-      );
+      const now = new Date().toISOString();
+      if (rendersOnly) {
+        // Mark individual renders as exported
+        const renderIds = rows.map((r) => r.render_id);
+        await pool.query(
+          'UPDATE outfit_renders SET pinterest_exported_at = $1 WHERE id = ANY($2::uuid[])',
+          [now, renderIds]
+        );
+      } else {
+        // Mark outfits as exported (sketch wave)
+        const exportedIds = rows.map((r) => r.id);
+        await pool.query(
+          `UPDATE outfits
+           SET pinterest_exported = COALESCE(pinterest_exported, '{}') || $1::jsonb
+           WHERE id = ANY($2::uuid[])`,
+          [JSON.stringify({ [lang]: now }), exportedIds]
+        );
+      }
     } catch (markErr) {
       console.error('Failed to mark pinterest export:', markErr);
       // non-fatal — still send the CSV
