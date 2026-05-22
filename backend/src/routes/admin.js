@@ -138,21 +138,15 @@ router.get('/pinterest-preview', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT o.id, o.thumb_url, o.image_url, o.title,
-              COALESCE(
-                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
-                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
-              ) AS render_thumb,
-              COALESCE(
-                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
-                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
-              ) AS render_url
+              (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS render_thumb,
+              (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS render_url
        FROM outfits o
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
          AND ($4 = false OR EXISTS (
                SELECT 1 FROM outfit_renders r
-               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL
+               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL
              ))
        ORDER BY o.created_at DESC`,
       [lang, onlyNew, lang, rendersOnly]
@@ -184,11 +178,11 @@ router.get('/pinterest-export', async (req, res, next) => {
               t.game_rows,
               o.pinterest_exported,
               COALESCE(
-                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL ORDER BY r.created_at DESC LIMIT 1),
                 (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
               ) AS render_url,
               COALESCE(
-                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL ORDER BY r.created_at DESC LIMIT 1),
                 (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
               ) AS render_thumb_url
        FROM outfits o
@@ -197,7 +191,7 @@ router.get('/pinterest-export', async (req, res, next) => {
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
          AND ($4 = false OR EXISTS (
                SELECT 1 FROM outfit_renders r
-               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL
+               WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NULL
              ))
          AND ($5::uuid[] IS NULL OR o.id = ANY($5::uuid[]))
        ORDER BY o.created_at DESC`,
