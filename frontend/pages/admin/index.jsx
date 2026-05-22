@@ -297,20 +297,20 @@ function RendersSection({ outfitId, initialRenders }) {
   );
 }
 
-function PinterestExportModal({ lang, onlyNew, onClose, onExported }) {
+function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported }) {
   const [items, setItems] = useState(null); // null = loading
   const [selected, setSelected] = useState(new Set());
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}) });
+    const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}) });
     adminFetcher(`/api/admin/pinterest-preview?${params}`)
       .then((data) => {
         setItems(data.outfits || []);
         setSelected(new Set((data.outfits || []).map((o) => o.id)));
       })
       .catch((e) => alert('Ошибка загрузки превью: ' + e.message));
-  }, [lang, onlyNew]);
+  }, [lang, onlyNew, rendersOnly]);
 
   const toggleAll = () => {
     if (selected.size === items.length) setSelected(new Set());
@@ -330,7 +330,7 @@ function PinterestExportModal({ lang, onlyNew, onClose, onExported }) {
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
       const ids = [...selected].join(',');
-      const params = new URLSearchParams({ lang, board: 'FFE', ids });
+      const params = new URLSearchParams({ lang, board: 'FFE', ids, ...(rendersOnly ? { renders: 'true' } : {}) });
       const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });
@@ -364,6 +364,7 @@ function PinterestExportModal({ lang, onlyNew, onClose, onExported }) {
             <p className="text-sm font-medium text-zinc-100">
               Экспорт Pinterest · {lang.toUpperCase()}
               {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">только новые</span>}
+              {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">ИИ рендеры</span>}
             </p>
             {items && (
               <p className="text-xs text-zinc-500 mt-0.5">
@@ -385,7 +386,11 @@ function PinterestExportModal({ lang, onlyNew, onClose, onExported }) {
           {items?.length === 0 && (
             <div className="text-center py-16 text-zinc-600">
               <p className="text-sm">Нет образов для экспорта.</p>
-              <p className="text-xs mt-1">Все готовые образы уже отмечены как загруженные в Pinterest {lang.toUpperCase()}.</p>
+              <p className="text-xs mt-1">
+                {rendersOnly
+                  ? 'Нет образов с ИИ рендерами отмеченными кружком P. Откройте карточку образа → рендеры → нажмите кружок P на миниатюре.'
+                  : `Все готовые образы уже отмечены как загруженные в Pinterest ${lang.toUpperCase()}.`}
+              </p>
             </div>
           )}
 
@@ -725,7 +730,7 @@ export default function AdminPage() {
   const [view, setView] = useState('outfits'); // 'outfits' | 'coverage'
   const [sort, setSort] = useState('date'); // 'date' | 'renders'
   const [pinterestFilter, setPinterestFilter] = useState('all'); // 'all' | 'new-en' | 'new-ru' | 'exported'
-  const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew}
+  const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew, rendersOnly}
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -823,23 +828,35 @@ export default function AdminPage() {
             </button>
           </div>
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             <button
-              onClick={() => setExportModal({ lang: 'en', onlyNew: true })}
+              onClick={() => setExportModal({ lang: 'en', onlyNew: true, rendersOnly: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
-              title="Превью и экспорт новых образов — EN"
+              title="Новые образы (эскизы) — EN"
             >
-              <Upload size={12} /> Экспорт EN
+              <Upload size={12} /> Новые EN
             </button>
             <button
-              onClick={() => setExportModal({ lang: 'ru', onlyNew: true })}
+              onClick={() => setExportModal({ lang: 'ru', onlyNew: true, rendersOnly: false })}
               className="px-2 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
-              title="Превью и экспорт новых образов — RU"
+              title="Новые образы — RU"
             >RU</button>
             <button
-              onClick={() => setExportModal({ lang: 'en', onlyNew: false })}
+              onClick={() => setExportModal({ lang: 'en', rendersOnly: true, onlyNew: false })}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
+              title="Образы с ИИ рендерами отмеченными P — EN"
+            >
+              <ImagePlus size={12} /> Рендеры EN
+            </button>
+            <button
+              onClick={() => setExportModal({ lang: 'ru', rendersOnly: true, onlyNew: false })}
+              className="px-2 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
+              title="Образы с ИИ рендерами — RU"
+            >RU</button>
+            <button
+              onClick={() => setExportModal({ lang: 'en', onlyNew: false, rendersOnly: false })}
               className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-500 text-xs rounded-lg transition-colors"
-              title="Все готовые образы — EN"
+              title="Все готовые — EN"
             >Все</button>
           </div>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
@@ -1020,6 +1037,7 @@ export default function AdminPage() {
       <PinterestExportModal
         lang={exportModal.lang}
         onlyNew={exportModal.onlyNew}
+        rendersOnly={exportModal.rendersOnly}
         onClose={() => setExportModal(null)}
         onExported={() => mutate('/api/admin/outfits')}
       />
