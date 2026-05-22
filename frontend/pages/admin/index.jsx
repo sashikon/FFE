@@ -584,6 +584,211 @@ function CoverageBoard() {
   );
 }
 
+function RendersGallery({ outfits, onMutate }) {
+  // Flatten all renders with their parent outfit info
+  const allRenders = (outfits || []).flatMap((o) =>
+    (o.renders || []).map((r) => ({ ...r, outfit: o }))
+  );
+
+  const [localRenders, setLocalRenders] = useState(allRenders);
+
+  // Sync when outfits data changes
+  useEffect(() => {
+    setLocalRenders(
+      (outfits || []).flatMap((o) =>
+        (o.renders || []).map((r) => ({ ...r, outfit: o }))
+      )
+    );
+  }, [outfits]);
+
+  const handleDelete = async (renderId) => {
+    if (!confirm('Удалить рендер?')) return;
+    await apiDelete(`/api/admin/render/${renderId}`);
+    setLocalRenders((prev) => prev.filter((r) => r.id !== renderId));
+    onMutate();
+  };
+
+  const handleAnalyzed = (renderId, aesthetics) => {
+    setLocalRenders((prev) =>
+      prev.map((r) => (r.id === renderId ? { ...r, aesthetics } : r))
+    );
+  };
+
+  const handlePinterestMark = (renderId, ts) => {
+    setLocalRenders((prev) =>
+      prev.map((r) => (r.id === renderId ? { ...r, pinterest_exported_at: ts } : r))
+    );
+  };
+
+  if (!localRenders.length) {
+    return (
+      <div className="text-center py-24 text-zinc-600">
+        <ImagePlus size={40} className="mx-auto mb-4 opacity-20" />
+        <p className="text-sm">Нет загруженных рендеров.</p>
+        <p className="text-xs mt-1">Откройте карточку образа и загрузите ИИ рендеры.</p>
+      </div>
+    );
+  }
+
+  const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <h2 className="text-lg font-medium text-zinc-300">ИИ рендеры</h2>
+        <span className="text-sm text-zinc-500">{localRenders.length} всего</span>
+        {pExported > 0 && (
+          <span className="text-sm text-rose-400">{pExported} в Pinterest</span>
+        )}
+        <span className="text-sm text-zinc-600">
+          {localRenders.filter((r) => !r.pinterest_exported_at).length} не загружено
+        </span>
+      </div>
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+        {localRenders.map((render) => (
+          <GalleryRenderCard
+            key={render.id}
+            render={render}
+            outfit={render.outfit}
+            onDelete={handleDelete}
+            onAnalyzed={handleAnalyzed}
+            onPinterestMark={handlePinterestMark}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMark }) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
+  const [aesthetics, setAesthetics] = useState(render.aesthetics);
+  const top = aesthetics?.top;
+
+  const handleAnalyze = async (e) => {
+    e.stopPropagation();
+    setAnalyzing(true);
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/analyze`);
+      setAesthetics(data.aesthetics);
+      onAnalyzed(render.id, data.aesthetics);
+    } catch (err) {
+      alert('Ошибка анализа: ' + err.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handlePinterestToggle = async (e) => {
+    e.stopPropagation();
+    const next = !pExported;
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/pinterest-mark`, { exported: next });
+      setPExported(data.pinterest_exported_at);
+      onPinterestMark(render.id, data.pinterest_exported_at);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    }
+  };
+
+  return (
+    <div className="group relative flex flex-col gap-2 bg-zinc-900 rounded-2xl p-2 border border-zinc-800 hover:border-zinc-600 transition-colors">
+      {/* Main render image */}
+      <div className="relative overflow-hidden rounded-xl bg-zinc-800" style={{ aspectRatio: '3/4' }}>
+        <img
+          src={render.image_url}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+
+        {/* Overlay buttons */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-xl" />
+
+        {/* Delete */}
+        <button
+          onClick={() => onDelete(render.id)}
+          className="absolute top-2 right-2 w-7 h-7 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+          title="Удалить"
+        >
+          <XCircle size={14} />
+        </button>
+
+        {/* Analyze */}
+        {analyzing ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black/70 rounded-xl px-3 py-2 flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-violet-400" />
+              <span className="text-xs text-zinc-300">Анализ…</span>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={handleAnalyze}
+            className={`absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all z-10 ${
+              top
+                ? 'bg-violet-900/80 text-violet-300 opacity-0 group-hover:opacity-100 hover:bg-violet-800'
+                : 'bg-black/70 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-violet-300'
+            }`}
+            title={top ? 'Переанализировать' : 'Анализировать эстетику'}
+          >
+            <Sparkles size={10} /> {top ? 'Заново' : 'Анализ'}
+          </button>
+        )}
+
+        {/* Pinterest mark */}
+        <button
+          onClick={handlePinterestToggle}
+          title={pExported
+            ? `В Pinterest с ${new Date(pExported).toLocaleDateString('ru')} — нажми чтобы снять`
+            : 'Отметить как загружено в Pinterest'}
+          className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold transition-all z-10 ${
+            pExported
+              ? 'bg-rose-600 text-white'
+              : 'bg-black/60 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-rose-400'
+          }`}
+        >P</button>
+
+        {/* Outfit sketch — bottom left */}
+        <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <img
+            src={outfit.thumb_url || outfit.image_url}
+            alt=""
+            className="w-8 h-8 object-cover rounded-lg border border-zinc-600 shadow-lg"
+            title={outfit.title || outfit.id}
+          />
+        </div>
+      </div>
+
+      {/* Aesthetics */}
+      {top ? (
+        <div className="px-1 space-y-1">
+          {top.slice(0, 2).map((item, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1 mb-0.5">
+                  <span className="text-[9px] text-zinc-400 truncate leading-tight">
+                    {item.name.replace(/ Outfit Ideas| Dresses| Gowns| Looks| Fashion/, '')}
+                  </span>
+                  <span className="text-[9px] text-zinc-600 shrink-0">{item.score}</span>
+                </div>
+                <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${i === 0 ? 'bg-violet-500' : 'bg-violet-800'}`}
+                    style={{ width: `${item.score}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
+      )}
+    </div>
+  );
+}
+
 function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
@@ -727,7 +932,7 @@ export default function AdminPage() {
   const [uploadItems, setUploadItems] = useState([]);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
-  const [view, setView] = useState('outfits'); // 'outfits' | 'coverage'
+  const [view, setView] = useState('outfits'); // 'outfits' | 'renders' | 'coverage'
   const [sort, setSort] = useState('date'); // 'date' | 'renders'
   const [pinterestFilter, setPinterestFilter] = useState('all'); // 'all' | 'new-en' | 'new-ru' | 'exported'
   const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew, rendersOnly}
@@ -821,6 +1026,12 @@ export default function AdminPage() {
               <Upload size={13} /> Образы
             </button>
             <button
+              onClick={() => setView('renders')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'renders' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+            >
+              <ImagePlus size={13} /> Рендеры
+            </button>
+            <button
               onClick={() => setView('coverage')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'coverage' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
@@ -865,6 +1076,9 @@ export default function AdminPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-10">
         {view === 'coverage' && <CoverageBoard />}
+        {view === 'renders' && (
+          <RendersGallery outfits={data?.outfits} onMutate={() => mutate('/api/admin/outfits')} />
+        )}
         {view === 'outfits' && (<>
         <div
           className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200 mb-4 ${
