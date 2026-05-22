@@ -363,7 +363,7 @@ function CoverageBoard() {
   );
 }
 
-function OutfitCard({ outfit, onDelete, onRetry }) {
+function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
 
@@ -406,18 +406,23 @@ function OutfitCard({ outfit, onDelete, onRetry }) {
                 {outfit.renders.length}
               </span>
             )}
-            {outfit.pinterest_exported?.en && (
-              <span
-                className="text-[10px] text-rose-400 border border-rose-900 rounded px-1 py-0.5 leading-none"
-                title={`Pinterest EN: ${new Date(outfit.pinterest_exported.en).toLocaleDateString('ru')}`}
-              >P·EN</span>
-            )}
-            {outfit.pinterest_exported?.ru && (
-              <span
-                className="text-[10px] text-rose-400 border border-rose-900 rounded px-1 py-0.5 leading-none"
-                title={`Pinterest RU: ${new Date(outfit.pinterest_exported.ru).toLocaleDateString('ru')}`}
-              >P·RU</span>
-            )}
+            {['en', 'ru'].map((l) => {
+              const date = outfit.pinterest_exported?.[l];
+              return (
+                <button
+                  key={l}
+                  onClick={() => onPinterestMark(outfit.id, l, !date)}
+                  title={date
+                    ? `В Pinterest ${l.toUpperCase()} с ${new Date(date).toLocaleDateString('ru')} — нажми чтобы снять метку`
+                    : `Отметить как загружено в Pinterest ${l.toUpperCase()}`}
+                  className={`text-[10px] border rounded px-1 py-0.5 leading-none transition-colors ${
+                    date
+                      ? 'text-rose-400 border-rose-800 hover:bg-rose-950'
+                      : 'text-zinc-700 border-zinc-800 hover:text-rose-400 hover:border-rose-800'
+                  }`}
+                >P·{l.toUpperCase()}</button>
+              );
+            })}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -543,6 +548,11 @@ export default function AdminPage() {
 
   const handleRetry = async (id) => {
     await apiPost(`/api/admin/outfit/${id}/retry`);
+    mutate('/api/admin/outfits');
+  };
+
+  const handlePinterestMark = async (id, lang, exported) => {
+    await apiPost(`/api/admin/outfit/${id}/pinterest-mark`, { lang, exported });
     mutate('/api/admin/outfits');
   };
 
@@ -758,7 +768,7 @@ export default function AdminPage() {
                   <div key={group[0].file_hash} className="rounded-xl border border-yellow-800/50 bg-yellow-950/20 p-3 space-y-2">
                     <p className="text-xs text-yellow-600 font-mono truncate px-1">hash: {group[0].file_hash}</p>
                     {group.map((outfit) => (
-                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} />
                     ))}
                   </div>
                 ))}
@@ -769,7 +779,7 @@ export default function AdminPage() {
           return (
             <div className="space-y-3">
               {visible.map((outfit) => (
-                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} />
+                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} />
               ))}
             </div>
           );
