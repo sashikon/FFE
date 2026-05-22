@@ -22,7 +22,7 @@ router.get('/outfits', async (req, res, next) => {
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders
        FROM outfits o
@@ -402,6 +402,24 @@ router.post('/outfit/:id/pinterest-mark', async (req, res, next) => {
 
     const { rows } = await pool.query('SELECT pinterest_exported FROM outfits WHERE id = $1', [id]);
     res.json({ pinterest_exported: rows[0]?.pinterest_exported ?? {} });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/render/:id/pinterest-mark — mark/unmark render as exported to Pinterest
+// body: { exported: true|false }
+router.post('/render/:id/pinterest-mark', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { exported } = req.body;
+    const ts = exported ? new Date().toISOString() : null;
+    const { rows } = await pool.query(
+      'UPDATE outfit_renders SET pinterest_exported_at = $1 WHERE id = $2 RETURNING pinterest_exported_at',
+      [ts, id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ pinterest_exported_at: rows[0].pinterest_exported_at });
   } catch (err) {
     next(err);
   }
