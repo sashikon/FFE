@@ -139,15 +139,23 @@ router.get('/pinterest-export', async (req, res, next) => {
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
 
+    const onlyNew = req.query.new === 'true';
+
     const { rows } = await pool.query(
       `SELECT o.id, o.image_url, o.thumb_url, o.title,
               t.game_rows,
-              (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS render_url
+              o.pinterest_exported,
+              -- prefer render marked as pinterest-exported, then most recent
+              COALESCE(
+                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
+              ) AS render_url
        FROM outfits o
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
+         AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
        ORDER BY o.created_at DESC`,
-      [lang]
+      [lang, onlyNew, lang]
     );
 
     if (!rows.length) {
