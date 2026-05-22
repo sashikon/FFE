@@ -21,39 +21,58 @@ function resizeCloudinaryUrl(url, maxPx = 1568) {
   return url.replace('/upload/', `/upload/c_limit,w_${maxPx},h_${maxPx}/`);
 }
 
-async function analyzeAesthetics(imageUrl) {
+async function analyzeAesthetics(imageUrl, { retries = 3, retryDelay = 15000 } = {}) {
   const safeUrl = resizeCloudinaryUrl(imageUrl);
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'url', url: safeUrl } },
-          {
-            type: 'text',
-            text: `Analyze this fashion outfit image. From the list below pick the top 3 most fitting trend aesthetics and assign a confidence score (0–100) to each.
+  const prompt = `Analyze this fashion outfit image. From the list below pick the top 3 most fitting trend aesthetics and assign a confidence score (0–100) to each.
 
 Aesthetics:
 ${AESTHETICS.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 
 Return ONLY valid JSON, no markdown:
-{"top":[{"name":"...","score":85},{"name":"...","score":62},{"name":"...","score":41}]}`,
+{"top":[{"name":"...","score":85},{"name":"...","score":62},{"name":"...","score":41}]}`;
+
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 256,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'url', url: safeUrl } },
+              { type: 'text', text: prompt },
+            ],
           },
         ],
-      },
-    ],
-  });
+      });
 
-  const raw = response.content[0].text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
+      const raw = response.content[0].text
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
 
-  const parsed = JSON.parse(raw);
-  return { top: parsed.top.slice(0, 3), analyzed_at: new Date().toISOString() };
+      const parsed = JSON.parse(raw);
+      return { top: parsed.top.slice(0, 3), analyzed_at: new Date().toISOString() };
+    } catch (err) {
+      lastErr = err;
+      const status = err.status ?? err.statusCode;
+      const isOverloaded = status === 529 || status === 529 || (err.message || '').includes('overloaded');
+      const isRateLimit  = status === 429;
+
+      if ((isOverloaded || isRateLimit) && attempt < retries) {
+        const wait = retryDelay * attempt;
+        console.warn(`analyzeAesthetics: attempt ${attempt} failed (${status}), retrying in ${wait}ms…`);
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      break;
+    }
+  }
+
+  throw lastErr;
 }
 
 module.exports = { analyzeAesthetics, AESTHETICS };
