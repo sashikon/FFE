@@ -18,7 +18,7 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
@@ -353,6 +353,20 @@ router.get('/pinterest-export', async (req, res, next) => {
     // CRLF line endings per RFC 4180
     const csv = lines.join('\r\n');
     const filename = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    // Mark all exported outfits so the admin knows what's already been sent to Pinterest
+    try {
+      const exportedIds = rows.map((r) => r.id);
+      await pool.query(
+        `UPDATE outfits
+         SET pinterest_exported = COALESCE(pinterest_exported, '{}') || $1::jsonb
+         WHERE id = ANY($2::uuid[])`,
+        [JSON.stringify({ [lang]: new Date().toISOString() }), exportedIds]
+      );
+    } catch (markErr) {
+      console.error('Failed to mark pinterest export:', markErr);
+      // non-fatal — still send the CSV
+    }
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
