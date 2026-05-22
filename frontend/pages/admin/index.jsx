@@ -583,12 +583,13 @@ export default function AdminPage() {
     mutate('/api/admin/outfits');
   };
 
-  const handlePinterestExport = async (lang = 'en') => {
+  const handlePinterestExport = async (lang = 'en', onlyNew = false) => {
     try {
       setCsvExporting(true);
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
-      const res = await fetch(`${BASE}/api/admin/pinterest-export?lang=${lang}&board=FFE`, {
+      const params = new URLSearchParams({ lang, board: 'FFE', ...(onlyNew ? { new: 'true' } : {}) });
+      const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -596,9 +597,10 @@ export default function AdminPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `pinterest_${lang}${onlyNew ? '_new' : ''}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      mutate('/api/admin/outfits');
     } catch (e) {
       alert('Ошибка экспорта: ' + e.message);
     } finally {
@@ -633,20 +635,26 @@ export default function AdminPage() {
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => handlePinterestExport('en')}
+              onClick={() => handlePinterestExport('en', true)}
               disabled={csvExporting}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
-              title="Скачать CSV для Pinterest (EN)"
+              title="Только новые образы (не выгруженные ранее) — EN"
             >
               <Upload size={12} />
-              {csvExporting ? 'Готовлю…' : 'Pinterest CSV'}
+              {csvExporting ? 'Готовлю…' : 'Новые EN'}
             </button>
             <button
-              onClick={() => handlePinterestExport('ru')}
+              onClick={() => handlePinterestExport('ru', true)}
               disabled={csvExporting}
-              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 text-xs rounded-lg transition-colors disabled:opacity-50"
-              title="RU-версия"
+              className="px-2 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="Только новые образы — RU"
             >RU</button>
+            <button
+              onClick={() => handlePinterestExport('en', false)}
+              disabled={csvExporting}
+              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-500 text-xs rounded-lg transition-colors disabled:opacity-50"
+              title="Все готовые образы — EN"
+            >Все</button>
           </div>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
         </div>
@@ -708,8 +716,9 @@ export default function AdminPage() {
           const hashCounts = {};
           data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
           const dupCount = data.outfits.filter((o) => o.file_hash && hashCounts[o.file_hash] > 1).length;
+          const newEnCount = data.outfits.filter((o) => !o.pinterest_exported?.en && ['ru','en'].every(l => o.translations?.[l]?.status === 'ready')).length;
+          const newRuCount = data.outfits.filter((o) => !o.pinterest_exported?.ru && ['ru','en'].every(l => o.translations?.[l]?.status === 'ready')).length;
           const exportedCount = data.outfits.filter((o) => o.pinterest_exported?.en || o.pinterest_exported?.ru).length;
-          const newCount = total - exportedCount;
           return (
             <div className="flex flex-col gap-2 mb-4">
               <div className="flex items-center gap-4 flex-wrap">
@@ -737,13 +746,17 @@ export default function AdminPage() {
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
                 >все</button>
                 <button
-                  onClick={() => setPinterestFilter('new')}
-                  className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >новые ({newCount})</button>
+                  onClick={() => setPinterestFilter('new-en')}
+                  className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-en' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                >новые EN ({newEnCount})</button>
+                <button
+                  onClick={() => setPinterestFilter('new-ru')}
+                  className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-ru' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                >новые RU ({newRuCount})</button>
                 <button
                   onClick={() => setPinterestFilter('exported')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'exported' ? 'border-rose-700 text-rose-300 bg-rose-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >в Pinterest ({exportedCount})</button>
+                >загружено ({exportedCount})</button>
                 {/* Sort */}
                 <span className="text-xs text-zinc-600 ml-2">Сортировка:</span>
                 <button
@@ -774,8 +787,10 @@ export default function AdminPage() {
           const sorted = sort === 'renders'
             ? [...data.outfits].sort((a, b) => (b.renders?.length || 0) - (a.renders?.length || 0))
             : data.outfits;
-          const pFiltered = pinterestFilter === 'new'
-            ? sorted.filter((o) => !o.pinterest_exported?.en && !o.pinterest_exported?.ru)
+          const pFiltered = pinterestFilter === 'new-en'
+            ? sorted.filter((o) => !o.pinterest_exported?.en)
+            : pinterestFilter === 'new-ru'
+            ? sorted.filter((o) => !o.pinterest_exported?.ru)
             : pinterestFilter === 'exported'
             ? sorted.filter((o) => o.pinterest_exported?.en || o.pinterest_exported?.ru)
             : sorted;
