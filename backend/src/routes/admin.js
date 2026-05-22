@@ -376,6 +376,37 @@ router.get('/pinterest-export', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/outfit/:id/pinterest-mark — manually mark/unmark Pinterest export
+// body: { lang: 'en'|'ru', exported: true|false }
+router.post('/outfit/:id/pinterest-mark', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { lang, exported } = req.body;
+    if (!['en', 'ru'].includes(lang)) return res.status(400).json({ error: 'Invalid lang' });
+
+    if (exported) {
+      await pool.query(
+        `UPDATE outfits
+         SET pinterest_exported = COALESCE(pinterest_exported, '{}') || $1::jsonb
+         WHERE id = $2`,
+        [JSON.stringify({ [lang]: new Date().toISOString() }), id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE outfits
+         SET pinterest_exported = COALESCE(pinterest_exported, '{}') - $1
+         WHERE id = $2`,
+        [lang, id]
+      );
+    }
+
+    const { rows } = await pool.query('SELECT pinterest_exported FROM outfits WHERE id = $1', [id]);
+    res.json({ pinterest_exported: rows[0]?.pinterest_exported ?? {} });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/admin/render/:id/analyze — run aesthetics analysis on a single render
 router.post('/render/:id/analyze', async (req, res, next) => {
   try {
