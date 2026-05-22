@@ -128,6 +128,37 @@ router.post('/outfit/:id/rows', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/pinterest-preview?lang=en&new=true
+// Returns JSON list of outfits that would be included in a Pinterest export.
+router.get('/pinterest-preview', async (req, res, next) => {
+  try {
+    const lang    = req.query.lang || 'en';
+    const onlyNew = req.query.new === 'true';
+
+    const { rows } = await pool.query(
+      `SELECT o.id, o.thumb_url, o.image_url, o.title,
+              COALESCE(
+                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
+              ) AS render_thumb,
+              COALESCE(
+                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
+              ) AS render_url
+       FROM outfits o
+       JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
+       WHERE t.status = 'ready'
+         AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
+       ORDER BY o.created_at DESC`,
+      [lang, onlyNew, lang]
+    );
+
+    res.json({ outfits: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/pinterest-export?lang=en&board=FFE
 // Returns a ready-to-upload CSV file for Pinterest bulk pin creation.
 // Uses first render from outfit_renders per outfit; falls back to image_url (sketch).
@@ -140,6 +171,7 @@ router.get('/pinterest-export', async (req, res, next) => {
     const DESC_MAX  = 500;
 
     const onlyNew = req.query.new === 'true';
+    const ids = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
 
     const { rows } = await pool.query(
       `SELECT o.id, o.image_url, o.thumb_url, o.title,
@@ -149,13 +181,18 @@ router.get('/pinterest-export', async (req, res, next) => {
               COALESCE(
                 (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
                 (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
-              ) AS render_url
+              ) AS render_url,
+              COALESCE(
+                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id AND r.pinterest_exported_at IS NOT NULL ORDER BY r.pinterest_exported_at DESC LIMIT 1),
+                (SELECT r.thumb_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1)
+              ) AS render_thumb_url
        FROM outfits o
        JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
        WHERE t.status = 'ready'
          AND ($2 = false OR (o.pinterest_exported->$3) IS NULL)
+         AND ($4::uuid[] IS NULL OR o.id = ANY($4::uuid[]))
        ORDER BY o.created_at DESC`,
-      [lang, onlyNew, lang]
+      [lang, onlyNew, lang, ids]
     );
 
     if (!rows.length) {
