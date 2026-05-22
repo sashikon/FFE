@@ -104,8 +104,9 @@ function RowsEditor({ outfitId, lang, initialRows }) {
   );
 }
 
-function RenderCard({ render, onDelete, onAnalyzed }) {
+function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
   const [analyzing, setAnalyzing] = useState(false);
+  const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const top = render.aesthetics?.top;
 
   const handleAnalyze = async (e) => {
@@ -118,6 +119,18 @@ function RenderCard({ render, onDelete, onAnalyzed }) {
       alert('Ошибка анализа: ' + err.message);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handlePinterestToggle = async (e) => {
+    e.stopPropagation();
+    const next = !pExported;
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/pinterest-mark`, { exported: next });
+      setPExported(data.pinterest_exported_at);
+      if (onPinterestMark) onPinterestMark(render.id, data.pinterest_exported_at);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
     }
   };
 
@@ -163,6 +176,18 @@ function RenderCard({ render, onDelete, onAnalyzed }) {
             <div className="bg-violet-500 h-full" style={{ width: `${top[0]?.score ?? 0}%` }} />
           </div>
         )}
+        {/* Pinterest mark — top-left corner */}
+        <button
+          onClick={handlePinterestToggle}
+          title={pExported
+            ? `В Pinterest с ${new Date(pExported).toLocaleDateString('ru')} — нажми чтобы снять`
+            : 'Отметить как загружено в Pinterest'}
+          className={`absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold transition-all ${
+            pExported
+              ? 'bg-rose-600 text-white opacity-90'
+              : 'bg-black/50 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-rose-400'
+          }`}
+        >P</button>
       </div>
 
       {top?.map((item, i) => (
@@ -262,7 +287,9 @@ function RendersSection({ outfitId, initialRenders }) {
       ) : (
         <div className="flex flex-wrap gap-3">
           {renders.map((r) => (
-            <RenderCard key={r.id} render={r} onDelete={handleDelete} onAnalyzed={handleAnalyzed} />
+            <RenderCard key={r.id} render={r} onDelete={handleDelete} onAnalyzed={handleAnalyzed}
+              onPinterestMark={(id, ts) => setRenders((prev) => prev.map((x) => x.id === id ? { ...x, pinterest_exported_at: ts } : x))}
+            />
           ))}
         </div>
       )}
