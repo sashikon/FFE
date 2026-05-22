@@ -385,10 +385,10 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
 
           {items?.length === 0 && (
             <div className="text-center py-16 text-zinc-600">
-              <p className="text-sm">Нет образов для экспорта.</p>
+              <p className="text-sm">Нет {rendersOnly ? 'рендеров' : 'образов'} для экспорта.</p>
               <p className="text-xs mt-1">
                 {rendersOnly
-                  ? 'Нет образов с ИИ рендерами отмеченными кружком P. Откройте карточку образа → рендеры → нажмите кружок P на миниатюре.'
+                  ? 'Все ИИ рендеры уже отмечены как загруженные в Pinterest. Или рендеры ещё не загружены.'
                   : `Все готовые образы уже отмечены как загруженные в Pinterest ${lang.toUpperCase()}.`}
               </p>
             </div>
@@ -469,7 +469,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         {items?.length > 0 && (
           <div className="px-5 py-4 border-t border-zinc-800 flex items-center justify-between shrink-0">
             <p className="text-xs text-zinc-600">
-              После скачивания все выбранные образы получат метку P·{lang.toUpperCase()}
+              После скачивания все выбранные {rendersOnly ? 'рендеры получат метку P на миниатюре' : `образы получат метку P·${lang.toUpperCase()}`}
             </p>
             <div className="flex gap-2">
               <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
@@ -844,14 +844,14 @@ export default function AdminPage() {
             <button
               onClick={() => setExportModal({ lang: 'en', rendersOnly: true, onlyNew: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
-              title="Образы с ИИ рендерами отмеченными P — EN"
+              title="ИИ рендеры не загруженные в Pinterest — EN"
             >
               <ImagePlus size={12} /> Рендеры EN
             </button>
             <button
               onClick={() => setExportModal({ lang: 'ru', rendersOnly: true, onlyNew: false })}
               className="px-2 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
-              title="Образы с ИИ рендерами — RU"
+              title="ИИ рендеры не загруженные в Pinterest — RU"
             >RU</button>
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: false, rendersOnly: false })}
