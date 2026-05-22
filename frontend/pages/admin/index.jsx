@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid } from 'lucide-react';
@@ -297,6 +297,195 @@ function RendersSection({ outfitId, initialRenders }) {
   );
 }
 
+function PinterestExportModal({ lang, onlyNew, onClose, onExported }) {
+  const [items, setItems] = useState(null); // null = loading
+  const [selected, setSelected] = useState(new Set());
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}) });
+    adminFetcher(`/api/admin/pinterest-preview?${params}`)
+      .then((data) => {
+        setItems(data.outfits || []);
+        setSelected(new Set((data.outfits || []).map((o) => o.id)));
+      })
+      .catch((e) => alert('Ошибка загрузки превью: ' + e.message));
+  }, [lang, onlyNew]);
+
+  const toggleAll = () => {
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map((o) => o.id)));
+  };
+
+  const toggle = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const handleExport = async () => {
+    if (!selected.size) return;
+    setExporting(true);
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const ids = [...selected].join(',');
+      const params = new URLSearchParams({ lang, board: 'FFE', ids });
+      const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
+        headers: token ? { 'x-admin-token': token } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onExported();
+      onClose();
+    } catch (e) {
+      alert('Ошибка экспорта: ' + e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-zinc-900 rounded-2xl border border-zinc-700 w-full max-w-2xl flex flex-col shadow-2xl"
+        style={{ maxHeight: '85vh' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
+          <div>
+            <p className="text-sm font-medium text-zinc-100">
+              Экспорт Pinterest · {lang.toUpperCase()}
+              {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">только новые</span>}
+            </p>
+            {items && (
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {selected.size} из {items.length} образов выбрано
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none transition-colors">×</button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-4 py-3">
+          {!items && (
+            <div className="flex items-center justify-center py-16 text-zinc-600">
+              <Loader2 size={20} className="animate-spin mr-2" /> Загружаю список…
+            </div>
+          )}
+
+          {items?.length === 0 && (
+            <div className="text-center py-16 text-zinc-600">
+              <p className="text-sm">Нет образов для экспорта.</p>
+              <p className="text-xs mt-1">Все готовые образы уже отмечены как загруженные в Pinterest {lang.toUpperCase()}.</p>
+            </div>
+          )}
+
+          {items?.length > 0 && (
+            <>
+              {/* Select all */}
+              <label className="flex items-center gap-2 px-2 py-2 mb-1 text-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={selected.size === items.length}
+                  onChange={toggleAll}
+                  className="accent-rose-500"
+                />
+                {selected.size === items.length ? 'Снять все' : 'Выбрать все'}
+              </label>
+
+              <div className="space-y-1">
+                {items.map((outfit) => {
+                  const isSelected = selected.has(outfit.id);
+                  const hasRender = !!(outfit.render_thumb || outfit.render_url);
+                  return (
+                    <label
+                      key={outfit.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
+                        isSelected ? 'bg-zinc-800' : 'bg-zinc-900 opacity-50 hover:opacity-70'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggle(outfit.id)}
+                        className="accent-rose-500 shrink-0"
+                      />
+
+                      {/* Sketch */}
+                      <div className="shrink-0">
+                        <img
+                          src={outfit.thumb_url || outfit.image_url}
+                          alt=""
+                          className="w-10 h-12 object-cover rounded-lg bg-zinc-700"
+                        />
+                      </div>
+
+                      {/* Arrow + render */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-zinc-700 text-xs">→</span>
+                        {hasRender ? (
+                          <div className="relative">
+                            <img
+                              src={outfit.render_thumb || outfit.render_url}
+                              alt=""
+                              className="w-10 h-12 object-cover rounded-lg bg-zinc-700 border border-violet-700"
+                            />
+                            <span className="absolute -bottom-1 -right-1 bg-violet-600 text-white text-[8px] rounded px-0.5 leading-tight">ИИ</span>
+                          </div>
+                        ) : (
+                          <div className="w-10 h-12 rounded-lg bg-zinc-800 border border-dashed border-zinc-700 flex items-center justify-center">
+                            <span className="text-[9px] text-zinc-600 text-center leading-tight px-0.5">нет рендера</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Title */}
+                      <span className="flex-1 min-w-0 text-xs text-zinc-300 truncate">
+                        {outfit.title || outfit.id}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {items?.length > 0 && (
+          <div className="px-5 py-4 border-t border-zinc-800 flex items-center justify-between shrink-0">
+            <p className="text-xs text-zinc-600">
+              После скачивания все выбранные образы получат метку P·{lang.toUpperCase()}
+            </p>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
+                Отмена
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={exporting || !selected.size}
+                className="flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Upload size={12} />
+                {exporting ? 'Готовлю…' : `Скачать CSV (${selected.size})`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CoverageBoard() {
   const { data, isLoading } = useSWR('/api/admin/coverage', adminFetcher);
 
@@ -535,7 +724,8 @@ export default function AdminPage() {
   const [csvExporting, setCsvExporting] = useState(false);
   const [view, setView] = useState('outfits'); // 'outfits' | 'coverage'
   const [sort, setSort] = useState('date'); // 'date' | 'renders'
-  const [pinterestFilter, setPinterestFilter] = useState('all'); // 'all' | 'new' | 'exported'
+  const [pinterestFilter, setPinterestFilter] = useState('all'); // 'all' | 'new-en' | 'new-ru' | 'exported'
+  const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew}
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -635,24 +825,20 @@ export default function AdminPage() {
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => handlePinterestExport('en', true)}
-              disabled={csvExporting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
-              title="Только новые образы (не выгруженные ранее) — EN"
+              onClick={() => setExportModal({ lang: 'en', onlyNew: true })}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
+              title="Превью и экспорт новых образов — EN"
             >
-              <Upload size={12} />
-              {csvExporting ? 'Готовлю…' : 'Новые EN'}
+              <Upload size={12} /> Экспорт EN
             </button>
             <button
-              onClick={() => handlePinterestExport('ru', true)}
-              disabled={csvExporting}
-              className="px-2 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors disabled:opacity-50"
-              title="Только новые образы — RU"
+              onClick={() => setExportModal({ lang: 'ru', onlyNew: true })}
+              className="px-2 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
+              title="Превью и экспорт новых образов — RU"
             >RU</button>
             <button
-              onClick={() => handlePinterestExport('en', false)}
-              disabled={csvExporting}
-              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-500 text-xs rounded-lg transition-colors disabled:opacity-50"
+              onClick={() => setExportModal({ lang: 'en', onlyNew: false })}
+              className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-500 text-xs rounded-lg transition-colors"
               title="Все готовые образы — EN"
             >Все</button>
           </div>
@@ -829,6 +1015,15 @@ export default function AdminPage() {
         </>)}
       </main>
     </div>
+
+    {exportModal && (
+      <PinterestExportModal
+        lang={exportModal.lang}
+        onlyNew={exportModal.onlyNew}
+        onClose={() => setExportModal(null)}
+        onExported={() => mutate('/api/admin/outfits')}
+      />
+    )}
     </>
   );
 }
