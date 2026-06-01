@@ -585,12 +585,10 @@ function CoverageBoard() {
 }
 
 function RendersGallery({ outfits, onMutate }) {
-  // Flatten all renders with their parent outfit info
-  const allRenders = (outfits || []).flatMap((o) =>
-    (o.renders || []).map((r) => ({ ...r, outfit: o }))
+  const [localRenders, setLocalRenders] = useState(() =>
+    (outfits || []).flatMap((o) => (o.renders || []).map((r) => ({ ...r, outfit: o })))
   );
-
-  const [localRenders, setLocalRenders] = useState(allRenders);
+  const [filter, setFilter] = useState('all'); // 'all' | 'pinterest' | 'new'
 
   // Sync when outfits data changes
   useEffect(() => {
@@ -619,8 +617,6 @@ function RendersGallery({ outfits, onMutate }) {
       prev.map((r) => (r.id === renderId ? { ...r, pinterest_exported_at: ts } : r))
     );
   };
-
-  const [filter, setFilter] = useState('all'); // 'all' | 'pinterest' | 'new'
 
   const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
   const notUploaded = localRenders.filter((r) => !r.pinterest_exported_at).length;
