@@ -620,6 +620,17 @@ function RendersGallery({ outfits, onMutate }) {
     );
   };
 
+  const [filter, setFilter] = useState('all'); // 'all' | 'pinterest' | 'new'
+
+  const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
+  const notUploaded = localRenders.filter((r) => !r.pinterest_exported_at).length;
+
+  const visible = filter === 'pinterest'
+    ? localRenders.filter((r) => r.pinterest_exported_at)
+    : filter === 'new'
+    ? localRenders.filter((r) => !r.pinterest_exported_at)
+    : localRenders;
+
   if (!localRenders.length) {
     return (
       <div className="text-center py-24 text-zinc-600">
@@ -630,22 +641,25 @@ function RendersGallery({ outfits, onMutate }) {
     );
   }
 
-  const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
-
   return (
     <div>
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <h2 className="text-lg font-medium text-zinc-300">ИИ рендеры</h2>
-        <span className="text-sm text-zinc-500">{localRenders.length} всего</span>
-        {pExported > 0 && (
-          <span className="text-sm text-rose-400">{pExported} в Pinterest</span>
-        )}
-        <span className="text-sm text-zinc-600">
-          {localRenders.filter((r) => !r.pinterest_exported_at).length} не загружено
-        </span>
+        <button
+          onClick={() => setFilter('all')}
+          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+        >{localRenders.length} всего</button>
+        <button
+          onClick={() => setFilter('pinterest')}
+          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}
+        >{pExported} в Pinterest</button>
+        <button
+          onClick={() => setFilter('new')}
+          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+        >{notUploaded} не загружено</button>
       </div>
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-        {localRenders.map((render) => (
+        {visible.map((render) => (
           <GalleryRenderCard
             key={render.id}
             render={render}
