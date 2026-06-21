@@ -23,8 +23,18 @@ async function uploadImage(filePath) {
   return { imageUrl: result.secure_url, thumbUrl };
 }
 
+async function uploadSvg(filePath) {
+  const result = await cloudinary.uploader.upload(filePath, {
+    folder: 'ffe/svg-layers',
+    resource_type: 'raw',
+    use_filename: true,
+    unique_filename: true,
+  });
+  return result.secure_url;
+}
+
 async function deleteImage(publicId) {
   await cloudinary.uploader.destroy(publicId);
 }
 
-module.exports = { uploadImage, deleteImage };
+module.exports = { uploadImage, uploadSvg, deleteImage };

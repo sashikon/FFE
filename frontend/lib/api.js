@@ -31,6 +31,16 @@ export const apiPost = (url, body) => {
   });
 };
 
+export const apiPatch = (url, body) =>
+  fetch(`${BASE}${url}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: { ...adminHeaders(), 'Content-Type': 'application/json' },
+  }).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+
 export const apiDelete = (url) =>
   fetch(`${BASE}${url}`, { method: 'DELETE', headers: adminHeaders() }).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -7,7 +7,7 @@ const { analyzeOutfit } = require('../llm/pipeline');
 const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
-const { uploadImage } = require('../storage/cloudinary');
+const { uploadImage, uploadSvg } = require('../storage/cloudinary');
 
 const upload = multer({ dest: '/tmp/ffe-uploads/' });
 
@@ -24,7 +24,12 @@ router.get('/outfits', async (req, res, next) => {
               COALESCE((
                 SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
-              ), '[]') AS renders
+              ), '[]') AS renders,
+              COALESCE((
+                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order)
+                        ORDER BY s.sort_order, s.created_at)
+                FROM outfit_svg_layers s WHERE s.outfit_id = o.id
+              ), '[]') AS svg_layers
        FROM outfits o
        LEFT JOIN outfit_translations t ON t.outfit_id = o.id
        GROUP BY o.id
@@ -54,6 +59,57 @@ router.post('/outfit/:id/renders', upload.array('render', 20), async (req, res, 
     }));
 
     res.status(201).json({ renders: results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/svg-layers — upload SVG layer files
+router.post('/outfit/:id/svg-layers', upload.array('svg', 20), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No files provided' });
+
+    const results = await Promise.all(files.map(async (file, i) => {
+      const label = (Array.isArray(req.body.labels) ? req.body.labels[i] : req.body.labels) || file.originalname.replace(/\.svg$/i, '');
+      const sortOrder = parseInt((Array.isArray(req.body.orders) ? req.body.orders[i] : req.body.orders) || '0') || i;
+      const svgUrl = await uploadSvg(file.path);
+      fs.unlink(file.path, () => {});
+      const { rows } = await pool.query(
+        'INSERT INTO outfit_svg_layers (outfit_id, label, svg_url, sort_order) VALUES ($1, $2, $3, $4) RETURNING id, label, svg_url, sort_order',
+        [id, label, svgUrl, sortOrder]
+      );
+      return rows[0];
+    }));
+
+    res.status(201).json({ layers: results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/svg-layer/:id — update label or sort_order
+router.patch('/svg-layer/:layerId', async (req, res, next) => {
+  try {
+    const { layerId } = req.params;
+    const { label, sort_order } = req.body;
+    await pool.query(
+      'UPDATE outfit_svg_layers SET label = COALESCE($1, label), sort_order = COALESCE($2, sort_order) WHERE id = $3',
+      [label ?? null, sort_order ?? null, layerId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/admin/svg-layer/:id
+router.delete('/svg-layer/:layerId', async (req, res, next) => {
+  try {
+    const { layerId } = req.params;
+    await pool.query('DELETE FROM outfit_svg_layers WHERE id = $1', [layerId]);
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

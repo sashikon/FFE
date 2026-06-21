@@ -43,7 +43,12 @@ router.get('/outfit/:id', async (req, res, next) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
-    const outfit = rows[0];
+    const { rows: svgRows } = await pool.query(
+      'SELECT id, label, svg_url, sort_order FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+      [id]
+    );
+
+    const outfit = { ...rows[0], svg_layers: svgRows };
 
     // Try Redis cache first
     let gameRows = await getGameRows(id, lang);

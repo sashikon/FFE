@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid, Camera } from 'lucide-react';
-import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
+import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
 const AESTHETICS = [
@@ -209,6 +209,99 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SvgLayersSection({ outfitId, initialLayers }) {
+  const [layers, setLayers] = useState(initialLayers || []);
+  const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState('');
+  const fileRef = useRef(null);
+
+  const handleUpload = async (files) => {
+    const svgFiles = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.svg') || f.type === 'image/svg+xml');
+    if (!svgFiles.length) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      svgFiles.forEach((f) => form.append('svg', f));
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers`, form);
+      setLayers((prev) => [...prev, ...data.layers].sort((a, b) => a.sort_order - b.sort_order));
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setUploading(false);
+      fileRef.current && (fileRef.current.value = '');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    await apiDelete(`/api/admin/svg-layer/${id}`);
+    setLayers((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  const handleSaveLabel = async (id) => {
+    await apiPatch(`/api/admin/svg-layer/${id}`, { label: editLabel });
+    setLayers((prev) => prev.map((l) => l.id === id ? { ...l, label: editLabel } : l));
+    setEditingId(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          SVG-слои ({layers.length})
+        </span>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+        >
+          <Upload size={12} /> {uploading ? 'Загружаю…' : 'Добавить SVG'}
+        </button>
+        <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple className="hidden"
+          onChange={(e) => handleUpload(e.target.files)} />
+      </div>
+      {layers.length === 0 ? (
+        <p className="text-xs text-zinc-600 italic">Нет SVG-слоёв — загрузи файлы предметов одежды</p>
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          {layers.map((layer) => (
+            <div key={layer.id} className="relative group flex flex-col items-center bg-zinc-800/60 rounded-lg p-2 w-20">
+              <span className="absolute top-1 left-1.5 text-[9px] text-zinc-600 leading-none">{layer.sort_order}</span>
+              <button
+                onClick={() => handleDelete(layer.id)}
+                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"
+              >
+                <Trash2 size={10} />
+              </button>
+              <img src={layer.svg_url} alt={layer.label} className="w-14 h-16 object-contain" />
+              <div className="w-full mt-1">
+                {editingId === layer.id ? (
+                  <input
+                    autoFocus
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    onBlur={() => handleSaveLabel(layer.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveLabel(layer.id)}
+                    className="w-full bg-transparent text-white text-[10px] text-center outline-none border-b border-zinc-500"
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setEditingId(layer.id); setEditLabel(layer.label); }}
+                    className="w-full text-[10px] text-zinc-400 hover:text-zinc-200 text-center truncate transition-colors"
+                    title={layer.label || 'Нажми чтобы добавить название'}
+                  >
+                    {layer.label || '—'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -934,8 +1027,13 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
 
       {expanded && (
         <div className="border-t border-zinc-800 p-4 space-y-6">
+          {/* SVG layers */}
+          <SvgLayersSection outfitId={outfit.id} initialLayers={outfit.svg_layers || []} />
+
           {/* Renders */}
-          <RendersSection outfitId={outfit.id} initialRenders={outfit.renders || []} />
+          <div className="border-t border-zinc-800/50 pt-4">
+            <RendersSection outfitId={outfit.id} initialRenders={outfit.renders || []} />
+          </div>
 
           {/* Game rows per language */}
           {(ruReady || enReady) && (

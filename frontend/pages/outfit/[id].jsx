@@ -160,6 +160,7 @@ export default function OutfitPage() {
         <div className={`transition-all duration-500 bg-zinc-950 overflow-y-auto overflow-x-hidden relative flex flex-col ${frameClass}`}>
           <GameCard
             imageSrc={data.image_url}
+            svgLayers={data.svg_layers?.length > 0 ? data.svg_layers : undefined}
             gameData={data.game_rows}
             outfitId={id}
             isMobile={isMobile}
