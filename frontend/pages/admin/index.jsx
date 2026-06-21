@@ -676,6 +676,102 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
   );
 }
 
+function MechanicsBoard({ outfits }) {
+  const total = outfits?.length ?? 0;
+  const readyRu = outfits?.filter((o) => o.translations?.ru?.status === 'ready').length ?? 0;
+  const withVisual = outfits?.filter((o) => o.svg_layers?.some((l) => l.is_wrong)).length ?? 0;
+  const withSvg = outfits?.filter((o) => o.svg_layers?.length > 0).length ?? 0;
+
+  const MECHANICS = [
+    {
+      num: '01',
+      name: 'Словесные раунды',
+      color: 'zinc',
+      status: `${readyRu} из ${total} образов`,
+      trigger: 'Автоматически когда статус RU = ready',
+      description: '5 последовательных раундов по семиотическим слоям образа. В каждом — 4 слова, одно лишнее. Игрок находит его.',
+      rounds: [
+        { name: 'Форма', desc: 'Силуэт и конструкция — трапеция, футляр, буфы, складки' },
+        { name: 'Детали', desc: 'Декоративные элементы, фурнитура, отделка' },
+        { name: 'Цвет', desc: 'Цветовая семантика образа' },
+        { name: 'Смысл', desc: 'Архетип и нарратив — doll-like, power, romantic' },
+        { name: 'Ассоциации', desc: 'Культурные и контекстуальные коды' },
+      ],
+    },
+    {
+      num: '02',
+      name: 'Цветовые свотчи',
+      color: 'amber',
+      status: `Все образы с раундом «Цвет»`,
+      trigger: 'Автоматически в раунде с theme = "цвет" / "color"',
+      description: 'В раунде цвета рядом с каждым словом-вариантом появляется цветной кружок. Визуальный якорь помогает соотнести название цвета с реальным оттенком.',
+      rounds: [
+        { name: 'Словарь', desc: '17 цветов RU + 25 EN → HEX (бежевый, графит, антрацит, ivory, taupe…)' },
+        { name: 'Fallback', desc: 'Если цвет не в словаре — свотч не показывается, слово выводится как обычно' },
+      ],
+    },
+    {
+      num: '03',
+      name: 'Визуальный уровень',
+      color: 'violet',
+      status: `${withVisual} из ${total} образов`,
+      trigger: `Когда у образа есть SVG-слои и один отмечен is_wrong (сейчас ${withSvg} образов с SVG)`,
+      description: 'Первый уровень перед словесными раундами. Показывает карточки предметов одежды (SVG). Один предмет — лишний. Игрок тапает его чтобы убрать из образа.',
+      rounds: [
+        { name: 'Правильный тап', desc: 'Карточка вылетает с анимацией → появляется объяснение почему лишний → кнопка перехода к раундам' },
+        { name: 'Неправильный тап', desc: 'Карточка трясётся → попробуй снова' },
+        { name: 'Данные', desc: 'SVG-слои с метками + is_wrong: true на лишнем предмете + wrong_reason (из Claude-анализа или вручную)' },
+        { name: 'Подготовка', desc: 'Загрузи SVG предметов → кнопка «Найти лишний» или клик по карточке для ручной пометки' },
+      ],
+    },
+  ];
+
+  const colorMap = {
+    zinc: { border: 'border-zinc-700', badge: 'bg-zinc-800 text-zinc-300', dot: 'bg-zinc-500', num: 'text-zinc-600' },
+    amber: { border: 'border-amber-900/60', badge: 'bg-amber-950/60 text-amber-300', dot: 'bg-amber-500', num: 'text-amber-800' },
+    violet: { border: 'border-violet-900/60', badge: 'bg-violet-950/60 text-violet-300', dot: 'bg-violet-500', num: 'text-violet-800' },
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="mb-2">
+        <h2 className="text-lg font-medium text-zinc-300 mb-1">Игровые механики</h2>
+        <p className="text-xs text-zinc-600">Что реализовано в игре и как включается</p>
+      </div>
+
+      {MECHANICS.map((m) => {
+        const c = colorMap[m.color];
+        return (
+          <div key={m.num} className={`rounded-2xl border ${c.border} bg-zinc-900 p-6`}>
+            <div className="flex items-start gap-4 mb-4">
+              <span className={`text-4xl font-serif font-bold ${c.num} shrink-0 leading-none`}>{m.num}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap mb-1">
+                  <h3 className="text-base font-semibold text-zinc-100">{m.name}</h3>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${c.badge}`}>{m.status}</span>
+                </div>
+                <p className="text-[11px] text-zinc-600 mb-2">{m.trigger}</p>
+                <p className="text-sm text-zinc-400 leading-relaxed">{m.description}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-14">
+              {m.rounds.map((r) => (
+                <div key={r.name} className="flex items-start gap-2">
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${c.dot}`} />
+                  <div>
+                    <span className="text-xs text-zinc-300 font-medium">{r.name}</span>
+                    <span className="text-xs text-zinc-600"> — {r.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CoverageBoard() {
   const { data, isLoading } = useSWR('/api/admin/coverage', adminFetcher);
 
@@ -1261,6 +1357,12 @@ export default function AdminPage() {
             >
               <LayoutGrid size={13} /> Coverage
             </button>
+            <button
+              onClick={() => setView('mechanics')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'mechanics' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+            >
+              <Sparkles size={13} /> Механики
+            </button>
           </div>
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
           <div className="flex items-center gap-1 flex-wrap">
@@ -1300,6 +1402,7 @@ export default function AdminPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-10">
         {view === 'coverage' && <CoverageBoard />}
+        {view === 'mechanics' && <MechanicsBoard outfits={data?.outfits} />}
         {view === 'renders' && (
           <RendersGallery outfits={data?.outfits} onMutate={() => mutate('/api/admin/outfits')} />
         )}
