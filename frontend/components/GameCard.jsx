@@ -19,6 +19,28 @@ import ImageViewer from './ImageViewer';
 import ProgressBar from './ProgressBar';
 import ResultScreen from './ResultScreen';
 
+const COLOR_MAP = {
+  // RU
+  'алый': '#C0392B', 'антрацит': '#2C2C2E', 'бежевый': '#C8A882',
+  'белый': '#F5F5F0', 'бордовый': '#7B1A2E', 'графит': '#4A4A4A',
+  'графитовый': '#4A4A4A', 'красный': '#D32F2F', 'монохром': '#6B6B6B',
+  'пастель': '#E8D0C4', 'песочный': '#C2A46A', 'пудровый': '#E8C4B8',
+  'пурпурный': '#7B2D8B', 'тёмно-серый': '#555555', 'тёмный': '#222222',
+  'уголь': '#2C2C2C', 'чёрный': '#1A1A1A',
+  // EN
+  'anthracite': '#2C2C2E', 'beige': '#C8A882', 'black': '#1A1A1A',
+  'burgundy': '#7B1A2E', 'camel': '#C19A6B', 'charcoal': '#36454F',
+  'coral': '#E8735A', 'crimson': '#DC143C', 'dark': '#222222',
+  'fuchsia': '#CC2E8A', 'graphite': '#4A4A4A', 'grey': '#808080',
+  'ivory': '#F5F0E8', 'khaki': '#8B8560', 'monochrome': '#6B6B6B',
+  'neon': '#39FF14', 'neon pink': '#FF6EC7', 'neutral': '#9B9B9B',
+  'noir': '#1A1A1A', 'nude': '#E3C9AE', 'onyx': '#353839',
+  'pastel': '#E8D0C4', 'sand': '#C2A46A', 'tan': '#D2B48C', 'taupe': '#8B8682',
+  'white': '#F5F5F0',
+};
+
+const COLOR_THEMES = new Set(['цвет', 'color', 'colour']);
+
 const shuffleArray = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -248,23 +270,33 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, gameDat
               </p>
 
               <div className={`grid grid-cols-2 ${isMobile ? 'gap-3 mb-5' : 'gap-4 mb-8'}`}>
-                {shuffledOptions.map((option, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleOptionClick(option)}
-                    disabled={isAnswered}
-                    className={`relative overflow-hidden w-full ${isMobile ? 'px-2 py-3 text-[12px] leading-tight min-h-[60px]' : 'p-4 text-lg tracking-wide'} rounded-xl border transition-all duration-300 font-medium ${getButtonStyles(option)}`}
-                  >
-                    {isDesktop && !isAnswered && (
-                      <span className="absolute top-2 left-2 text-[10px] font-mono text-zinc-400 border border-zinc-300 rounded px-1.5 py-0.5">
-                        {idx + 1}
+                {shuffledOptions.map((option, idx) => {
+                  const isColorRound = COLOR_THEMES.has(currentData?.theme?.toLowerCase());
+                  const swatch = isColorRound ? COLOR_MAP[option.toLowerCase()] : null;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleOptionClick(option)}
+                      disabled={isAnswered}
+                      className={`relative overflow-hidden w-full ${isMobile ? 'px-2 py-3 text-[12px] leading-tight min-h-[60px]' : 'p-4 text-lg tracking-wide'} rounded-xl border transition-all duration-300 font-medium ${getButtonStyles(option)}`}
+                    >
+                      {isDesktop && !isAnswered && (
+                        <span className="absolute top-2 left-2 text-[10px] font-mono text-zinc-400 border border-zinc-300 rounded px-1.5 py-0.5">
+                          {idx + 1}
+                        </span>
+                      )}
+                      <span className="w-full break-words hyphens-auto flex items-center justify-center gap-2 h-full" lang="ru">
+                        {swatch && (
+                          <span
+                            className="shrink-0 rounded-full border border-white/20"
+                            style={{ width: isMobile ? 14 : 18, height: isMobile ? 14 : 18, background: swatch }}
+                          />
+                        )}
+                        {option}
                       </span>
-                    )}
-                    <span className="w-full break-words hyphens-auto flex items-center justify-center h-full" lang="ru">
-                      {option}
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
 
               {isAnswered && (
