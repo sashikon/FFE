@@ -8,3 +8,6 @@ CREATE TABLE IF NOT EXISTS outfit_svg_layers (
 );
 
 CREATE INDEX IF NOT EXISTS outfit_svg_layers_outfit_id ON outfit_svg_layers(outfit_id);
+
+ALTER TABLE outfit_svg_layers ADD COLUMN IF NOT EXISTS is_wrong BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE outfit_svg_layers ADD COLUMN IF NOT EXISTS wrong_reason TEXT;

@@ -7,7 +7,10 @@ const { analyzeOutfit } = require('../llm/pipeline');
 const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
+const Anthropic = require('@anthropic-ai/sdk');
 const { uploadImage, uploadSvg } = require('../storage/cloudinary');
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
 
 const upload = multer({ dest: '/tmp/ffe-uploads/' });
 
@@ -26,7 +29,7 @@ router.get('/outfits', async (req, res, next) => {
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
-                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order)
+                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason)
                         ORDER BY s.sort_order, s.created_at)
                 FROM outfit_svg_layers s WHERE s.outfit_id = o.id
               ), '[]') AS svg_layers
@@ -64,6 +67,73 @@ router.post('/outfit/:id/renders', upload.array('render', 20), async (req, res, 
   }
 });
 
+// POST /api/admin/outfit/:id/svg-layers/analyze — find wrong item via Claude
+router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [layersResult, transResult] = await Promise.all([
+      pool.query(
+        'SELECT id, label FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
+        [id]
+      ),
+      pool.query(
+        'SELECT lang, game_rows FROM outfit_translations WHERE outfit_id = $1 AND status = \'ready\'',
+        [id]
+      ),
+    ]);
+
+    const layers = layersResult.rows;
+    if (layers.length < 2) return res.status(400).json({ error: 'Нужно минимум 2 слоя с названиями' });
+
+    const trans = {};
+    transResult.rows.forEach((r) => { trans[r.lang] = r.game_rows; });
+    const gameRows = trans.ru || trans.en;
+    if (!gameRows) return res.status(400).json({ error: 'Нет готового семиотического анализа образа' });
+
+    const semiotics = gameRows.map((r) => {
+      const wrong = r.correct || '';
+      const rest = (r.options || []).filter((o) => o !== wrong).join(', ');
+      return `${r.theme}: ${rest} (лишнее: ${wrong})`;
+    }).join('\n');
+
+    const itemList = layers.map((l) => l.label).join(', ');
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: `Семиотика образа:\n${semiotics}\n\nПредметы в образе: ${itemList}\n\nКакой ОДИН предмет нарушает общую семиотику? Ответь строго в формате JSON:\n{"label":"название предмета","reason":"1-2 предложения почему он лишний"}`,
+      }],
+    });
+
+    let parsed;
+    try {
+      const text = response.content[0].text;
+      const match = text.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(match[0]);
+    } catch {
+      return res.status(500).json({ error: 'Не удалось распарсить ответ Claude' });
+    }
+
+    const wrongLayer = layers.find((l) => l.label.toLowerCase() === parsed.label.toLowerCase())
+      || layers.find((l) => l.label.toLowerCase().includes(parsed.label.toLowerCase()));
+
+    if (!wrongLayer) return res.status(400).json({ error: `Claude назвал предмет "${parsed.label}", но такого слоя нет`, suggestion: parsed });
+
+    await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [id]);
+    await pool.query(
+      'UPDATE outfit_svg_layers SET is_wrong = TRUE, wrong_reason = $1 WHERE id = $2',
+      [parsed.reason, wrongLayer.id]
+    );
+
+    res.json({ wrong_layer_id: wrongLayer.id, label: wrongLayer.label, reason: parsed.reason });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/admin/outfit/:id/svg-layers — upload SVG layer files
 router.post('/outfit/:id/svg-layers', upload.array('svg', 20), async (req, res, next) => {
   try {
@@ -89,14 +159,22 @@ router.post('/outfit/:id/svg-layers', upload.array('svg', 20), async (req, res, 
   }
 });
 
-// PATCH /api/admin/svg-layer/:id — update label or sort_order
+// PATCH /api/admin/svg-layer/:id — update label, sort_order, or is_wrong
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
     const { layerId } = req.params;
-    const { label, sort_order } = req.body;
+    const { label, sort_order, is_wrong } = req.body;
+    if (is_wrong === true) {
+      const { rows } = await pool.query('SELECT outfit_id FROM outfit_svg_layers WHERE id = $1', [layerId]);
+      if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [rows[0].outfit_id]);
+    }
     await pool.query(
-      'UPDATE outfit_svg_layers SET label = COALESCE($1, label), sort_order = COALESCE($2, sort_order) WHERE id = $3',
-      [label ?? null, sort_order ?? null, layerId]
+      `UPDATE outfit_svg_layers SET
+        label = COALESCE($1, label),
+        sort_order = COALESCE($2, sort_order),
+        is_wrong = COALESCE($3, is_wrong)
+       WHERE id = $4`,
+      [label ?? null, sort_order ?? null, is_wrong ?? null, layerId]
     );
     res.json({ ok: true });
   } catch (err) {

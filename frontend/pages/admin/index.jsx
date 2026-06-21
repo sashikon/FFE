@@ -208,11 +208,37 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
 
 function SvgLayersSection({ outfitId, initialLayers }) {
   const [layers, setLayers] = useState(initialLayers || []);
-  const [pending, setPending] = useState([]); // [{file, label}]
+  const [pending, setPending] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
   const fileRef = useRef(null);
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers/analyze`, {});
+      setLayers((prev) => prev.map((l) => ({
+        ...l,
+        is_wrong: l.id === data.wrong_layer_id,
+        wrong_reason: l.id === data.wrong_layer_id ? data.reason : l.wrong_reason,
+      })));
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleToggleWrong = async (layer) => {
+    const next = !layer.is_wrong;
+    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { is_wrong: next });
+    setLayers((prev) => prev.map((l) => ({
+      ...l,
+      is_wrong: l.id === layer.id ? next : (next ? false : l.is_wrong),
+    })));
+  };
 
   const handleFilePick = (files) => {
     const svgFiles = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.svg') || f.type === 'image/svg+xml');
@@ -258,13 +284,26 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
           SVG-слои ({layers.length})
         </span>
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
-        >
-          <Upload size={12} /> Добавить SVG
-        </button>
+        <div className="flex items-center gap-3">
+          {layers.filter(l => l.label).length >= 2 && (
+            <button
+              onClick={handleAnalyze}
+              disabled={analyzing}
+              className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+              title="Claude определит лишний предмет по семиотике"
+            >
+              {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+              {analyzing ? 'Анализирую…' : 'Найти лишний'}
+            </button>
+          )}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+          >
+            <Upload size={12} /> Добавить SVG
+          </button>
+        </div>
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple className="hidden"
           onChange={(e) => handleFilePick(e.target.files)} />
       </div>
@@ -304,15 +343,21 @@ function SvgLayersSection({ outfitId, initialLayers }) {
       ) : layers.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {layers.map((layer) => (
-            <div key={layer.id} className="relative group flex flex-col items-center bg-zinc-800/60 rounded-lg p-2 w-20">
+            <div key={layer.id} className={`relative group flex flex-col items-center rounded-lg p-2 w-20 border transition-colors ${layer.is_wrong ? 'bg-rose-950/40 border-rose-700' : 'bg-zinc-800/60 border-transparent'}`}
+              title={layer.is_wrong && layer.wrong_reason ? layer.wrong_reason : undefined}>
               <span className="absolute top-1 left-1.5 text-[9px] text-zinc-600 leading-none">{layer.sort_order}</span>
-              <button
-                onClick={() => handleDelete(layer.id)}
-                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"
-              >
-                <Trash2 size={10} />
+              <div className="absolute top-1 right-1 flex items-center gap-1">
+                {layer.is_wrong && <span className="text-[9px] text-rose-400 font-bold leading-none">✕</span>}
+                <button
+                  onClick={() => handleDelete(layer.id)}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </div>
+              <button onClick={() => handleToggleWrong(layer)} title={layer.is_wrong ? 'Снять метку лишнего' : 'Отметить как лишний'}>
+                <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
               </button>
-              <img src={layer.svg_url} alt={layer.label} className="w-14 h-16 object-contain" />
               <div className="w-full mt-1">
                 {editingId === layer.id ? (
                   <input
@@ -337,6 +382,18 @@ function SvgLayersSection({ outfitId, initialLayers }) {
           ))}
         </div>
       )}
+
+      {/* Wrong item explanation */}
+      {(() => {
+        const wrong = layers.find(l => l.is_wrong && l.wrong_reason);
+        if (!wrong) return null;
+        return (
+          <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider">Лишний предмет: {wrong.label}</span>
+            <p className="text-xs text-zinc-400 mt-1">{wrong.wrong_reason}</p>
+          </div>
+        );
+      })()}
     </div>
   );
 }
