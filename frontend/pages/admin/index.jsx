@@ -142,13 +142,6 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
           alt=""
           className="w-[72px] h-[90px] object-cover rounded-lg bg-zinc-800 border border-zinc-700"
         />
-        <button
-          onClick={() => onDelete(render.id)}
-          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
-          title="Удалить"
-        >
-          <XCircle size={12} />
-        </button>
         {analyzing ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-lg">
             <Loader2 size={16} className="animate-spin text-white" />
@@ -807,15 +800,6 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
 
         {/* Overlay buttons */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all rounded-xl" />
-
-        {/* Delete */}
-        <button
-          onClick={() => onDelete(render.id)}
-          className="absolute top-2 right-2 w-7 h-7 bg-rose-600 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
-          title="Удалить"
-        >
-          <XCircle size={14} />
-        </button>
 
         {/* Analyze */}
         {analyzing ? (
