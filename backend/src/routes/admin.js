@@ -117,10 +117,15 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
       return res.status(500).json({ error: 'Не удалось распарсить ответ Claude' });
     }
 
-    const wrongLayer = layers.find((l) => l.label.toLowerCase() === parsed.label.toLowerCase())
-      || layers.find((l) => l.label.toLowerCase().includes(parsed.label.toLowerCase()));
+    const needle = parsed.label.toLowerCase();
+    const wrongLayer = layers.find((l) => l.label.toLowerCase() === needle)
+      || layers.find((l) => l.label.toLowerCase().includes(needle))
+      || layers.find((l) => needle.includes(l.label.toLowerCase()))
+      || layers.find((l) => l.label.toLowerCase().split(/\s+/).some((w) => w.length > 3 && needle.includes(w)));
 
-    if (!wrongLayer) return res.status(400).json({ error: `Claude назвал предмет "${parsed.label}", но такого слоя нет`, suggestion: parsed });
+    if (!wrongLayer) return res.status(400).json({
+      error: `Claude назвал "${parsed.label}", не совпало ни с одной меткой (${layers.map((l) => l.label).join(', ')}) — отметь вручную кликом на предмет`,
+    });
 
     await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [id]);
     await pool.query(
