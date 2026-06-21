@@ -1312,6 +1312,10 @@ export default function AdminPage() {
                   onClick={() => setSort('renders')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'renders' ? 'border-violet-500 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
                 >с рендерами</button>
+                <button
+                  onClick={() => setSort(sort === 'svg' ? 'date' : 'svg')}
+                  className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'svg' ? 'border-emerald-500 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                >с SVG</button>
               </div>
             </div>
           );
@@ -1331,6 +1335,8 @@ export default function AdminPage() {
           data.outfits.forEach((o) => { if (o.file_hash) hashCounts[o.file_hash] = (hashCounts[o.file_hash] || 0) + 1; });
           const sorted = sort === 'renders'
             ? [...data.outfits].sort((a, b) => (b.renders?.length || 0) - (a.renders?.length || 0))
+            : sort === 'svg'
+            ? [...data.outfits].filter((o) => o.svg_layers?.length > 0)
             : data.outfits;
           const pFiltered = pinterestFilter === 'new-en'
             ? sorted.filter((o) => !o.pinterest_exported?.en)
