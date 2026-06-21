@@ -838,7 +838,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
           <img
             src={sketchUrl || outfit.thumb_url || outfit.image_url}
             alt=""
-            className="w-14 h-14 object-cover rounded-lg bg-zinc-800"
+            className="w-14 h-14 object-contain rounded-lg bg-zinc-800"
           />
           <button
             onClick={() => sketchFileRef.current?.click()}
