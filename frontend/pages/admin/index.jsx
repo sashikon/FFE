@@ -208,28 +208,36 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
 
 function SvgLayersSection({ outfitId, initialLayers }) {
   const [layers, setLayers] = useState(initialLayers || []);
+  const [pending, setPending] = useState([]); // [{file, label}]
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
   const fileRef = useRef(null);
 
-  const handleUpload = async (files) => {
+  const handleFilePick = (files) => {
     const svgFiles = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.svg') || f.type === 'image/svg+xml');
     if (!svgFiles.length) return;
+    setPending(svgFiles.map((f) => ({ file: f, label: f.name.replace(/\.svg$/i, '') })));
+    fileRef.current && (fileRef.current.value = '');
+  };
+
+  const handleUpload = async () => {
+    if (!pending.length) return;
     setUploading(true);
     try {
       const form = new FormData();
-      svgFiles.forEach((f) => {
-        form.append('svg', f);
-        form.append('labels', f.name.replace(/\.svg$/i, ''));
+      pending.forEach((p, i) => {
+        form.append('svg', p.file);
+        form.append('labels', p.label || p.file.name.replace(/\.svg$/i, ''));
+        form.append('orders', String(layers.length + i));
       });
       const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers`, form);
       setLayers((prev) => [...prev, ...data.layers].sort((a, b) => a.sort_order - b.sort_order));
+      setPending([]);
     } catch (e) {
       alert('Ошибка: ' + e.message);
     } finally {
       setUploading(false);
-      fileRef.current && (fileRef.current.value = '');
     }
   };
 
@@ -255,14 +263,45 @@ function SvgLayersSection({ outfitId, initialLayers }) {
           disabled={uploading}
           className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
         >
-          <Upload size={12} /> {uploading ? 'Загружаю…' : 'Добавить SVG'}
+          <Upload size={12} /> Добавить SVG
         </button>
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple className="hidden"
-          onChange={(e) => handleUpload(e.target.files)} />
+          onChange={(e) => handleFilePick(e.target.files)} />
       </div>
-      {layers.length === 0 ? (
+
+      {/* Pending files — label before upload */}
+      {pending.length > 0 && (
+        <div className="mb-4 bg-zinc-800/50 rounded-xl p-3 space-y-2 border border-zinc-700">
+          <p className="text-[11px] text-zinc-400 mb-2">Назови каждый предмет перед загрузкой:</p>
+          {pending.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-600 w-4 shrink-0">{i + 1}</span>
+              <span className="text-[10px] text-zinc-500 truncate w-24 shrink-0">{p.file.name}</span>
+              <input
+                value={p.label}
+                onChange={(e) => setPending((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                placeholder="платье, обувь, леггинсы…"
+                className="flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-white placeholder-zinc-600 outline-none focus:border-zinc-400"
+              />
+            </div>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleUpload}
+              disabled={uploading}
+              className="flex items-center gap-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+            >
+              {uploading ? <><Loader2 size={11} className="animate-spin" /> Загружаю…</> : `Загрузить ${pending.length} файл${pending.length > 1 ? 'а' : ''}`}
+            </button>
+            <button onClick={() => setPending([])} className="text-xs text-zinc-500 hover:text-zinc-300 px-2">отмена</button>
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded layers */}
+      {layers.length === 0 && pending.length === 0 ? (
         <p className="text-xs text-zinc-600 italic">Нет SVG-слоёв — загрузи файлы предметов одежды</p>
-      ) : (
+      ) : layers.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {layers.map((layer) => (
             <div key={layer.id} className="relative group flex flex-col items-center bg-zinc-800/60 rounded-lg p-2 w-20">
