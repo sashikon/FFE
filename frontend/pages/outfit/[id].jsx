@@ -161,6 +161,7 @@ export default function OutfitPage() {
           <GameCard
             imageSrc={data.image_url}
             svgLayers={data.svg_layers?.length > 0 ? data.svg_layers : undefined}
+            renders={data.renders?.length > 0 ? data.renders : undefined}
             gameData={data.game_rows}
             outfitId={id}
             isMobile={isMobile}

@@ -43,12 +43,18 @@ router.get('/outfit/:id', async (req, res, next) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
-    const { rows: svgRows } = await pool.query(
-      'SELECT id, label, svg_url, sort_order, is_wrong, wrong_reason FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
-      [id]
-    );
+    const [svgResult, renderResult] = await Promise.all([
+      pool.query(
+        'SELECT id, label, svg_url, sort_order, is_wrong, wrong_reason FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+        [id]
+      ),
+      pool.query(
+        'SELECT id, image_url, thumb_url FROM outfit_renders WHERE outfit_id = $1 ORDER BY RANDOM() LIMIT 1',
+        [id]
+      ),
+    ]);
 
-    const outfit = { ...rows[0], svg_layers: svgRows };
+    const outfit = { ...rows[0], svg_layers: svgResult.rows, renders: renderResult.rows };
 
     // Try Redis cache first
     let gameRows = await getGameRows(id, lang);
@@ -68,6 +74,20 @@ router.get('/outfit/:id', async (req, res, next) => {
     }
 
     res.json({ ...outfit, game_rows: gameRows, status: 'ready' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/renders/random?exclude=:outfitId&count=3
+router.get('/renders/random', async (req, res, next) => {
+  try {
+    const { exclude, count = '3' } = req.query;
+    const { rows } = await pool.query(
+      'SELECT id, image_url, thumb_url FROM outfit_renders WHERE outfit_id != $1 ORDER BY RANDOM() LIMIT $2',
+      [exclude, Math.min(10, parseInt(count) || 3)]
+    );
+    res.json({ renders: rows });
   } catch (err) {
     next(err);
   }
