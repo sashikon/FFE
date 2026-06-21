@@ -26,7 +26,7 @@ async function uploadImage(filePath) {
 async function uploadSvg(filePath) {
   const result = await cloudinary.uploader.upload(filePath, {
     folder: 'ffe/svg-layers',
-    resource_type: 'raw',
+    resource_type: 'image',
     use_filename: true,
     unique_filename: true,
   });
