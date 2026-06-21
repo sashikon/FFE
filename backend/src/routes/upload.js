@@ -16,6 +16,28 @@ function fileHash(filePath) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+// PATCH /api/admin/outfit/:id/image — replace the sketch image
+router.patch('/admin/outfit/:id/image', requireAdminToken, upload.single('image'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No image provided' });
+
+    const hash = fileHash(file.path);
+    const { imageUrl, thumbUrl } = await uploadImage(file.path);
+    fs.unlink(file.path, () => {});
+
+    await pool.query(
+      'UPDATE outfits SET image_url = $1, thumb_url = $2, file_hash = $3 WHERE id = $4',
+      [imageUrl, thumbUrl, hash, id]
+    );
+
+    res.json({ image_url: imageUrl, thumb_url: thumbUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/admin/upload  (multipart: image OR images[])
 router.post('/admin/upload', requireAdminToken, upload.array('image', 20), async (req, res, next) => {
   try {

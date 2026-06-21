@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
-import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid, Camera } from 'lucide-react';
 import { adminFetcher, apiPost, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
@@ -802,6 +802,26 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
 function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
+  const [sketchUrl, setSketchUrl] = useState(null);
+  const [sketchUploading, setSketchUploading] = useState(false);
+  const sketchFileRef = useRef(null);
+
+  const handleSketchReplace = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSketchUploading(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const data = await apiPost(`/api/admin/outfit/${outfit.id}/image`, form);
+      setSketchUrl(data.thumb_url || data.image_url);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setSketchUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const ruReady = outfit.translations?.ru?.status === 'ready';
   const enReady = outfit.translations?.en?.status === 'ready';
@@ -814,11 +834,24 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800">
       <div className="flex items-center gap-4 p-4">
-        <img
-          src={outfit.thumb_url || outfit.image_url}
-          alt=""
-          className="w-14 h-14 object-cover rounded-lg shrink-0 bg-zinc-800"
-        />
+        <div className="relative group w-14 h-14 shrink-0">
+          <img
+            src={sketchUrl || outfit.thumb_url || outfit.image_url}
+            alt=""
+            className="w-14 h-14 object-cover rounded-lg bg-zinc-800"
+          />
+          <button
+            onClick={() => sketchFileRef.current?.click()}
+            disabled={sketchUploading}
+            title="Заменить эскиз"
+            className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            {sketchUploading
+              ? <Loader2 size={16} className="text-white animate-spin" />
+              : <Camera size={16} className="text-white" />}
+          </button>
+          <input ref={sketchFileRef} type="file" accept="image/*" className="hidden" onChange={handleSketchReplace} />
+        </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-zinc-200 truncate">{outfit.title || outfit.id}</p>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
