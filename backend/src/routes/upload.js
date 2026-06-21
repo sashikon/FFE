@@ -16,8 +16,8 @@ function fileHash(filePath) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-// PATCH /api/admin/outfit/:id/image — replace the sketch image
-router.patch('/admin/outfit/:id/image', requireAdminToken, upload.single('image'), async (req, res, next) => {
+// POST /api/admin/outfit/:id/image — replace the sketch image
+router.post('/admin/outfit/:id/image', requireAdminToken, upload.single('image'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const file = req.file;
