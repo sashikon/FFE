@@ -219,7 +219,10 @@ function SvgLayersSection({ outfitId, initialLayers }) {
     setUploading(true);
     try {
       const form = new FormData();
-      svgFiles.forEach((f) => form.append('svg', f));
+      svgFiles.forEach((f) => {
+        form.append('svg', f);
+        form.append('labels', f.name.replace(/\.svg$/i, ''));
+      });
       const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers`, form);
       setLayers((prev) => [...prev, ...data.layers].sort((a, b) => a.sort_order - b.sort_order));
     } catch (e) {
