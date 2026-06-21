@@ -233,7 +233,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
             <h1 className={`${isMobile ? 'text-xl' : 'text-3xl'} font-serif ${isMobile ? 'mb-1' : 'mb-2'} tracking-wide`}>
               {t('game.title')}
             </h1>
-            <ProgressBar total={gameData.length} current={gameData.length} results={stepResults} isAnswered={false} isMobile={isMobile} />
+            <ProgressBar total={gameData.length + 1} current={gameData.length} results={[...stepResults, null]} isAnswered={false} isMobile={isMobile} />
           </header>
 
           <div className={`w-full grid ${isDesktop ? 'grid-cols-12 gap-8' : 'grid-cols-1 gap-4'} items-start`}>
@@ -337,7 +337,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
             <h1 className={`${isMobile ? 'text-xl' : 'text-3xl'} font-serif ${isMobile ? 'mb-1' : 'mb-2'} tracking-wide`}>
               {t('game.title')}
             </h1>
-            <ProgressBar total={gameData.length} current={0} results={new Array(gameData.length).fill(null)} isAnswered={false} isMobile={isMobile} />
+            <ProgressBar total={gameData.length} current={-1} results={new Array(gameData.length).fill(null)} isAnswered={false} isMobile={isMobile} />
           </header>
 
           <div className={`w-full grid ${isDesktop ? 'grid-cols-12 gap-8' : 'grid-cols-1 gap-4'} items-start`}>
