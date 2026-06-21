@@ -44,7 +44,7 @@ router.get('/outfit/:id', async (req, res, next) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
     const { rows: svgRows } = await pool.query(
-      'SELECT id, label, svg_url, sort_order FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+      'SELECT id, label, svg_url, sort_order, is_wrong, wrong_reason FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
       [id]
     );
 
