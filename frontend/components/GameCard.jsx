@@ -196,27 +196,12 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, gameDat
               className={`w-full ${isMobile ? 'max-w-[200px]' : 'max-w-sm'} aspect-[3/4] bg-zinc-950/50 rounded-xl overflow-hidden relative border border-zinc-800 cursor-pointer group mx-auto`}
               onClick={() => setIsModalOpen(true)}
             >
-              {svgLayers?.length > 0 ? (
-                <div className="absolute inset-0 p-2 transition-transform duration-500 group-hover:scale-105">
-                  {svgLayers.map((layer, i) => (
-                    <img
-                      key={layer.id}
-                      src={layer.svg_url}
-                      alt={layer.label || ''}
-                      data-layer={layer.label}
-                      className="absolute inset-0 w-full h-full object-contain p-2"
-                      style={{ zIndex: i }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <img
-                  src={imageSrc}
-                  alt={t('game.outfitAlt')}
-                  className="w-full h-full object-contain absolute inset-0 p-2 transition-transform duration-500 group-hover:scale-105"
-                  onError={(e) => { e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
-                />
-              )}
+              <img
+                src={imageSrc}
+                alt={t('game.outfitAlt')}
+                className="w-full h-full object-contain absolute inset-0 p-2 transition-transform duration-500 group-hover:scale-105"
+                onError={(e) => { e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
+              />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-xl">
                 <ZoomIn className={`text-white ${isMobile ? 'w-10 h-10' : 'w-12 h-12'}`} />
               </div>
