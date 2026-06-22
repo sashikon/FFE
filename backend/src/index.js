@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const pool = require('./db');
+const runMigrations = require('./db/migrate');
 
 const outfitsRouter = require('./routes/outfits');
 const uploadRouter = require('./routes/upload');
@@ -58,9 +59,7 @@ async function recoverPending() {
 }
 
 async function start() {
-  const sql = fs.readFileSync(path.join(__dirname, 'db/migrations/001_init.sql'), 'utf8');
-  await pool.query(sql);
-  console.log('DB migration OK');
+  await runMigrations();
   await recoverPending();
   app.listen(PORT, () => console.log(`FFE backend listening on :${PORT}`));
 }
