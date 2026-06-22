@@ -386,6 +386,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         ...l,
         is_wrong: l.id === data.wrong_layer_id,
         wrong_reason: l.id === data.wrong_layer_id ? data.reason : l.wrong_reason,
+        wrong_source: l.id === data.wrong_layer_id ? 'ai' : null,
       })));
     } catch (e) {
       alert('Ошибка: ' + e.message);
@@ -396,10 +397,14 @@ function SvgLayersSection({ outfitId, initialLayers }) {
 
   const handleToggleWrong = async (layer) => {
     const next = !layer.is_wrong;
-    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { is_wrong: next });
+    await apiPatch(`/api/admin/svg-layer/${layer.id}`, {
+      is_wrong: next,
+      wrong_source: next ? 'manual' : null,
+    });
     setLayers((prev) => prev.map((l) => ({
       ...l,
       is_wrong: l.id === layer.id ? next : (next ? false : l.is_wrong),
+      wrong_source: l.id === layer.id ? (next ? 'manual' : null) : (next ? null : l.wrong_source),
     })));
   };
 
@@ -532,6 +537,15 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   <Trash2 size={10} />
                 </button>
               </div>
+              {layer.is_wrong && layer.wrong_source && (
+                <span className={`absolute bottom-1 left-1 text-[8px] font-medium px-1 py-0.5 rounded leading-none ${
+                  layer.wrong_source === 'ai'
+                    ? 'bg-violet-900/80 text-violet-300'
+                    : 'bg-amber-900/80 text-amber-300'
+                }`}>
+                  {layer.wrong_source === 'ai' ? 'ИИ' : 'вручную'}
+                </span>
+              )}
               <button onClick={() => handleToggleWrong(layer)} title={layer.is_wrong ? 'Снять метку лишнего' : 'Отметить как лишний'}>
                 <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
               </button>

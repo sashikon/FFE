@@ -29,7 +29,7 @@ router.get('/outfits', async (req, res, next) => {
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
-                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason)
+                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason, 'wrong_source', s.wrong_source)
                         ORDER BY s.sort_order, s.created_at)
                 FROM outfit_svg_layers s WHERE s.outfit_id = o.id
               ), '[]') AS svg_layers
@@ -149,9 +149,9 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
       error: `Claude назвал "${parsed.label}", не совпало ни с одной меткой (${layers.map((l) => l.label).join(', ')}) — отметь вручную кликом на предмет`,
     });
 
-    await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [id]);
+    await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE, wrong_source = NULL WHERE outfit_id = $1', [id]);
     await pool.query(
-      'UPDATE outfit_svg_layers SET is_wrong = TRUE, wrong_reason = $1 WHERE id = $2',
+      "UPDATE outfit_svg_layers SET is_wrong = TRUE, wrong_reason = $1, wrong_source = 'ai' WHERE id = $2",
       [parsed.reason, wrongLayer.id]
     );
 
@@ -218,23 +218,24 @@ router.post('/outfit/:id/svg-layers/from-library', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/svg-layer/:id — update label, sort_order, is_wrong, or wrong_reason
+// PATCH /api/admin/svg-layer/:id — update label, sort_order, is_wrong, wrong_reason, wrong_source
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
     const { layerId } = req.params;
-    const { label, sort_order, is_wrong, wrong_reason } = req.body;
+    const { label, sort_order, is_wrong, wrong_reason, wrong_source } = req.body;
     if (is_wrong === true) {
       const { rows } = await pool.query('SELECT outfit_id FROM outfit_svg_layers WHERE id = $1', [layerId]);
-      if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [rows[0].outfit_id]);
+      if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE, wrong_source = NULL WHERE outfit_id = $1', [rows[0].outfit_id]);
     }
     await pool.query(
       `UPDATE outfit_svg_layers SET
         label = COALESCE($1, label),
         sort_order = COALESCE($2, sort_order),
         is_wrong = COALESCE($3, is_wrong),
-        wrong_reason = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE wrong_reason END
-       WHERE id = $5`,
-      [label ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, layerId]
+        wrong_reason = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE wrong_reason END,
+        wrong_source = CASE WHEN $5::text IS NOT NULL THEN $5 WHEN $3 = false THEN NULL ELSE wrong_source END
+       WHERE id = $6`,
+      [label ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, wrong_source ?? null, layerId]
     );
     res.json({ ok: true });
   } catch (err) {
