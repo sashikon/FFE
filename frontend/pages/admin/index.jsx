@@ -259,11 +259,69 @@ function WrongReasonEditor({ layer, onSave }) {
   );
 }
 
+function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
+  const [items, setItems] = useState(null);
+  const [adding, setAdding] = useState(null);
+
+  useEffect(() => {
+    adminFetcher('/api/admin/svg-layers/library').then((d) => {
+      setItems(d.items.filter((i) => !existingUrls.has(i.svg_url)));
+    });
+  }, []);
+
+  const handlePick = async (item) => {
+    setAdding(item.id);
+    try {
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers/from-library`, {
+        svg_url: item.svg_url,
+        label: item.label,
+      });
+      onAdd(data.layer);
+      onClose();
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+      setAdding(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <span className="text-sm font-medium text-zinc-200">Выбрать из загруженных</span>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div className="overflow-y-auto p-3">
+          {!items && <p className="text-xs text-zinc-600 text-center py-6">Загружаю…</p>}
+          {items?.length === 0 && <p className="text-xs text-zinc-600 text-center py-6">Нет других загруженных предметов</p>}
+          {items?.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handlePick(item)}
+                  disabled={adding === item.id}
+                  className="flex flex-col items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-500 rounded-xl p-2 transition-colors disabled:opacity-50"
+                >
+                  <img src={item.svg_url} alt={item.label} className="w-14 h-16 object-contain" />
+                  <span className="text-[10px] text-zinc-300 text-center leading-tight truncate w-full">{item.label}</span>
+                  <span className="text-[9px] text-zinc-600 truncate w-full text-center">{item.outfit_title || '—'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SvgLayersSection({ outfitId, initialLayers }) {
   const [layers, setLayers] = useState(initialLayers || []);
   const [pending, setPending] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
   const fileRef = useRef(null);
@@ -350,15 +408,29 @@ function SvgLayersSection({ outfitId, initialLayers }) {
             </button>
           )}
           <button
+            onClick={() => setShowLibrary(true)}
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
+          >
+            <LayoutGrid size={12} /> Выбрать
+          </button>
+          <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            <Upload size={12} /> Добавить SVG
+            <Upload size={12} /> Загрузить
           </button>
         </div>
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple className="hidden"
           onChange={(e) => handleFilePick(e.target.files)} />
+        {showLibrary && (
+          <SvgLibraryPicker
+            outfitId={outfitId}
+            existingUrls={new Set(layers.map(l => l.svg_url))}
+            onAdd={(layer) => setLayers((prev) => [...prev, layer])}
+            onClose={() => setShowLibrary(false)}
+          />
+        )}
       </div>
 
       {/* Pending files — label before upload */}

@@ -186,6 +186,38 @@ router.post('/outfit/:id/svg-layers', upload.array('svg', 20), async (req, res, 
   }
 });
 
+// GET /api/admin/svg-layers/library — all unique SVG items across all outfits
+router.get('/svg-layers/library', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (s.svg_url) s.id, s.label, s.svg_url, o.title AS outfit_title
+       FROM outfit_svg_layers s
+       JOIN outfits o ON o.id = s.outfit_id
+       WHERE s.label != '' AND s.label NOT IN ('образ', 'образ вечерний', 'outfit', 'look')
+       ORDER BY s.svg_url, s.label, s.created_at DESC`
+    );
+    res.json({ items: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/svg-layers/from-library — add existing SVG without re-upload
+router.post('/outfit/:id/svg-layers/from-library', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { svg_url, label } = req.body;
+    if (!svg_url || !label) return res.status(400).json({ error: 'svg_url and label required' });
+    const { rows } = await pool.query(
+      'INSERT INTO outfit_svg_layers (outfit_id, label, svg_url, sort_order) VALUES ($1, $2, $3, 0) RETURNING id, label, svg_url, sort_order, is_wrong, wrong_reason',
+      [id, label, svg_url]
+    );
+    res.status(201).json({ layer: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/admin/svg-layer/:id — update label, sort_order, is_wrong, or wrong_reason
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
