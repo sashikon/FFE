@@ -72,19 +72,22 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const [layersResult, transResult] = await Promise.all([
+    const [layersResult, transResult, outfitResult] = await Promise.all([
       pool.query(
-        'SELECT id, label FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
+        'SELECT id, label, svg_url FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
         [id]
       ),
       pool.query(
         'SELECT lang, game_rows FROM outfit_translations WHERE outfit_id = $1 AND status = \'ready\'',
         [id]
       ),
+      pool.query('SELECT image_url FROM outfits WHERE id = $1', [id]),
     ]);
 
-    const layers = layersResult.rows;
-    if (layers.length < 2) return res.status(400).json({ error: 'Нужно минимум 2 слоя с названиями' });
+    // exclude full-outfit summary SVGs (single-word labels like "образ")
+    const SUMMARY_LABELS = new Set(['образ', 'образ вечерний', 'outfit', 'look', 'total']);
+    const layers = layersResult.rows.filter((l) => !SUMMARY_LABELS.has(l.label.toLowerCase()));
+    if (layers.length < 2) return res.status(400).json({ error: 'Нужно минимум 2 слоя с названиями (не считая сводного «образа»)' });
 
     const trans = {};
     transResult.rows.forEach((r) => { trans[r.lang] = r.game_rows; });
@@ -94,26 +97,44 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
     const semiotics = gameRows.map((r) => {
       const wrong = r.correct || '';
       const rest = (r.options || []).filter((o) => o !== wrong).join(', ');
-      return `${r.theme}: ${rest} (лишнее: ${wrong})`;
+      return `${r.theme}: ${rest} (лишнее в образе: ${wrong})`;
     }).join('\n');
 
-    const itemList = layers.map((l) => l.label).join(', ');
+    // Build Vision message: outfit sketch + each item as PNG (Cloudinary f_png transform)
+    const toPng = (url) => url.replace('/upload/', '/upload/f_png,w_300/');
+    const outfitImageUrl = outfitResult.rows[0]?.image_url;
+
+    const imageBlocks = [];
+    if (outfitImageUrl) {
+      imageBlocks.push({ type: 'text', text: 'Эскиз образа целиком:' });
+      imageBlocks.push({ type: 'image', source: { type: 'url', url: toPng(outfitImageUrl) } });
+    }
+    imageBlocks.push({ type: 'text', text: '\nОтдельные предметы из этого образа (каждый подписан):' });
+    layers.forEach((l) => {
+      imageBlocks.push({ type: 'text', text: `[${l.label}]` });
+      imageBlocks.push({ type: 'image', source: { type: 'url', url: toPng(l.svg_url) } });
+    });
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `Ты эксперт по fashion-семиотике. Твоя задача — найти предмет, который нарушает целостную систему кодов образа.
+      system: `Ты эксперт по fashion-семиотике. Смотришь на эскиз образа и отдельные предметы одежды/аксессуары.
+Твоя задача — найти предмет, который визуально и семиотически не вписывается в целостную систему образа.
 
 Правила:
-- Оценивай предметы и аксессуары ТОЛЬКО в контексте общей эстетики, не по их бытовым ассоциациям
-- Вечерние перчатки, оперные перчатки — классика драматического, готического, формального образа; они не лишние
-- Корсеты, массивная обувь, сетчатые элементы — органичны в готике и авангарде
-- Леггинсы, кроссовки, спортивные детали — ломают романтический или вечерний образ
-- Лишний предмет — тот, чей код ПРОТИВОРЕЧИТ системе остальных, а не просто выглядит необычно
-- Сначала определи тип образа по семиотике, потом ищи нарушителя`,
+- Суди визуально: смотри на силуэт, пропорции, стиль предмета, как он соотносится с остальными
+- Вечерние/оперные перчатки органичны в драматическом, готическом, формальном образе
+- Если есть два похожих предмета одной категории (две юбки, два варианта обуви) — лишний тот, чей силуэт/стиль не совпадает с остальными
+- Лишний предмет — тот, чей визуальный код противоречит системе остальных`,
       messages: [{
         role: 'user',
-        content: `Семиотика образа (слова, которые описывают его):\n${semiotics}\n\nПредметы в образе: ${itemList}\n\nКратко: что за образ по семиотике? Какой предмет из списка ломает эту систему?\nОтветь: сначала 1 строка рассуждения, затем JSON на новой строке:\n{"label":"точное название предмета из списка","reason":"1-2 предложения почему он лишний в контексте именно этого образа"}`,
+        content: [
+          ...imageBlocks,
+          {
+            type: 'text',
+            text: `\nСемиотика этого образа (из игрового анализа):\n${semiotics}\n\nКакой из показанных предметов лишний? Сначала одна строка рассуждения, затем JSON:\n{"label":"точное название предмета из списка","reason":"1-2 предложения почему он лишний визуально и семиотически"}`,
+          },
+        ],
       }],
     });
 
