@@ -100,39 +100,31 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
       return `${r.theme}: ${rest} (лишнее в образе: ${wrong})`;
     }).join('\n');
 
-    // Build Vision message: outfit raster sketch (high-res) + each SVG item as PNG
-    const toSketchPng = (url) => url.replace('/upload/', '/upload/w_600/');
-    const toItemPng = (url) => url.replace('/upload/', '/upload/f_png,w_400/');
+    // Vision: send only the raster sketch — it shows the real outfit composition
     const outfitImageUrl = outfitResult.rows[0]?.image_url;
+    if (!outfitImageUrl) return res.status(400).json({ error: 'Нет растрового эскиза образа' });
 
-    const imageBlocks = [];
-    if (outfitImageUrl) {
-      imageBlocks.push({ type: 'text', text: 'ЭСКИЗ ОБРАЗА (источник правды — смотри что здесь нарисовано):' });
-      imageBlocks.push({ type: 'image', source: { type: 'url', url: toSketchPng(outfitImageUrl) } });
-    }
-    imageBlocks.push({ type: 'text', text: '\nОТДЕЛЬНЫЕ ПРЕДМЕТЫ для сравнения (один из них — лишний, не из этого образа):' });
-    layers.forEach((l) => {
-      imageBlocks.push({ type: 'text', text: `[${l.label}]` });
-      imageBlocks.push({ type: 'image', source: { type: 'url', url: toItemPng(l.svg_url) } });
-    });
+    const sketchUrl = outfitImageUrl.replace('/upload/', '/upload/w_700/');
+    const itemList = layers.map((l) => l.label).join(', ');
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `Ты эксперт-стилист. Твоя задача: посмотреть на рисунок образа и определить, какой из отдельных предметов НЕ соответствует тому, что нарисовано на эскизе — по силуэту, детали, пропорции или стилю.
+      system: `Ты эксперт-стилист. Смотришь на иллюстрацию образа и список предметов, которые к нему относятся. Один предмет в списке — лишний: это либо другой вариант того же предмета (другой крой, другая деталь), либо предмет из другой эстетики.
 
 Правила:
-- Эскиз — источник правды. Доверяй тому, что видишь на нём, а не текстовым описаниям
-- Сравнивай каждый предмет визуально с тем, что на эскизе: совпадает ли силуэт, пропорция, характер детали?
-- Лишний предмет — тот, чей визуальный характер расходится с образом на эскизе
-- Если два предмета из одной категории (две юбки, два варианта) — лишний тот, чей крой/деталь не совпадает с эскизом`,
+- Доверяй тому, что ВИДИШЬ на эскизе: силуэт, детали, пропорции, характер кроя
+- Сравни каждое название из списка с тем что нарисовано — что из этого ты НЕ видишь на эскизе или видишь в другом варианте?
+- Если два названия одной категории (юбка / юбка-2) — лишняя та, чей вариант не совпадает с нарисованным
+- Называй предмет ТОЧНО как он записан в списке`,
       messages: [{
         role: 'user',
         content: [
-          ...imageBlocks,
+          { type: 'text', text: 'Эскиз образа:' },
+          { type: 'image', source: { type: 'url', url: sketchUrl } },
           {
             type: 'text',
-            text: `Что нарисовано на эскизе? Какой из отдельных предметов не совпадает с тем что ты видишь? Сначала 1-2 строки наблюдений, затем JSON:\n{"label":"точное название предмета из списка","reason":"1-2 предложения — что конкретно не совпадает с эскизом"}`,
+            text: `Список предметов к этому образу: ${itemList}\n\nЧто ты видишь на эскизе? Какой предмет из списка не совпадает с нарисованным — или представлен в другом варианте?\nСначала 1-2 строки наблюдений, затем JSON:\n{"label":"точное название из списка","reason":"1-2 предложения — что конкретно не совпадает с эскизом"}`,
           },
         ],
       }],
