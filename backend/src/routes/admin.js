@@ -8,7 +8,7 @@ const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const { uploadImage, uploadSvg } = require('../storage/cloudinary');
+const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
 
@@ -735,6 +735,50 @@ router.get('/coverage', async (req, res, next) => {
        ORDER BY o.created_at DESC`
     );
     res.json({ renders: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/mechanic-screenshots — all screenshots grouped by mechanic_key
+router.get('/mechanic-screenshots', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, mechanic_key, image_url, created_at FROM mechanic_screenshots ORDER BY mechanic_key, created_at'
+    );
+    const grouped = {};
+    rows.forEach((r) => {
+      if (!grouped[r.mechanic_key]) grouped[r.mechanic_key] = [];
+      grouped[r.mechanic_key].push(r);
+    });
+    res.json({ screenshots: grouped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/mechanic-screenshots — upload screenshot for a mechanic
+router.post('/mechanic-screenshots', upload.single('image'), async (req, res, next) => {
+  try {
+    const { mechanic_key } = req.body;
+    if (!mechanic_key || !req.file) return res.status(400).json({ error: 'mechanic_key and image required' });
+    const imageUrl = await uploadScreenshot(req.file.path);
+    fs.unlink(req.file.path, () => {});
+    const { rows } = await pool.query(
+      'INSERT INTO mechanic_screenshots (mechanic_key, image_url) VALUES ($1, $2) RETURNING id, mechanic_key, image_url, created_at',
+      [mechanic_key, imageUrl]
+    );
+    res.status(201).json({ screenshot: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/admin/mechanic-screenshot/:id
+router.delete('/mechanic-screenshot/:id', async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM mechanic_screenshots WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

@@ -33,8 +33,17 @@ async function uploadSvg(filePath) {
   return result.secure_url;
 }
 
+async function uploadScreenshot(filePath) {
+  const result = await cloudinary.uploader.upload(filePath, {
+    folder: 'ffe/mechanic-screenshots',
+    quality: 'auto',
+    fetch_format: 'auto',
+  });
+  return result.secure_url;
+}
+
 async function deleteImage(publicId) {
   await cloudinary.uploader.destroy(publicId);
 }
 
-module.exports = { uploadImage, uploadSvg, deleteImage };
+module.exports = { uploadImage, uploadSvg, uploadScreenshot, deleteImage };

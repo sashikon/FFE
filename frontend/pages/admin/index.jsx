@@ -897,6 +897,88 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
   );
 }
 
+function MechanicScreenshots({ mechanicKey }) {
+  const { data, mutate } = useSWR('/api/admin/mechanic-screenshots', adminFetcher);
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+
+  const shots = data?.screenshots?.[mechanicKey] ?? [];
+
+  const handleUpload = async (files) => {
+    const imgs = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (!imgs.length) return;
+    setUploading(true);
+    try {
+      for (const file of imgs) {
+        const form = new FormData();
+        form.append('mechanic_key', mechanicKey);
+        form.append('image', file);
+        await apiPost('/api/admin/mechanic-screenshots', form);
+      }
+      mutate();
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setUploading(false);
+      fileRef.current && (fileRef.current.value = '');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    await apiDelete(`/api/admin/mechanic-screenshot/${id}`);
+    mutate();
+  };
+
+  return (
+    <div className="mt-5 pl-14">
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="screenshot" className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl shadow-2xl" />
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Скриншоты</span>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
+        >
+          <ImagePlus size={11} /> {uploading ? 'Загружаю…' : 'Добавить'}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => handleUpload(e.target.files)} />
+      </div>
+
+      {shots.length === 0 && !uploading && (
+        <p className="text-[11px] text-zinc-700 italic">Скриншотов пока нет — нажми «Добавить»</p>
+      )}
+
+      {shots.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {shots.map((s) => (
+            <div key={s.id} className="relative group/shot">
+              <img
+                src={s.image_url}
+                alt="screenshot"
+                onClick={() => setLightbox(s.image_url)}
+                className="h-28 w-auto rounded-lg border border-zinc-700 object-cover cursor-zoom-in hover:border-zinc-500 transition-colors"
+              />
+              <button
+                onClick={() => handleDelete(s.id)}
+                className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center opacity-0 group-hover/shot:opacity-100 transition-opacity hover:bg-rose-900"
+              >
+                <Trash2 size={9} className="text-zinc-300" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MechanicsBoard({ outfits }) {
   const total = outfits?.length ?? 0;
   const readyRu = outfits?.filter((o) => o.translations?.ru?.status === 'ready').length ?? 0;
@@ -986,6 +1068,7 @@ function MechanicsBoard({ outfits }) {
                 </div>
               ))}
             </div>
+            <MechanicScreenshots mechanicKey={m.num} />
           </div>
         );
       })}
