@@ -259,9 +259,30 @@ function WrongReasonEditor({ layer, onSave }) {
   );
 }
 
+const SVG_CATS = [
+  { key: 'all', label: 'Все', keywords: null },
+  { key: 'outfit', label: 'Образ', keywords: ['образ', 'outfit', 'look', 'total'] },
+  { key: 'top', label: 'Верх', keywords: ['топ', 'блуза', 'рубашка', 'корсет', 'жакет', 'пиджак', 'свитер', 'кардиган', 'футболка', 'боди'] },
+  { key: 'bottom', label: 'Низ', keywords: ['юбка', 'брюки', 'шорты', 'леггинсы', 'джинсы', 'палаццо', 'бермуды'] },
+  { key: 'dress', label: 'Платье', keywords: ['платье', 'комбинезон', 'сарафан'] },
+  { key: 'outer', label: 'Верхняя', keywords: ['пальто', 'куртка', 'плащ', 'тренч', 'шуба', 'бомбер', 'ветровка'] },
+  { key: 'shoes', label: 'Обувь', keywords: ['ботинки', 'туфли', 'сапоги', 'кроссовки', 'мюли', 'лоферы', 'челси', 'мокасины', 'балетки', 'каблук', 'обувь'] },
+  { key: 'acc', label: 'Аксессуары', keywords: ['перчатки', 'сумка', 'пояс', 'шарф', 'серьги', 'колье', 'браслет', 'кольцо', 'очки', 'шляпа', 'шапка', 'берет', 'аксессуар'] },
+];
+
+function getItemCategory(label) {
+  const l = label.toLowerCase();
+  for (const cat of SVG_CATS) {
+    if (!cat.keywords) continue;
+    if (cat.keywords.some((kw) => l.includes(kw))) return cat.key;
+  }
+  return 'all';
+}
+
 function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
   const [items, setItems] = useState(null);
   const [adding, setAdding] = useState(null);
+  const [activeTab, setActiveTab] = useState('all');
 
   useEffect(() => {
     adminFetcher('/api/admin/svg-layers/library').then((d) => {
@@ -284,19 +305,50 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
     }
   };
 
+  const visibleTabs = items
+    ? SVG_CATS.filter((cat) =>
+        cat.key === 'all' ||
+        items.some((i) => getItemCategory(i.label) === cat.key)
+      )
+    : [SVG_CATS[0]];
+
+  const filtered = items
+    ? (activeTab === 'all' ? items : items.filter((i) => getItemCategory(i.label) === activeTab))
+    : [];
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
           <span className="text-sm font-medium text-zinc-200">Выбрать из загруженных</span>
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
         </div>
-        <div className="overflow-y-auto p-3">
+
+        {/* Tabs */}
+        <div className="flex gap-1 px-3 pt-2.5 pb-0 overflow-x-auto shrink-0 scrollbar-none">
+          {visibleTabs.map((cat) => (
+            <button
+              key={cat.key}
+              onClick={() => setActiveTab(cat.key)}
+              className={`shrink-0 px-3 py-1 rounded-full text-xs transition-colors whitespace-nowrap ${
+                activeTab === cat.key
+                  ? 'bg-zinc-100 text-zinc-900 font-medium'
+                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto p-3 pt-2.5">
           {!items && <p className="text-xs text-zinc-600 text-center py-6">Загружаю…</p>}
-          {items?.length === 0 && <p className="text-xs text-zinc-600 text-center py-6">Нет других загруженных предметов</p>}
-          {items?.length > 0 && (
+          {items && filtered.length === 0 && (
+            <p className="text-xs text-zinc-600 text-center py-6">Нет предметов в этой категории</p>
+          )}
+          {filtered.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
-              {items.map((item) => (
+              {filtered.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handlePick(item)}
