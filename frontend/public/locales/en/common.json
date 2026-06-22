@@ -32,7 +32,21 @@
     "correct": "Exactly!",
     "wrong": "Not quite. The odd one is ",
     "next": "Next layer",
-    "finish": "Crack the code"
+    "finish": "Crack the code",
+    "visual": {
+      "theme": "Item",
+      "instruction": "One item doesn't belong. Find it and remove it:",
+      "correct": "Right —",
+      "next": "Next layer",
+      "sketchHint": "This is the original sketch"
+    },
+    "render": {
+      "theme": "Outfit",
+      "instruction": "Find the AI render of this outfit:",
+      "correct": "Correct — you see the language of this outfit",
+      "correctBody": "The semiotics carry through even in AI interpretation",
+      "sketchHint": "This is the original sketch"
+    }
   },
   "result": {
     "title": "Code cracked",

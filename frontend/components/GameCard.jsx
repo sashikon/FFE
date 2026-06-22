@@ -14,6 +14,16 @@ const FALLBACK = {
   'game.wrong': 'Не угадала. Лишнее — ',
   'game.next': 'Следующий слой',
   'game.finish': 'Раскрыть шифр',
+  'game.visual.theme': 'Предмет',
+  'game.visual.instruction': 'Один предмет — лишний. Найди и убери его:',
+  'game.visual.correct': 'Верно —',
+  'game.visual.next': 'Следующий слой',
+  'game.visual.sketchHint': 'Это исходный эскиз',
+  'game.render.theme': 'Образ',
+  'game.render.instruction': 'Найди ИИ рендер этого образа:',
+  'game.render.correct': 'Верно — ты видишь язык образа',
+  'game.render.correctBody': 'Семиотика считывается даже через ИИ-интерпретацию',
+  'game.render.sketchHint': 'Это исходный эскиз',
 };
 import ImageViewer from './ImageViewer';
 import ProgressBar from './ProgressBar';
@@ -252,7 +262,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                 </div>
               </div>
               {!isMobile && (
-                <p className="mt-3 text-xs text-zinc-600 italic text-center">Это исходный эскиз</p>
+                <p className="mt-3 text-xs text-zinc-600 italic text-center">{t('game.render.sketchHint')}</p>
               )}
             </div>
 
@@ -260,10 +270,10 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
             <div className={`${isDesktop ? 'col-span-7' : ''} flex flex-col w-full`}>
               <div className={`bg-zinc-900 ${isMobile ? 'rounded-2xl p-5' : 'rounded-2xl p-8'} border border-zinc-800 shadow-xl`}>
                 <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-medium text-zinc-200 ${isMobile ? 'mb-2' : 'mb-3'} text-center`}>
-                  Образ
+                  {t('game.render.theme')}
                 </h2>
                 <p className={`text-zinc-400 text-center italic border-b border-zinc-800 ${isMobile ? 'pb-3 mb-4 text-[13px]' : 'pb-4 mb-6 text-sm'}`}>
-                  Найди ИИ рендер этого образа:
+                  {t('game.render.instruction')}
                 </p>
 
                 {renderSelected ? (
@@ -273,10 +283,10 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                         <CheckCircle2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-emerald-500 shrink-0 mt-0.5`} />
                         <div>
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
-                            Верно — ты видишь язык образа
+                            {t('game.render.correct')}
                           </h3>
                           <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
-                            Семиотика считывается даже через ИИ-интерпретацию
+                            {t('game.render.correctBody')}
                           </p>
                         </div>
                       </div>
@@ -363,10 +373,10 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
             <div className={`${isDesktop ? 'col-span-7' : ''} flex flex-col w-full`}>
               <div className={`bg-zinc-900 ${isMobile ? 'rounded-2xl p-5' : 'rounded-2xl p-8'} border border-zinc-800 shadow-xl`}>
                 <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-medium text-zinc-200 ${isMobile ? 'mb-2' : 'mb-3'} text-center`}>
-                  Предмет
+                  {t('game.visual.theme')}
                 </h2>
                 <p className={`text-zinc-400 text-center italic border-b border-zinc-800 ${isMobile ? 'pb-3 mb-4 text-[13px]' : 'pb-4 mb-6 text-sm'}`}>
-                  Один предмет — лишний. Найди и убери его:
+                  {t('game.visual.instruction')}
                 </p>
 
                 {showVisualResult ? (
@@ -376,7 +386,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                         <CheckCircle2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-emerald-500 shrink-0 mt-0.5`} />
                         <div>
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
-                            Верно — {wrongSvgLayer.label}
+                            {t('game.visual.correct')} {wrongSvgLayer.label}
                           </h3>
                           {wrongSvgLayer.wrong_reason && (
                             <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
@@ -390,7 +400,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                       onClick={() => setVisualDone(true)}
                       className={`w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-900 ${isMobile ? 'py-3 text-sm' : 'py-3.5 text-base'} rounded-lg font-semibold hover:bg-white transition-colors`}
                     >
-                      Следующий слой <ArrowRight className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
+                      {t('game.visual.next')} <ArrowRight className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
                     </button>
                   </div>
                 ) : (
