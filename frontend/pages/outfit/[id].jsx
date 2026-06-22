@@ -153,7 +153,7 @@ export default function OutfitPage() {
           onClick={() => router.push('/')}
           className="absolute top-4 left-4 flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm z-50"
         >
-          <ArrowLeft size={16} /> {t('nav.gallery')}
+          <ArrowLeft size={16} /> {i18n.language === 'en' ? 'Gallery' : 'Галерея'}
         </button>
         <ViewSwitcher value={viewFormat} onChange={setViewFormat} />
 
