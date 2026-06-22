@@ -100,39 +100,39 @@ router.post('/outfit/:id/svg-layers/analyze', async (req, res, next) => {
       return `${r.theme}: ${rest} (лишнее в образе: ${wrong})`;
     }).join('\n');
 
-    // Build Vision message: outfit sketch + each item as PNG (Cloudinary f_png transform)
-    const toPng = (url) => url.replace('/upload/', '/upload/f_png,w_300/');
+    // Build Vision message: outfit raster sketch (high-res) + each SVG item as PNG
+    const toSketchPng = (url) => url.replace('/upload/', '/upload/w_600/');
+    const toItemPng = (url) => url.replace('/upload/', '/upload/f_png,w_400/');
     const outfitImageUrl = outfitResult.rows[0]?.image_url;
 
     const imageBlocks = [];
     if (outfitImageUrl) {
-      imageBlocks.push({ type: 'text', text: 'Эскиз образа целиком:' });
-      imageBlocks.push({ type: 'image', source: { type: 'url', url: toPng(outfitImageUrl) } });
+      imageBlocks.push({ type: 'text', text: 'ЭСКИЗ ОБРАЗА (источник правды — смотри что здесь нарисовано):' });
+      imageBlocks.push({ type: 'image', source: { type: 'url', url: toSketchPng(outfitImageUrl) } });
     }
-    imageBlocks.push({ type: 'text', text: '\nОтдельные предметы из этого образа (каждый подписан):' });
+    imageBlocks.push({ type: 'text', text: '\nОТДЕЛЬНЫЕ ПРЕДМЕТЫ для сравнения (один из них — лишний, не из этого образа):' });
     layers.forEach((l) => {
       imageBlocks.push({ type: 'text', text: `[${l.label}]` });
-      imageBlocks.push({ type: 'image', source: { type: 'url', url: toPng(l.svg_url) } });
+      imageBlocks.push({ type: 'image', source: { type: 'url', url: toItemPng(l.svg_url) } });
     });
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `Ты эксперт по fashion-семиотике. Смотришь на эскиз образа и отдельные предметы одежды/аксессуары.
-Твоя задача — найти предмет, который визуально и семиотически не вписывается в целостную систему образа.
+      system: `Ты эксперт-стилист. Твоя задача: посмотреть на рисунок образа и определить, какой из отдельных предметов НЕ соответствует тому, что нарисовано на эскизе — по силуэту, детали, пропорции или стилю.
 
 Правила:
-- Суди визуально: смотри на силуэт, пропорции, стиль предмета, как он соотносится с остальными
-- Вечерние/оперные перчатки органичны в драматическом, готическом, формальном образе
-- Если есть два похожих предмета одной категории (две юбки, два варианта обуви) — лишний тот, чей силуэт/стиль не совпадает с остальными
-- Лишний предмет — тот, чей визуальный код противоречит системе остальных`,
+- Эскиз — источник правды. Доверяй тому, что видишь на нём, а не текстовым описаниям
+- Сравнивай каждый предмет визуально с тем, что на эскизе: совпадает ли силуэт, пропорция, характер детали?
+- Лишний предмет — тот, чей визуальный характер расходится с образом на эскизе
+- Если два предмета из одной категории (две юбки, два варианта) — лишний тот, чей крой/деталь не совпадает с эскизом`,
       messages: [{
         role: 'user',
         content: [
           ...imageBlocks,
           {
             type: 'text',
-            text: `\nСемиотика этого образа (из игрового анализа):\n${semiotics}\n\nКакой из показанных предметов лишний? Сначала одна строка рассуждения, затем JSON:\n{"label":"точное название предмета из списка","reason":"1-2 предложения почему он лишний визуально и семиотически"}`,
+            text: `Что нарисовано на эскизе? Какой из отдельных предметов не совпадает с тем что ты видишь? Сначала 1-2 строки наблюдений, затем JSON:\n{"label":"точное название предмета из списка","reason":"1-2 предложения — что конкретно не совпадает с эскизом"}`,
           },
         ],
       }],
