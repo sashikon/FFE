@@ -206,6 +206,20 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
   );
 }
 
+function Tip({ text, children, width = 'w-52', side = 'top' }) {
+  const pos = side === 'top'
+    ? 'bottom-full left-1/2 -translate-x-1/2 mb-1.5'
+    : 'top-full left-1/2 -translate-x-1/2 mt-1.5';
+  return (
+    <div className="relative group/tip inline-flex">
+      {children}
+      <div className={`absolute ${pos} ${width} bg-zinc-800 border border-zinc-700 text-zinc-300 text-[10px] leading-snug p-2 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity duration-150 z-50 whitespace-normal text-center`}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
 function WrongReasonEditor({ layer, onSave }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(layer.wrong_reason || '');
@@ -454,22 +468,26 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         </span>
         <div className="flex items-center gap-3">
           {layers.filter(l => l.label).length >= 2 && (
-            <button
-              onClick={handleAnalyze}
-              disabled={analyzing}
-              className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
-              title="Claude определит лишний предмет по семиотике"
-            >
-              {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-              {analyzing ? 'Анализирую…' : 'Найти лишний'}
-            </button>
+            <Tip side="top" width="w-60" text="Claude смотрит на эскиз образа и определяет, какой предмет из списка семиотически не вписывается — по силуэту, детали или стилю. Результат можно исправить вручную">
+              <button
+                onClick={handleAnalyze}
+                disabled={analyzing}
+                className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+              >
+                {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                {analyzing ? 'Анализирую…' : 'Найти лишний'}
+              </button>
+            </Tip>
           )}
-          <button
-            onClick={() => setShowLibrary(true)}
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
-          >
-            <LayoutGrid size={12} /> Выбрать
-          </button>
+          <Tip text="Выбрать SVG из уже загруженных предметов других образов — без повторной загрузки файла">
+            <button
+              onClick={() => setShowLibrary(true)}
+              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
+            >
+              <LayoutGrid size={12} /> Выбрать
+            </button>
+          </Tip>
+          <Tip text="Загрузить новый SVG-файл предмета с диска">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
@@ -477,6 +495,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
           >
             <Upload size={12} /> Загрузить
           </button>
+          </Tip>
         </div>
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple className="hidden"
           onChange={(e) => handleFilePick(e.target.files)} />
@@ -538,17 +557,27 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                 </button>
               </div>
               {layer.is_wrong && layer.wrong_source && (
-                <span className={`absolute bottom-1 left-1 text-[8px] font-medium px-1 py-0.5 rounded leading-none ${
-                  layer.wrong_source === 'ai'
-                    ? 'bg-violet-900/80 text-violet-300'
-                    : 'bg-amber-900/80 text-amber-300'
-                }`}>
-                  {layer.wrong_source === 'ai' ? 'ИИ' : 'вручную'}
-                </span>
+                <Tip
+                  side="top"
+                  width="w-56"
+                  text={layer.wrong_source === 'ai'
+                    ? 'Помечено ИИ — Claude проанализировал эскиз образа и определил этот предмет как семиотически чужеродный'
+                    : 'Помечено вручную — предмет специально загружен или выбран как ловушка для игровой механики'}
+                >
+                  <span className={`absolute bottom-1 left-1 text-[8px] font-medium px-1 py-0.5 rounded leading-none cursor-default ${
+                    layer.wrong_source === 'ai'
+                      ? 'bg-violet-900/80 text-violet-300'
+                      : 'bg-amber-900/80 text-amber-300'
+                  }`}>
+                    {layer.wrong_source === 'ai' ? 'ИИ' : 'вручную'}
+                  </span>
+                </Tip>
               )}
-              <button onClick={() => handleToggleWrong(layer)} title={layer.is_wrong ? 'Снять метку лишнего' : 'Отметить как лишний'}>
-                <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
-              </button>
+              <Tip text={layer.is_wrong ? 'Снять метку лишнего — предмет вернётся в состав образа' : 'Отметить как лишний — этот предмет станет целью в игровой механике'}>
+                <button onClick={() => handleToggleWrong(layer)}>
+                  <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
+                </button>
+              </Tip>
               <div className="w-full mt-1">
                 {editingId === layer.id ? (
                   <input
