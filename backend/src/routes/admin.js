@@ -194,11 +194,11 @@ router.post('/outfit/:id/svg-layers', upload.array('svg', 20), async (req, res, 
   }
 });
 
-// PATCH /api/admin/svg-layer/:id — update label, sort_order, or is_wrong
+// PATCH /api/admin/svg-layer/:id — update label, sort_order, is_wrong, or wrong_reason
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
     const { layerId } = req.params;
-    const { label, sort_order, is_wrong } = req.body;
+    const { label, sort_order, is_wrong, wrong_reason } = req.body;
     if (is_wrong === true) {
       const { rows } = await pool.query('SELECT outfit_id FROM outfit_svg_layers WHERE id = $1', [layerId]);
       if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE WHERE outfit_id = $1', [rows[0].outfit_id]);
@@ -207,9 +207,10 @@ router.patch('/svg-layer/:layerId', async (req, res, next) => {
       `UPDATE outfit_svg_layers SET
         label = COALESCE($1, label),
         sort_order = COALESCE($2, sort_order),
-        is_wrong = COALESCE($3, is_wrong)
-       WHERE id = $4`,
-      [label ?? null, sort_order ?? null, is_wrong ?? null, layerId]
+        is_wrong = COALESCE($3, is_wrong),
+        wrong_reason = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE wrong_reason END
+       WHERE id = $5`,
+      [label ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, layerId]
     );
     res.json({ ok: true });
   } catch (err) {

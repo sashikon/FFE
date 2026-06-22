@@ -206,6 +206,59 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
   );
 }
 
+function WrongReasonEditor({ layer, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(layer.wrong_reason || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { wrong_reason: value });
+    onSave(value);
+    setSaving(false);
+    setEditing(false);
+  };
+
+  return (
+    <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider">
+          Лишний предмет: {layer.label}
+        </span>
+        <button
+          onClick={() => setEditing(e => !e)}
+          className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          {editing ? 'отмена' : 'изменить'}
+        </button>
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <textarea
+            autoFocus
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            rows={3}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-200 px-2 py-1.5 resize-none focus:outline-none focus:border-zinc-500"
+            placeholder="Объясни почему этот предмет лишний в контексте образа…"
+          />
+          <button
+            onClick={handleSave}
+            disabled={saving || !value.trim()}
+            className="self-end text-xs px-3 py-1 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded transition-colors disabled:opacity-40"
+          >
+            {saving ? 'Сохраняю…' : 'Сохранить'}
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-400">
+          {layer.wrong_reason || <span className="italic text-zinc-600">Объяснение не задано — нажми «изменить»</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SvgLayersSection({ outfitId, initialLayers }) {
   const [layers, setLayers] = useState(initialLayers || []);
   const [pending, setPending] = useState([]);
@@ -383,15 +436,16 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         </div>
       )}
 
-      {/* Wrong item explanation */}
+      {/* Wrong item explanation — editable */}
       {(() => {
-        const wrong = layers.find(l => l.is_wrong && l.wrong_reason);
+        const wrong = layers.find(l => l.is_wrong);
         if (!wrong) return null;
         return (
-          <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2">
-            <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider">Лишний предмет: {wrong.label}</span>
-            <p className="text-xs text-zinc-400 mt-1">{wrong.wrong_reason}</p>
-          </div>
+          <WrongReasonEditor
+            key={wrong.id}
+            layer={wrong}
+            onSave={(reason) => setLayers(prev => prev.map(l => l.id === wrong.id ? { ...l, wrong_reason: reason } : l))}
+          />
         );
       })()}
     </div>
