@@ -28,6 +28,7 @@
     "zoomHint": "Click to zoom",
     "uploadPhoto": "Upload your photo",
     "instruction": "One word doesn't belong. Find it",
+    "firstHint": "tap it",
     "instructionEmphasis": "",
     "correct": "Exactly!",
     "wrong": "Not quite. The odd one is ",

@@ -28,6 +28,7 @@
     "zoomHint": "Нажмите для увеличения",
     "uploadPhoto": "Загрузить своё фото",
     "instruction": "Одно слово — чужое. Найди его",
+    "firstHint": "нажми на него",
     "instructionEmphasis": "",
     "correct": "Точно!",
     "wrong": "Не угадала. Лишнее — ",

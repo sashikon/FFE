@@ -12,6 +12,7 @@ const FALLBACK = {
   'game.instructionEmphasis': '',
   'game.correct': 'Точно!',
   'game.wrong': 'Не угадала. Лишнее — ',
+  'game.firstHint': 'нажми на него',
   'game.next': 'Следующий слой',
   'game.finish': 'Раскрыть шифр',
   'game.visual.theme': 'Предмет',
@@ -541,9 +542,19 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
               <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-medium text-zinc-200 ${isMobile ? 'mb-2' : 'mb-3'} text-center`}>
                 {currentData.theme}
               </h2>
-              <p className={`text-zinc-400 text-center italic border-b border-zinc-800 ${isMobile ? 'pb-3 mb-4 text-[13px]' : 'pb-4 mb-6 text-sm'}`}>
-                {t('game.instruction')} <span className="font-semibold text-zinc-300">{t('game.instructionEmphasis')}</span>:
-              </p>
+
+              {currentStep === 0 && !isAnswered ? (
+                <div className={`flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-xl ${isMobile ? 'px-3 py-2.5 mb-4' : 'px-4 py-3 mb-6'} animate-in fade-in duration-500`}>
+                  <span className={`shrink-0 ${isMobile ? 'text-base' : 'text-lg'}`}>👆</span>
+                  <p className={`text-zinc-200 ${isMobile ? 'text-[12px] leading-snug' : 'text-sm leading-snug'}`}>
+                    {t('game.instruction')} — <span className="text-zinc-400">{t('game.firstHint')}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className={`text-zinc-500 text-center italic border-b border-zinc-800 ${isMobile ? 'pb-3 mb-4 text-[12px]' : 'pb-4 mb-6 text-xs'}`}>
+                  {t('game.instruction')}
+                </p>
+              )}
 
               <div className={`grid grid-cols-2 ${isMobile ? 'gap-3 mb-5' : 'gap-4 mb-8'}`}>
                 {shuffledOptions.map((option, idx) => {
