@@ -390,6 +390,9 @@ function SvgLayersSection({ outfitId, initialLayers }) {
   const [showLibrary, setShowLibrary] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
+  const [editingEnId, setEditingEnId] = useState(null);
+  const [editLabelEn, setEditLabelEn] = useState('');
+  const [translating, setTranslating] = useState(false);
   const fileRef = useRef(null);
 
   const handleAnalyze = async () => {
@@ -460,6 +463,27 @@ function SvgLayersSection({ outfitId, initialLayers }) {
     setEditingId(null);
   };
 
+  const handleSaveLabelEn = async (id) => {
+    await apiPatch(`/api/admin/svg-layer/${id}`, { label_en: editLabelEn });
+    setLayers((prev) => prev.map((l) => l.id === id ? { ...l, label_en: editLabelEn } : l));
+    setEditingEnId(null);
+  };
+
+  const handleTranslateLabels = async () => {
+    setTranslating(true);
+    try {
+      const data = await apiPost(`/api/admin/outfit/${outfitId}/svg-layers/translate`, {});
+      if (data.layers) {
+        const enMap = Object.fromEntries(data.layers.map(l => [l.id, l.label_en]));
+        setLayers(prev => prev.map(l => ({ ...l, label_en: enMap[l.id] ?? l.label_en })));
+      }
+    } catch (e) {
+      alert('Ошибка перевода: ' + e.message);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -468,16 +492,28 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         </span>
         <div className="flex items-center gap-3">
           {layers.filter(l => l.label).length >= 2 && (
-            <Tip side="top" width="w-60" text="Claude смотрит на эскиз образа и определяет, какой предмет из списка семиотически не вписывается — по силуэту, детали или стилю. Результат можно исправить вручную">
-              <button
-                onClick={handleAnalyze}
-                disabled={analyzing}
-                className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
-              >
-                {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                {analyzing ? 'Анализирую…' : 'Найти лишний'}
-              </button>
-            </Tip>
+            <>
+              <Tip side="top" width="w-52" text="Claude переводит названия предметов на EN — для английской версии игры">
+                <button
+                  onClick={handleTranslateLabels}
+                  disabled={translating}
+                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                >
+                  {translating ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
+                  {translating ? 'Перевожу…' : 'Перевести'}
+                </button>
+              </Tip>
+              <Tip side="top" width="w-60" text="Claude смотрит на эскиз образа и определяет, какой предмет из списка семиотически не вписывается — по силуэту, детали или стилю. Результат можно исправить вручную">
+                <button
+                  onClick={handleAnalyze}
+                  disabled={analyzing}
+                  className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+                >
+                  {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  {analyzing ? 'Анализирую…' : 'Найти лишний'}
+                </button>
+              </Tip>
+            </>
           )}
           <Tip text="Выбрать SVG из уже загруженных предметов других образов — без повторной загрузки файла">
             <button
@@ -595,6 +631,24 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                     title={layer.label || 'Нажми чтобы добавить название'}
                   >
                     {layer.label || '—'}
+                  </button>
+                )}
+                {editingEnId === layer.id ? (
+                  <input
+                    autoFocus
+                    value={editLabelEn}
+                    onChange={(e) => setEditLabelEn(e.target.value)}
+                    onBlur={() => handleSaveLabelEn(layer.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveLabelEn(layer.id)}
+                    className="w-full bg-transparent text-blue-300 text-[9px] text-center outline-none border-b border-blue-700"
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setEditingEnId(layer.id); setEditLabelEn(layer.label_en || ''); }}
+                    className="w-full text-[9px] text-blue-500 hover:text-blue-300 text-center truncate transition-colors"
+                    title="EN: нажми чтобы редактировать"
+                  >
+                    {layer.label_en || <span className="opacity-40">EN</span>}
                   </button>
                 )}
               </div>
