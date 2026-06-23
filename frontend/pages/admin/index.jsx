@@ -1375,12 +1375,70 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   );
 }
 
-function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
+function GenerateAllTitlesButton({ outfits, onMutate }) {
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const untitled = (outfits || []).filter((o) => !o.title);
+
+  const handleRun = async () => {
+    if (!untitled.length) return;
+    setRunning(true);
+    setDone(0);
+    for (const o of untitled) {
+      try {
+        await apiPost(`/api/admin/outfit/${o.id}/generate-title`, {});
+        setDone((n) => n + 1);
+      } catch {}
+    }
+    setRunning(false);
+    onMutate();
+  };
+
+  if (!untitled.length) return null;
+  return (
+    <Tip text={`Сгенерировать названия для ${untitled.length} образов без названия`} width="w-52">
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+      >
+        {running ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+        {running ? `Называю… ${done}/${untitled.length}` : `Назвать все (${untitled.length})`}
+      </button>
+    </Tip>
+  );
+}
+
+function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
   const [sketchUrl, setSketchUrl] = useState(null);
   const [sketchUploading, setSketchUploading] = useState(false);
   const sketchFileRef = useRef(null);
+  const [title, setTitle] = useState(outfit.title || '');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+
+  const handleTitleSave = async (val) => {
+    const t = val.trim();
+    setTitle(t);
+    setEditingTitle(false);
+    await apiPatch(`/api/admin/outfit/${outfit.id}/title`, { title: t });
+    onTitleChange?.(outfit.id, t);
+  };
+
+  const handleGenerateTitle = async () => {
+    setGeneratingTitle(true);
+    try {
+      const data = await apiPost(`/api/admin/outfit/${outfit.id}/generate-title`, {});
+      setTitle(data.title);
+      onTitleChange?.(outfit.id, data.title);
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setGeneratingTitle(false);
+    }
+  };
 
   const handleSketchReplace = async (e) => {
     const file = e.target.files?.[0];
@@ -1429,7 +1487,37 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark }) {
           <input ref={sketchFileRef} type="file" accept="image/*" className="hidden" onChange={handleSketchReplace} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-200 truncate">{outfit.title || outfit.id}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            {editingTitle ? (
+              <input
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => handleTitleSave(title)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTitleSave(title); if (e.key === 'Escape') setEditingTitle(false); }}
+                className="flex-1 min-w-0 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-sm text-zinc-200 outline-none focus:border-zinc-400"
+              />
+            ) : (
+              <button
+                onClick={() => setEditingTitle(true)}
+                className="text-sm font-medium text-zinc-200 truncate hover:text-white transition-colors text-left"
+                title="Нажми чтобы изменить название"
+              >
+                {title || <span className="text-zinc-600 font-normal">{outfit.id.slice(0, 8)}</span>}
+              </button>
+            )}
+            {!editingTitle && (
+              <Tip text={title ? 'Сгенерировать новое название через ИИ' : 'Придумать название через ИИ'} width="w-44">
+                <button
+                  onClick={handleGenerateTitle}
+                  disabled={generatingTitle}
+                  className="shrink-0 text-zinc-600 hover:text-violet-400 transition-colors disabled:opacity-40"
+                >
+                  {generatingTitle ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                </button>
+              </Tip>
+            )}
+          </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             {(['ru', 'en']).map((lang) => {
               const t = outfit.translations?.[lang];
@@ -1776,6 +1864,7 @@ export default function AdminPage() {
                   <span className="text-emerald-400">{ready} готово</span>
                   {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
                   {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
+                  <GenerateAllTitlesButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   {dupCount > 0 && (
                     <button
                       onClick={() => setShowDuplicates((v) => !v)}
@@ -1864,7 +1953,7 @@ export default function AdminPage() {
                   <div key={group[0].file_hash} className="rounded-xl border border-yellow-800/50 bg-yellow-950/20 p-3 space-y-2">
                     <p className="text-xs text-yellow-600 font-mono truncate px-1">hash: {group[0].file_hash}</p>
                     {group.map((outfit) => (
-                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} />
+                      <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} onTitleChange={() => mutate('/api/admin/outfits')} />
                     ))}
                   </div>
                 ))}
@@ -1875,7 +1964,7 @@ export default function AdminPage() {
           return (
             <div className="space-y-3">
               {visible.map((outfit) => (
-                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} />
+                <OutfitCard key={outfit.id} outfit={outfit} onDelete={handleDelete} onRetry={handleRetry} onPinterestMark={handlePinterestMark} onTitleChange={() => mutate('/api/admin/outfits')} />
               ))}
             </div>
           );

@@ -254,6 +254,48 @@ router.delete('/svg-layer/:layerId', async (req, res, next) => {
   }
 });
 
+// PATCH /api/admin/outfit/:id/title — save title
+router.patch('/outfit/:id/title', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+    await pool.query('UPDATE outfits SET title = $1 WHERE id = $2', [title || null, id]);
+    res.json({ ok: true, title: title || null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/generate-title — generate title via Claude from game_rows
+router.post('/outfit/:id/generate-title', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT game_rows FROM outfit_translations WHERE outfit_id = $1 AND lang = 'ru' AND status = 'ready'`,
+      [id]
+    );
+    if (!rows.length || !rows[0].game_rows) return res.status(400).json({ error: 'Нет игровых данных' });
+
+    const rounds = rows[0].game_rows;
+    const context = rounds.map((r) => `Тема: ${r.theme}. Объяснение: ${r.explanation}`).join('\n');
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 60,
+      messages: [{
+        role: 'user',
+        content: `На основе описания образа придумай короткое название (2–4 слова) для карточки в галерее. Только название, без кавычек и пояснений.\n\n${context}`,
+      }],
+    });
+
+    const title = msg.content[0].text.trim().replace(/^["«»]+|["«»]+$/g, '');
+    await pool.query('UPDATE outfits SET title = $1 WHERE id = $2', [title, id]);
+    res.json({ title });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/admin/render/:renderId
 router.delete('/render/:renderId', async (req, res, next) => {
   try {
