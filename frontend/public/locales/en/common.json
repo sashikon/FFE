@@ -36,6 +36,7 @@
     "visual": {
       "theme": "Item",
       "instruction": "One item doesn't belong. Find it and remove it:",
+      "tapHint": "tap the odd item to remove it",
       "correct": "Right —",
       "next": "Next layer",
       "sketchHint": "This is the original sketch"
@@ -59,5 +60,5 @@
   "copied": "Copied!",
   "restart": "Play again",
   "next": "Next outfit",
-  "shareText": "Cracked the code {{score}}/{{total}} 🖤\nCan you read it too?"
+  "shareText": "Cracked the code {{score}}/{{total}} 🖤\nCan you read it too?\n{{url}}"
 }

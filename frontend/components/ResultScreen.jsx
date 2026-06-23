@@ -12,7 +12,7 @@ const FALLBACK = {
   'copied': 'Скопировано!',
   'restart': 'Сыграть заново',
   'next': 'Следующий образ',
-  'shareText': 'Разгадала шифр на {{score}}/{{total}} 🖤\nА ты умеешь его читать?',
+  'shareText': 'Разгадала шифр на {{score}}/{{total}} 🖤\nА ты умеешь его читать?\n{{url}}',
 };
 
 const Confetti = () => {
@@ -54,16 +54,24 @@ const Confetti = () => {
   );
 };
 
-export default function ResultScreen({ score, total, onRestart, onNext }) {
-  const { t: tRaw } = useTranslation('common');
-  const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
+export default function ResultScreen({ score, total, outfitId, onRestart, onNext }) {
+  const { t: tRaw, i18n } = useTranslation('common');
+  const t = (key, vars) => { const v = tRaw(key, vars); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [isCopied, setIsCopied] = useState(false);
   const perfect = score === total;
 
+  const getShareUrl = () => {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'https://ffe-blush.vercel.app';
+    const lang = i18n?.language;
+    const prefix = lang === 'en' ? '/en' : '';
+    return outfitId ? `${base}${prefix}/outfit/${outfitId}` : base;
+  };
+
   const handleShare = () => {
-    const text = t('shareText', { score, total });
+    const url = getShareUrl();
+    const text = t('shareText', { score, total, url });
     if (navigator.share) {
-      navigator.share({ text }).catch(() => {});
+      navigator.share({ text, url }).catch(() => {});
       return;
     }
     const ta = document.createElement('textarea');

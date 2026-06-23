@@ -17,6 +17,7 @@ const FALLBACK = {
   'game.visual.theme': 'Предмет',
   'game.visual.instruction': 'Один предмет — лишний. Найди и убери его:',
   'game.visual.correct': 'Верно —',
+  'game.visual.tapHint': 'нажми на лишний предмет чтобы убрать',
   'game.visual.next': 'Следующий слой',
   'game.visual.sketchHint': 'Это исходный эскиз',
   'game.render.theme': 'Образ',
@@ -96,6 +97,12 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
     const BASE = process.env.NEXT_PUBLIC_API_URL || '';
     const data = await fetch(`${BASE}/api/renders/random?exclude=${outfitId}&count=3`).then((r) => r.json());
     const distractors = data.renders || [];
+    if (distractors.length === 0) {
+      // No other renders to compare against — skip render level
+      setRenderLevelDone(true);
+      setIsGameOver(true);
+      return;
+    }
     const choices = shuffleArray([correctRender, ...distractors]);
     setRenderChoices(choices);
   };
@@ -222,7 +229,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   };
 
   if (isGameOver) {
-    return <ResultScreen score={score} total={gameData.length} onRestart={handleRestart} onNext={onNext} />;
+    return <ResultScreen score={score} total={gameData.length} outfitId={outfitId} onRestart={handleRestart} onNext={onNext} />;
   }
 
   // Render level — shown after word rounds, before result screen
@@ -404,6 +411,10 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                     </button>
                   </div>
                 ) : (
+                  <>
+                  <p className={`text-center text-zinc-600 ${isMobile ? 'text-[11px] mb-3' : 'text-xs mb-4'} flex items-center justify-center gap-1`}>
+                    <span>👆</span> {t('game.visual.tapHint')}
+                  </p>
                   <div className={`grid grid-cols-2 ${isMobile ? 'gap-3' : 'gap-4'}`}>
                     {visualLayers.map((layer) => (
                       <button
@@ -434,6 +445,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                       </button>
                     ))}
                   </div>
+                  </>
                 )}
               </div>
             </div>
