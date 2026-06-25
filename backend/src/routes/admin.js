@@ -8,6 +8,7 @@ const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
+const { fetchAllPins, fetchPinAnalytics } = require('../pinterest');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
@@ -25,7 +26,7 @@ router.get('/outfits', async (req, res, next) => {
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description, 'pinterest_pin_id', r.pinterest_pin_id, 'pinterest_analytics', r.pinterest_analytics, 'pinterest_analytics_updated_at', r.pinterest_analytics_updated_at))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
@@ -960,6 +961,77 @@ router.patch('/render/:id/seo', async (req, res, next) => {
       [pin_title ?? null, pin_description ?? null, req.params.id]
     );
     res.json({ ok: true, pin_title, pin_description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/pinterest/sync
+// Fetches all pins from Pinterest, matches by outfit URL, saves pin_id to renders.
+router.post('/pinterest/sync', async (req, res, next) => {
+  try {
+    const pins = await fetchAllPins();
+
+    // Build map: outfit_id -> pin_id (from pin.link)
+    // Links look like: https://ffe-blush.vercel.app/outfit/<uuid>?lang=...
+    const uuidRe = /\/outfit\/([0-9a-f-]{36})/i;
+    const matched = [];
+
+    for (const pin of pins) {
+      const link = pin.link || '';
+      const m = link.match(uuidRe);
+      if (!m) continue;
+      const outfitId = m[1];
+
+      // Find renders for this outfit that don't have a pin_id yet
+      const { rows } = await pool.query(
+        `SELECT r.id FROM outfit_renders r
+         WHERE r.outfit_id = $1
+           AND (r.pinterest_pin_id IS NULL OR r.pinterest_pin_id != $2)
+         ORDER BY r.created_at DESC LIMIT 1`,
+        [outfitId, pin.id]
+      );
+
+      if (rows.length) {
+        await pool.query(
+          'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
+          [pin.id, rows[0].id]
+        );
+        matched.push({ render_id: rows[0].id, pin_id: pin.id, outfit_id: outfitId });
+      }
+    }
+
+    res.json({ ok: true, total_pins: pins.length, matched: matched.length, items: matched });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/pinterest/fetch-analytics
+// Fetches 90-day analytics for all renders that have a pinterest_pin_id.
+router.post('/pinterest/fetch-analytics', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, pinterest_pin_id FROM outfit_renders
+       WHERE pinterest_pin_id IS NOT NULL
+       ORDER BY created_at DESC`
+    );
+
+    let updated = 0;
+    for (const render of rows) {
+      const analytics = await fetchPinAnalytics(render.pinterest_pin_id);
+      if (analytics) {
+        await pool.query(
+          `UPDATE outfit_renders
+           SET pinterest_analytics = $1, pinterest_analytics_updated_at = now()
+           WHERE id = $2`,
+          [JSON.stringify(analytics), render.id]
+        );
+        updated++;
+      }
+    }
+
+    res.json({ ok: true, total: rows.length, updated });
   } catch (err) {
     next(err);
   }
