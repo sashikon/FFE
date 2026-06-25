@@ -1228,6 +1228,8 @@ function RendersGallery({ outfits, onMutate }) {
     (outfits || []).flatMap((o) => (o.renders || []).map((r) => ({ ...r, outfit: o })))
   );
   const [filter, setFilter] = useState('all'); // 'all' | 'pinterest' | 'new'
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
 
   // Sync when outfits data changes
   useEffect(() => {
@@ -1257,6 +1259,38 @@ function RendersGallery({ outfits, onMutate }) {
     );
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const data = await apiPost('/api/admin/pinterest/sync', {});
+      setSyncResult(data);
+      if (data.matched > 0) {
+        // Reload analytics right after sync
+        await apiPost('/api/admin/pinterest/fetch-analytics', {});
+        onMutate();
+      }
+    } catch (e) {
+      alert('Ошибка синхронизации: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleFetchAnalytics = async () => {
+    setSyncing(true);
+    try {
+      await apiPost('/api/admin/pinterest/fetch-analytics', {});
+      onMutate();
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const withPinId = localRenders.filter((r) => r.pinterest_pin_id).length;
+
   const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
   const notUploaded = localRenders.filter((r) => !r.pinterest_exported_at).length;
 
@@ -1278,20 +1312,37 @@ function RendersGallery({ outfits, onMutate }) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h2 className="text-lg font-medium text-zinc-300">ИИ рендеры</h2>
-        <button
-          onClick={() => setFilter('all')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-        >{localRenders.length} всего</button>
-        <button
-          onClick={() => setFilter('pinterest')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}
-        >{pExported} в Pinterest</button>
-        <button
-          onClick={() => setFilter('new')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-        >{notUploaded} не загружено</button>
+        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} всего</button>
+        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} в Pinterest</button>
+        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} не загружено</button>
+      </div>
+
+      {/* Pinterest sync bar */}
+      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800">
+        <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
+        <span className="text-[11px] text-zinc-600">{withPinId} пинов связано</span>
+        <div className="flex-1" />
+        <Tip text="Получить список пинов из Pinterest и сопоставить их с рендерами по ссылке на образ" width="w-60">
+          <button onClick={handleSync} disabled={syncing} className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-40">
+            {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+            Синхронизировать пины
+          </button>
+        </Tip>
+        {withPinId > 0 && (
+          <Tip text="Обновить данные показов, кликов и сохранений за последние 90 дней" width="w-52">
+            <button onClick={handleFetchAnalytics} disabled={syncing} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40">
+              {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+              Обновить аналитику
+            </button>
+          </Tip>
+        )}
+        {syncResult && (
+          <span className="text-[11px] text-emerald-400">
+            ✓ {syncResult.matched} из {syncResult.total_pins} пинов привязано
+          </span>
+        )}
       </div>
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
         {visible.map((render) => (
@@ -1313,6 +1364,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
+  const stats = render.pinterest_analytics;
   const [pinTitle, setPinTitle] = useState(render.pin_title || '');
   const [pinDesc, setPinDesc] = useState(render.pin_description || '');
   const [generatingSeo, setGeneratingSeo] = useState(false);
@@ -1452,6 +1504,33 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
         </div>
       ) : (
         <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
+      )}
+
+      {/* Pinterest analytics */}
+      {stats && (
+        <div className="px-1 border-t border-zinc-800 pt-2 grid grid-cols-2 gap-x-2 gap-y-0.5">
+          {[
+            { label: 'показы', value: stats.impressions },
+            { label: 'клики', value: stats.pin_clicks },
+            { label: 'переходы', value: stats.outbound_clicks },
+            { label: 'сохр.', value: stats.saves },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex items-center justify-between">
+              <span className="text-[9px] text-zinc-600">{label}</span>
+              <span className="text-[10px] text-zinc-300 font-medium tabular-nums">{value ?? '—'}</span>
+            </div>
+          ))}
+          {render.pinterest_analytics_updated_at && (
+            <p className="col-span-2 text-[8px] text-zinc-700 mt-0.5">
+              {new Date(render.pinterest_analytics_updated_at).toLocaleDateString('ru')}
+            </p>
+          )}
+        </div>
+      )}
+      {!stats && render.pinterest_pin_id && (
+        <div className="px-1 border-t border-zinc-800 pt-1.5">
+          <p className="text-[9px] text-zinc-700">пин привязан · нажми «Обновить аналитику»</p>
+        </div>
       )}
 
       {/* Pinterest SEO */}
