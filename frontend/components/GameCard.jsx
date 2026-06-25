@@ -74,6 +74,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   const [shakeId, setShakeId] = useState(null);
   const [removedId, setRemovedId] = useState(null);
   const [showVisualResult, setShowVisualResult] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const handleSvgTap = (layer) => {
     if (removedId || showVisualResult) return;
@@ -365,11 +366,15 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                 className={`w-full ${isMobile ? 'max-w-[200px]' : 'max-w-sm'} aspect-[3/4] bg-zinc-950/50 rounded-xl overflow-hidden relative border border-zinc-800 cursor-pointer group mx-auto`}
                 onClick={() => setIsModalOpen(true)}
               >
+                {!imgLoaded && (
+                  <div className="absolute inset-0 bg-zinc-800 animate-pulse rounded-xl" />
+                )}
                 <img
                   src={imageSrc}
                   alt={t('game.outfitAlt')}
-                  className="w-full h-full object-contain absolute inset-0 p-2 transition-transform duration-500 group-hover:scale-105"
-                  onError={(e) => { e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
+                  className={`w-full h-full object-contain absolute inset-0 p-2 transition-all duration-500 group-hover:scale-105 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImgLoaded(true)}
+                  onError={(e) => { setImgLoaded(true); e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-xl">
                   <ZoomIn className={`text-white ${isMobile ? 'w-10 h-10' : 'w-12 h-12'}`} />
