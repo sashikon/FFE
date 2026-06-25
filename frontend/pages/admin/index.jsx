@@ -1259,6 +1259,39 @@ function RendersGallery({ outfits, onMutate }) {
     );
   };
 
+  const handleArchiveImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    const html = await file.text();
+    // Parse pin blocks: split on pin URLs
+    const blocks = html.split(/<a href="https:\/\/www\.pinterest\.com\/pin\/(\d+)\/"/).slice(1);
+    const pins = [];
+    const uuidRe = /\/outfit\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    for (let i = 0; i < blocks.length; i += 2) {
+      const pinId = blocks[i];
+      const block = blocks[i + 1] || '';
+      const boardMatch = block.match(/Board Name: ([^\n<]+)/);
+      const canonicalMatch = block.match(/Canonical Link:[\s\S]*?href="([^"]+)"/);
+      const board = boardMatch ? boardMatch[1].trim().replace(/&amp;/g, '&') : '';
+      const canonical = canonicalMatch ? canonicalMatch[1] : '';
+      const uuidMatch = canonical.match(uuidRe);
+      if (uuidMatch) pins.push({ pin_id: pinId, board, outfit_id: uuidMatch[1] });
+    }
+    if (!pins.length) { alert('Пины не найдены в файле'); return; }
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const data = await apiPost('/api/admin/pinterest/import-pins', { pins });
+      setSyncResult(data);
+      onMutate();
+    } catch (e) {
+      alert('Ошибка импорта: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleCsvSync = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1328,15 +1361,15 @@ function RendersGallery({ outfits, onMutate }) {
       </div>
 
       {/* Pinterest sync bar */}
-      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800">
+      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800 flex-wrap">
         <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
         <span className="text-[11px] text-zinc-600">{withPinId} пинов связано</span>
         <div className="flex-1" />
-        <Tip text="Загрузи CSV из Pinterest Analytics — мы извлечём ID пинов и сопоставим с рендерами" width="w-64">
+        <Tip text="Загрузи HTML архив Pinterest (папка pins/0001.html) — автоматически привяжет все пины к образам и рендерам" width="w-72">
           <label className={`flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors cursor-pointer ${syncing ? 'opacity-40 pointer-events-none' : ''}`}>
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-            Загрузить CSV Pinterest
-            <input type="file" accept=".csv" className="hidden" onChange={handleCsvSync} disabled={syncing} />
+            Загрузить архив Pinterest
+            <input type="file" accept=".html" className="hidden" onChange={handleArchiveImport} disabled={syncing} />
           </label>
         </Tip>
         {withPinId > 0 && (
@@ -1349,7 +1382,9 @@ function RendersGallery({ outfits, onMutate }) {
         )}
         {syncResult && (
           <span className="text-[11px] text-emerald-400">
-            ✓ {syncResult.matched} из {syncResult.total_pins} пинов привязано
+            {syncResult.sketch_updated !== undefined
+              ? `✓ эскизы: ${syncResult.sketch_updated}, рендеры: ${syncResult.render_updated}`
+              : `✓ ${syncResult.matched} из ${syncResult.total_pins} привязано`}
           </span>
         )}
       </div>
