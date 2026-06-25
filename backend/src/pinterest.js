@@ -1,13 +1,14 @@
 const AD_ACCOUNT_ID = process.env.PINTEREST_AD_ACCOUNT_ID;
 const ACCESS_TOKEN  = process.env.PINTEREST_ACCESS_TOKEN;
+const READ_TOKEN    = process.env.PINTEREST_READ_TOKEN || process.env.PINTEREST_ACCESS_TOKEN;
 const BASE          = 'https://api.pinterest.com/v5';
 
-function pinterestHeaders() {
-  return { 'Authorization': `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
+function pinterestHeaders(token) {
+  return { 'Authorization': `Bearer ${token || ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
 }
 
 async function pinterestGet(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: pinterestHeaders() });
+  const res = await fetch(`${BASE}${path}`, { headers: pinterestHeaders(READ_TOKEN) });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Pinterest API ${res.status}: ${text}`);
