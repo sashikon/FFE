@@ -1429,6 +1429,42 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   );
 }
 
+function TranslateAllSvgLabelsButton({ outfits }) {
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+
+  const needsTranslation = (outfits || []).filter((o) =>
+    o.svg_layers?.some((l) => l.label && !l.label_en)
+  );
+
+  const handleRun = async () => {
+    if (!needsTranslation.length) return;
+    setRunning(true);
+    setDone(0);
+    for (const o of needsTranslation) {
+      try {
+        await apiPost(`/api/admin/outfit/${o.id}/svg-layers/translate`, {});
+        setDone((n) => n + 1);
+      } catch {}
+    }
+    setRunning(false);
+  };
+
+  if (!needsTranslation.length) return null;
+  return (
+    <Tip text={`Перевести EN названия SVG-предметов для ${needsTranslation.length} образов`} width="w-56">
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+      >
+        {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
+        {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести EN все (${needsTranslation.length})`}
+      </button>
+    </Tip>
+  );
+}
+
 function GenerateAllTitlesButton({ outfits, onMutate }) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
@@ -1922,6 +1958,7 @@ export default function AdminPage() {
                   {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
                   {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
                   <GenerateAllTitlesButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
+                  <TranslateAllSvgLabelsButton outfits={data.outfits} />
                   {dupCount > 0 && (
                     <button
                       onClick={() => setShowDuplicates((v) => !v)}
