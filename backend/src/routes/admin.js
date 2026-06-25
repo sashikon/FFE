@@ -1018,6 +1018,39 @@ router.patch('/render/:id/pin-id', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/pinterest/import-pins
+// One-shot: accepts parsed pin data from Pinterest archive HTML, saves to DB.
+// { pins: [{ pin_id, board, outfit_id }] }
+router.post('/pinterest/import-pins', async (req, res, next) => {
+  try {
+    const { pins } = req.body;
+    if (!Array.isArray(pins)) return res.status(400).json({ error: 'pins array required' });
+
+    let sketchUpdated = 0, renderUpdated = 0;
+
+    for (const pin of pins) {
+      if (pin.board === 'Fashion sketch') {
+        const r = await pool.query(
+          'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
+          [pin.pin_id, pin.outfit_id]
+        );
+        if (r.rowCount > 0) sketchUpdated++;
+      } else if (pin.board !== 'Collage Item Pins') {
+        const r = await pool.query(
+          `UPDATE outfit_renders SET pinterest_pin_id = $1
+           WHERE id = (SELECT id FROM outfit_renders WHERE outfit_id = $2 ORDER BY created_at DESC LIMIT 1)`,
+          [pin.pin_id, pin.outfit_id]
+        );
+        if (r.rowCount > 0) renderUpdated++;
+      }
+    }
+
+    res.json({ ok: true, sketch_updated: sketchUpdated, render_updated: renderUpdated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/pinterest/pin/:id — debug: see raw pin data
 router.get('/pinterest/pin/:id', async (req, res, next) => {
   try {
