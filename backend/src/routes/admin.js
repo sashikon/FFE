@@ -22,7 +22,7 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported, o.sketch_pin_id,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
@@ -961,6 +961,20 @@ router.patch('/render/:id/seo', async (req, res, next) => {
       [pin_title ?? null, pin_description ?? null, req.params.id]
     );
     res.json({ ok: true, pin_title, pin_description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/outfit/:id/sketch-pin-id — manually set sketch Pinterest pin
+router.patch('/outfit/:id/sketch-pin-id', async (req, res, next) => {
+  try {
+    const { sketch_pin_id } = req.body;
+    await pool.query(
+      'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
+      [sketch_pin_id || null, req.params.id]
+    );
+    res.json({ ok: true, sketch_pin_id });
   } catch (err) {
     next(err);
   }
