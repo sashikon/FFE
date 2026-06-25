@@ -1715,6 +1715,49 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
   );
 }
 
+function SketchPinField({ outfitId, initialPinId }) {
+  const [pinId, setPinId] = useState(initialPinId || '');
+  const [input, setInput] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const raw = input.trim();
+    const m = raw.match(/\/pin\/(\d+)/);
+    const id = m ? m[1] : raw.replace(/\D/g, '');
+    if (!id) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/api/admin/outfit/${outfitId}/sketch-pin-id`, { sketch_pin_id: id });
+      setPinId(id);
+      setInput('');
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (pinId) return (
+    <span className="flex items-center gap-1">
+      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">эскиз↗</a>
+      <button onClick={() => setPinId('')} className="text-[10px] text-zinc-700 hover:text-zinc-400">×</button>
+    </span>
+  );
+
+  return (
+    <span className="flex items-center gap-0.5 ml-1">
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+        placeholder="пин эскиза…"
+        className="bg-transparent text-[10px] text-zinc-600 placeholder-zinc-800 outline-none w-20"
+      />
+      {input && <button onClick={handleSave} disabled={saving} className="text-[10px] text-rose-500">{saving ? '…' : '✓'}</button>}
+    </span>
+  );
+}
+
 function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange }) {
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
@@ -1826,6 +1869,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           </div>
           <div className="flex items-center gap-1 mt-0.5 mb-0.5">
             <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
+            <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
           </div>
           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             {(['ru', 'en']).map((lang) => {
