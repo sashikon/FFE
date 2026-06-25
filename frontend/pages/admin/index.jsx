@@ -1288,6 +1288,7 @@ function RendersGallery({ outfits, onMutate }) {
     setSyncing(true);
     try {
       await apiPost('/api/admin/pinterest/fetch-analytics', {});
+      await apiPost('/api/admin/pinterest/fetch-sketch-analytics', {});
       onMutate();
     } catch (e) {
       alert('Ошибка: ' + e.message);
@@ -1867,9 +1868,16 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               </Tip>
             )}
           </div>
-          <div className="flex items-center gap-1 mt-0.5 mb-0.5">
+          <div className="flex items-center gap-1 mt-0.5 mb-0.5 flex-wrap">
             <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
             <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
+            {outfit.sketch_pin_analytics && (
+              <span className="text-[10px] text-zinc-600 ml-1">
+                👁 {outfit.sketch_pin_analytics.impressions ?? 0}
+                {' · '}↗ {outfit.sketch_pin_analytics.outbound_clicks ?? 0}
+                {' · '}♡ {outfit.sketch_pin_analytics.saves ?? 0}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             {(['ru', 'en']).map((lang) => {
