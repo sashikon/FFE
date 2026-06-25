@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle2, XCircle, ArrowRight, ZoomIn, Upload } from 'lucide-react';
 import { useTranslation } from 'next-i18next/pages';
 import { fetcher } from '../lib/api';
+import { sendPinterestEvent } from '../lib/pinterestEvents';
 
 const FALLBACK = {
   'game.title': 'НАЙДИ ЛИШНЕЕ',
@@ -189,6 +190,12 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
     }).then((r) => {
       if (!r.ok) r.text().then((t) => console.error('[saveSession] error', r.status, t));
     }).catch((e) => console.error('[saveSession] fetch failed', e));
+
+    sendPinterestEvent(
+      'game_complete',
+      `https://ffe-blush.vercel.app/outfit/${outfitId}`,
+      { score: finalScore, total: gameData.length }
+    );
   };
 
   const handleNext = () => {
