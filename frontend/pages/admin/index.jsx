@@ -1259,14 +1259,21 @@ function RendersGallery({ outfits, onMutate }) {
     );
   };
 
-  const handleSync = async () => {
+  const handleCsvSync = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    const text = await file.text();
+    // Extract pin IDs from URLs like https://www.pinterest.com/pin/123456789/
+    const pinIds = [...text.matchAll(/\/pin\/(\d+)\//g)].map((m) => m[1]);
+    const unique = [...new Set(pinIds)];
+    if (!unique.length) { alert('PIN ID не найдены в CSV'); return; }
     setSyncing(true);
     setSyncResult(null);
     try {
-      const data = await apiPost('/api/admin/pinterest/sync', {});
+      const data = await apiPost('/api/admin/pinterest/sync', { pin_ids: unique });
       setSyncResult(data);
       if (data.matched > 0) {
-        // Reload analytics right after sync
         await apiPost('/api/admin/pinterest/fetch-analytics', {});
         onMutate();
       }
@@ -1324,11 +1331,12 @@ function RendersGallery({ outfits, onMutate }) {
         <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
         <span className="text-[11px] text-zinc-600">{withPinId} пинов связано</span>
         <div className="flex-1" />
-        <Tip text="Получить список пинов из Pinterest и сопоставить их с рендерами по ссылке на образ" width="w-60">
-          <button onClick={handleSync} disabled={syncing} className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-40">
+        <Tip text="Загрузи CSV из Pinterest Analytics — мы извлечём ID пинов и сопоставим с рендерами" width="w-64">
+          <label className={`flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors cursor-pointer ${syncing ? 'opacity-40 pointer-events-none' : ''}`}>
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-            Синхронизировать пины
-          </button>
+            Загрузить CSV Pinterest
+            <input type="file" accept=".csv" className="hidden" onChange={handleCsvSync} disabled={syncing} />
+          </label>
         </Tip>
         {withPinId > 0 && (
           <Tip text="Обновить данные показов, кликов и сохранений за последние 90 дней" width="w-52">
