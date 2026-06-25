@@ -1006,7 +1006,7 @@ router.post('/pinterest/sync', async (req, res, next) => {
     res.json({ ok: true, total_pins: pins.length, matched: matched.length, items: matched });
   } catch (err) {
     console.error('[pinterest/sync] error:', err.message);
-    next(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

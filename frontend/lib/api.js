@@ -25,8 +25,12 @@ export const apiPost = (url, body) => {
       ...adminHeaders(),
       ...(isForm ? {} : { 'Content-Type': 'application/json' }),
     },
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  }).then(async (r) => {
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); msg = j.error || j.message || msg; } catch {}
+      throw new Error(msg);
+    }
     return r.json();
   });
 };
