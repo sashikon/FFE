@@ -1320,8 +1320,12 @@ function RendersGallery({ outfits, onMutate }) {
   const handleFetchAnalytics = async () => {
     setSyncing(true);
     try {
-      await apiPost('/api/admin/pinterest/fetch-analytics', {});
-      await apiPost('/api/admin/pinterest/fetch-sketch-analytics', {});
+      const [r1, r2] = await Promise.all([
+        apiPost('/api/admin/pinterest/fetch-analytics', {}),
+        apiPost('/api/admin/pinterest/fetch-sketch-analytics', {}),
+      ]);
+      const err = r1.last_error || r2.last_error;
+      if (err) alert('Pinterest API: ' + err);
       onMutate();
     } catch (e) {
       alert('Ошибка: ' + e.message);
