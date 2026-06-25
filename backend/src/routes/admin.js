@@ -970,7 +970,9 @@ router.patch('/render/:id/seo', async (req, res, next) => {
 // Fetches all pins from Pinterest, matches by outfit URL, saves pin_id to renders.
 router.post('/pinterest/sync', async (req, res, next) => {
   try {
+    console.log('[pinterest/sync] starting, READ_TOKEN set:', !!process.env.PINTEREST_READ_TOKEN);
     const pins = await fetchAllPins();
+    console.log('[pinterest/sync] fetched pins:', pins.length);
 
     // Build map: outfit_id -> pin_id (from pin.link)
     // Links look like: https://ffe-blush.vercel.app/outfit/<uuid>?lang=...
@@ -1003,6 +1005,7 @@ router.post('/pinterest/sync', async (req, res, next) => {
 
     res.json({ ok: true, total_pins: pins.length, matched: matched.length, items: matched });
   } catch (err) {
+    console.error('[pinterest/sync] error:', err.message);
     next(err);
   }
 });
