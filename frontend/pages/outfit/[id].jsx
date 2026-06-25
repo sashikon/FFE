@@ -164,6 +164,7 @@ export default function OutfitPage() {
             renders={data.renders?.length > 0 ? data.renders : undefined}
             gameData={data.game_rows}
             outfitId={id}
+            lang={lang}
             isMobile={isMobile}
             isDesktop={isDesktop}
             onNext={handleNext}
