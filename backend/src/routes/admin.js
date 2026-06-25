@@ -22,7 +22,7 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported, o.sketch_pin_id,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported, o.sketch_pin_id, o.sketch_pin_analytics, o.sketch_pin_analytics_updated_at,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
@@ -963,6 +963,30 @@ router.patch('/render/:id/seo', async (req, res, next) => {
     res.json({ ok: true, pin_title, pin_description });
   } catch (err) {
     next(err);
+  }
+});
+
+// POST /api/admin/pinterest/fetch-sketch-analytics
+// Fetches 90-day analytics for all outfits that have a sketch_pin_id.
+router.post('/pinterest/fetch-sketch-analytics', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sketch_pin_id FROM outfits WHERE sketch_pin_id IS NOT NULL`
+    );
+    let updated = 0;
+    for (const outfit of rows) {
+      const analytics = await fetchPinAnalytics(outfit.sketch_pin_id);
+      if (analytics) {
+        await pool.query(
+          `UPDATE outfits SET sketch_pin_analytics = $1, sketch_pin_analytics_updated_at = now() WHERE id = $2`,
+          [JSON.stringify(analytics), outfit.id]
+        );
+        updated++;
+      }
+    }
+    res.json({ ok: true, total: rows.length, updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
