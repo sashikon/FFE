@@ -75,4 +75,46 @@ Return ONLY valid JSON, no markdown:
   throw lastErr;
 }
 
-module.exports = { analyzeAesthetics, AESTHETICS };
+const APPEARANCE_OPTIONS = [
+  'East Asian', 'South Asian', 'Southeast Asian',
+  'African', 'Middle Eastern', 'European', 'Latina',
+  'Mixed / ambiguous', 'No face visible',
+];
+
+const SKIN_TONE_OPTIONS = ['light', 'medium', 'dark'];
+
+async function analyzeModel(imageUrl) {
+  const safeUrl = resizeCloudinaryUrl(imageUrl);
+
+  const prompt = `Look at the model in this fashion image.
+
+Return ONLY valid JSON, no markdown:
+{
+  "has_face": true or false,
+  "appearance": one of ${JSON.stringify(APPEARANCE_OPTIONS)},
+  "skin_tone": one of ${JSON.stringify(SKIN_TONE_OPTIONS)}
+}
+
+If there is no visible person or face, set has_face to false, appearance to "No face visible", skin_tone to null.`;
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 128,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'url', url: safeUrl } },
+        { type: 'text', text: prompt },
+      ],
+    }],
+  });
+
+  const raw = response.content[0].text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
+  return JSON.parse(raw);
+}
+
+module.exports = { analyzeAesthetics, analyzeModel, AESTHETICS, APPEARANCE_OPTIONS, SKIN_TONE_OPTIONS };
