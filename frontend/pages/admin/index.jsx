@@ -1417,6 +1417,27 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
     setEditingSeo(false);
   };
 
+  const [pinIdInput, setPinIdInput] = useState('');
+  const [savingPinId, setSavingPinId] = useState(false);
+  const [currentPinId, setCurrentPinId] = useState(render.pinterest_pin_id || '');
+
+  const handleSavePinId = async () => {
+    const raw = pinIdInput.trim();
+    const m = raw.match(/\/pin\/(\d+)/);
+    const pinId = m ? m[1] : raw.replace(/\D/g, '');
+    if (!pinId) return;
+    setSavingPinId(true);
+    try {
+      await apiPatch(`/api/admin/render/${render.id}/pin-id`, { pinterest_pin_id: pinId });
+      setCurrentPinId(pinId);
+      setPinIdInput('');
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setSavingPinId(false);
+    }
+  };
+
   const handlePinterestToggle = async (e) => {
     e.stopPropagation();
     const next = !pExported;
@@ -1513,6 +1534,31 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       ) : (
         <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
       )}
+
+      {/* Pinterest pin link input */}
+      <div className="px-1 border-t border-zinc-800 pt-2">
+        {currentPinId ? (
+          <div className="flex items-center justify-between">
+            <a href={`https://www.pinterest.com/pin/${currentPinId}/`} target="_blank" rel="noreferrer" className="text-[9px] text-rose-400 hover:text-rose-300 truncate">pin/{currentPinId.slice(-6)}</a>
+            <button onClick={() => setCurrentPinId('')} className="text-[9px] text-zinc-600 hover:text-zinc-400 ml-1 shrink-0">×</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <input
+              value={pinIdInput}
+              onChange={(e) => setPinIdInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSavePinId()}
+              placeholder="ссылка на пин…"
+              className="flex-1 bg-transparent text-[9px] text-zinc-400 placeholder-zinc-700 outline-none min-w-0"
+            />
+            {pinIdInput && (
+              <button onClick={handleSavePinId} disabled={savingPinId} className="text-[9px] text-rose-400 hover:text-rose-300 shrink-0">
+                {savingPinId ? '…' : '✓'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Pinterest analytics */}
       {stats && (
