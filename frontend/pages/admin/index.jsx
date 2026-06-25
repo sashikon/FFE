@@ -1313,6 +1313,13 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
+  const [pinTitle, setPinTitle] = useState(render.pin_title || '');
+  const [pinDesc, setPinDesc] = useState(render.pin_description || '');
+  const [generatingSeo, setGeneratingSeo] = useState(false);
+  const [seoLang, setSeoLang] = useState('en');
+  const [editingSeo, setEditingSeo] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
   const top = aesthetics?.top;
 
   const handleAnalyze = async (e) => {
@@ -1327,6 +1334,27 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const handleGenerateSeo = async (lang) => {
+    setGeneratingSeo(true);
+    setSeoLang(lang);
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/generate-seo`, { lang });
+      setPinTitle(data.pin_title || '');
+      setPinDesc(data.pin_description || '');
+    } catch (err) {
+      alert('Ошибка SEO: ' + err.message);
+    } finally {
+      setGeneratingSeo(false);
+    }
+  };
+
+  const handleSaveSeo = async () => {
+    await apiPatch(`/api/admin/render/${render.id}/seo`, { pin_title: editTitle, pin_description: editDesc });
+    setPinTitle(editTitle);
+    setPinDesc(editDesc);
+    setEditingSeo(false);
   };
 
   const handlePinterestToggle = async (e) => {
@@ -1425,6 +1453,61 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       ) : (
         <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
       )}
+
+      {/* Pinterest SEO */}
+      <div className="px-1 border-t border-zinc-800 pt-2">
+        {editingSeo ? (
+          <div className="space-y-1.5">
+            <input
+              autoFocus
+              value={editTitle}
+              onChange={e => setEditTitle(e.target.value)}
+              placeholder="Title (до 100 символов)"
+              maxLength={100}
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400"
+            />
+            <textarea
+              value={editDesc}
+              onChange={e => setEditDesc(e.target.value)}
+              placeholder="Description (до 500 символов)"
+              maxLength={500}
+              rows={3}
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400 resize-none"
+            />
+            <div className="flex gap-2">
+              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">Сохранить</button>
+              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">отмена</button>
+            </div>
+          </div>
+        ) : pinTitle ? (
+          <div className="space-y-1">
+            <div className="flex items-start justify-between gap-1">
+              <p className="text-[10px] text-zinc-300 font-medium leading-tight flex-1">{pinTitle}</p>
+              <button
+                onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
+                className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
+              >ред.</button>
+            </div>
+            {pinDesc && <p className="text-[9px] text-zinc-500 leading-snug">{pinDesc}</p>}
+            <div className="flex gap-2 pt-0.5">
+              {['en', 'ru'].map(l => (
+                <button key={l} onClick={() => handleGenerateSeo(l)} disabled={generatingSeo} className="text-[9px] text-zinc-600 hover:text-violet-400 transition-colors disabled:opacity-40">
+                  {generatingSeo && seoLang === l ? <Loader2 size={9} className="animate-spin inline" /> : <Sparkles size={9} className="inline" />} {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-zinc-700">Pinterest SEO:</span>
+            {['en', 'ru'].map(l => (
+              <button key={l} onClick={() => handleGenerateSeo(l)} disabled={generatingSeo} className="flex items-center gap-0.5 text-[9px] text-zinc-500 hover:text-violet-400 transition-colors disabled:opacity-40">
+                {generatingSeo && seoLang === l ? <Loader2 size={9} className="animate-spin" /> : <Sparkles size={9} />} {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
