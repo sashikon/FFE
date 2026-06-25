@@ -92,4 +92,8 @@ async function fetchPinAnalytics(pinId) {
   }
 }
 
-module.exports = { sendPinterestEvents, fetchAllPins, fetchPinAnalytics };
+async function fetchPinById(pinId) {
+  return pinterestGet(`/pins/${pinId}`);
+}
+
+module.exports = { sendPinterestEvents, fetchAllPins, fetchPinById, fetchPinAnalytics };

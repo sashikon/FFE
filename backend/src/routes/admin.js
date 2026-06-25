@@ -8,7 +8,7 @@ const { analyzeAesthetics } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const { fetchAllPins, fetchPinAnalytics } = require('../pinterest');
+const { fetchAllPins, fetchPinById, fetchPinAnalytics } = require('../pinterest');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
@@ -967,45 +967,48 @@ router.patch('/render/:id/seo', async (req, res, next) => {
 });
 
 // POST /api/admin/pinterest/sync
-// Fetches all pins from Pinterest, matches by outfit URL, saves pin_id to renders.
+// Accepts { pin_ids: string[] } from CSV, fetches each pin individually to get link,
+// matches link to outfit, saves pin_id to renders.
 router.post('/pinterest/sync', async (req, res, next) => {
   try {
-    console.log('[pinterest/sync] starting, READ_TOKEN set:', !!process.env.PINTEREST_READ_TOKEN);
-    const pins = await fetchAllPins();
-    console.log('[pinterest/sync] fetched pins:', pins.length);
+    const { pin_ids } = req.body;
+    if (!Array.isArray(pin_ids) || !pin_ids.length) {
+      return res.status(400).json({ error: 'pin_ids array required' });
+    }
 
-    // Build map: outfit_id -> pin_id (from pin.link)
-    // Links look like: https://ffe-blush.vercel.app/outfit/<uuid>?lang=...
     const uuidRe = /\/outfit\/([0-9a-f-]{36})/i;
     const matched = [];
+    const errors = [];
 
-    for (const pin of pins) {
-      const link = pin.link || '';
-      const m = link.match(uuidRe);
-      if (!m) continue;
-      const outfitId = m[1];
+    for (const pinId of pin_ids) {
+      try {
+        const pin = await fetchPinById(pinId);
+        const link = pin.link || '';
+        const m = link.match(uuidRe);
+        if (!m) continue;
+        const outfitId = m[1];
 
-      // Find renders for this outfit that don't have a pin_id yet
-      const { rows } = await pool.query(
-        `SELECT r.id FROM outfit_renders r
-         WHERE r.outfit_id = $1
-           AND (r.pinterest_pin_id IS NULL OR r.pinterest_pin_id != $2)
-         ORDER BY r.created_at DESC LIMIT 1`,
-        [outfitId, pin.id]
-      );
-
-      if (rows.length) {
-        await pool.query(
-          'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
-          [pin.id, rows[0].id]
+        const { rows } = await pool.query(
+          `SELECT r.id FROM outfit_renders r
+           WHERE r.outfit_id = $1
+           ORDER BY r.created_at DESC LIMIT 1`,
+          [outfitId]
         );
-        matched.push({ render_id: rows[0].id, pin_id: pin.id, outfit_id: outfitId });
+
+        if (rows.length) {
+          await pool.query(
+            'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
+            [pinId, rows[0].id]
+          );
+          matched.push({ render_id: rows[0].id, pin_id: pinId, outfit_id: outfitId });
+        }
+      } catch (e) {
+        errors.push({ pin_id: pinId, error: e.message });
       }
     }
 
-    res.json({ ok: true, total_pins: pins.length, matched: matched.length, items: matched });
+    res.json({ ok: true, total_pins: pin_ids.length, matched: matched.length, items: matched, errors });
   } catch (err) {
-    console.error('[pinterest/sync] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
