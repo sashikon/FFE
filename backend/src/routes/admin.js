@@ -25,7 +25,7 @@ router.get('/outfits', async (req, res, next) => {
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
@@ -470,6 +470,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       const renderFilter = ids && ids.length ? ids : null;
       const result = await pool.query(
         `SELECT r.id AS render_id, r.image_url AS render_url, r.thumb_url AS render_thumb_url,
+                r.pin_title, r.pin_description,
                 o.id, o.image_url, o.thumb_url, o.title,
                 t.game_rows, o.pinterest_exported
          FROM outfit_renders r
@@ -673,6 +674,7 @@ router.get('/pinterest-export', async (req, res, next) => {
     const rawTitles = rows.map((outfit, i) => {
       const gameRows = outfit.game_rows || [];
       return (
+        outfit.pin_title ||
         outfit.title ||
         buildTitle(gameRows) ||
         (lang === 'ru' ? `Образ ${i + 1}` : `Outfit ${i + 1}`)
@@ -696,7 +698,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       const mediaUrl    = rendersOnly
         ? (outfit.render_url || outfit.image_url)   // specific render image
         : (outfit.render_url || outfit.image_url);  // best render or sketch
-      const description = buildDescription(gameRows);
+      const description = outfit.pin_description || buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
       const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
 
@@ -862,6 +864,102 @@ router.delete('/mechanic-screenshot/:id', async (req, res, next) => {
   try {
     await pool.query('DELETE FROM mechanic_screenshots WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/render/:id/generate-seo — Claude generates Pinterest SEO title+description
+router.post('/render/:id/generate-seo', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { lang = 'en' } = req.body;
+
+    // Load render + outfit data
+    const { rows } = await pool.query(
+      `SELECT r.id, r.aesthetics, r.pin_title, r.pin_description,
+              o.title AS outfit_title,
+              t.game_rows
+       FROM outfit_renders r
+       JOIN outfits o ON o.id = r.outfit_id
+       LEFT JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $2
+       WHERE r.id = $1`,
+      [id, lang]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Render not found' });
+    const render = rows[0];
+
+    const aestheticsTop = render.aesthetics?.top?.slice(0, 3).map(a => a.name).join(', ') || '';
+    const gameRows = render.game_rows || [];
+    const themes = gameRows.map(r => r.theme).filter(Boolean).join(', ');
+    const gameKeywords = gameRows.flatMap(r => r.options || []).filter(Boolean).slice(0, 20).join(', ');
+    const outfitTitle = render.outfit_title || '';
+
+    const isRu = lang === 'ru';
+
+    const prompt = isRu
+      ? `Ты Pinterest SEO-специалист для русской аудитории. Создай title и description для пина.
+
+Данные об образе:
+- Название: ${outfitTitle || '—'}
+- Pinterest-эстетики: ${aestheticsTop || '—'}
+- Темы игры: ${themes || '—'}
+- Ключевые слова образа: ${gameKeywords || '—'}
+
+Правила:
+- Title: 2-6 слов, максимум 100 символов. Пример: «Романтичный образ с буфами»
+- Description: 1-3 предложения, 80-150 символов. Начни с эмоции или визуального образа, заверши призывом или вопросом. Упомяни конкретные элементы.
+- Оба поля — на русском, без хэштегов
+- Ориентируйся на запросы: «идеи образов», «что одеть», «стиль», «эстетика одежды»
+
+Верни строго JSON: {"title": "...", "description": "..."}`
+      : `You are a Pinterest SEO specialist. Generate a pin title and description optimized for 2025 Pinterest search.
+
+Outfit data:
+- Outfit title: ${outfitTitle || '—'}
+- Top Pinterest aesthetics: ${aestheticsTop || '—'}
+- Game semantic layers: ${themes || '—'}
+- Keywords from outfit: ${gameKeywords || '—'}
+
+Rules:
+- Title: 3-7 words, max 100 chars. Include a trending aesthetic if applicable. Examples: "Vamp Romantic Outfit Ideas", "Cocktail Party Dress Inspo"
+- Description: 2-3 sentences, 100-200 chars. Lead with a visual or emotional hook, name specific garment details, end with a call to action or question.
+- No hashtags in either field
+- Target keywords: outfit ideas, dress to impress, aesthetic clothes, style inspo, fashion
+
+Return strict JSON only: {"title": "...", "description": "..."}`;
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const raw = msg.content[0].text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: 'Parse error', raw });
+    const { title, description } = JSON.parse(match[0]);
+
+    await pool.query(
+      'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
+      [title || null, description || null, id]
+    );
+
+    res.json({ ok: true, pin_title: title, pin_description: description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/render/:id/seo — save pin_title / pin_description manually
+router.patch('/render/:id/seo', async (req, res, next) => {
+  try {
+    const { pin_title, pin_description } = req.body;
+    await pool.query(
+      'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
+      [pin_title ?? null, pin_description ?? null, req.params.id]
+    );
+    res.json({ ok: true, pin_title, pin_description });
   } catch (err) {
     next(err);
   }
