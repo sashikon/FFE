@@ -1413,7 +1413,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
   const stats = render.pinterest_analytics;
-  const model = render.model_appearance;
+  const [model, setModel] = useState(render.model_appearance || null);
   const [pinTitle, setPinTitle] = useState(render.pin_title || '');
   const [pinDesc, setPinDesc] = useState(render.pin_description || '');
   const [generatingSeo, setGeneratingSeo] = useState(false);
@@ -1429,6 +1429,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
     try {
       const data = await apiPost(`/api/admin/render/${render.id}/analyze`);
       setAesthetics(data.aesthetics);
+      if (data.model_appearance) setModel(data.model_appearance);
       onAnalyzed(render.id, data.aesthetics);
     } catch (err) {
       alert('Ошибка анализа: ' + err.message);
