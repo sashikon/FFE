@@ -1572,7 +1572,10 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               </Tip>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <div className="flex items-center gap-1 mt-0.5 mb-0.5">
+            <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             {(['ru', 'en']).map((lang) => {
               const t = outfit.translations?.[lang];
               const status = t?.status || 'pending';
