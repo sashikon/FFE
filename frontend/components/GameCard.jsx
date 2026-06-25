@@ -62,9 +62,10 @@ const shuffleArray = (array) => {
   return arr;
 };
 
-export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders, gameData, outfitId, isMobile, isDesktop, onNext }) {
+export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders, gameData, outfitId, lang: langProp, isMobile, isDesktop, onNext }) {
   const { t: tRaw, i18n } = useTranslation('common');
   const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
+  const isEn = (langProp || i18n.language) === 'en';
 
   // Visual level — shown before word rounds when outfit has a marked wrong SVG item
   const wrongSvgLayer = svgLayers?.find((l) => l.is_wrong);
@@ -399,7 +400,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                         <CheckCircle2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-emerald-500 shrink-0 mt-0.5`} />
                         <div>
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
-                            {t('game.visual.correct')} {(i18n.language === 'en' && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
+                            {t('game.visual.correct')} {(isEn && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
                           </h3>
                           {wrongSvgLayer.wrong_reason && (
                             <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
@@ -446,7 +447,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                           className={`object-contain ${isMobile ? 'w-16 h-20' : 'w-24 h-28'}`}
                         />
                         <span className={`text-zinc-300 text-center leading-tight ${isMobile ? 'text-[11px]' : 'text-xs'}`}>
-                          {(i18n.language === 'en' && layer.label_en) ? layer.label_en : layer.label}
+                          {(isEn && layer.label_en) ? layer.label_en : layer.label}
                         </span>
                       </button>
                     ))}
