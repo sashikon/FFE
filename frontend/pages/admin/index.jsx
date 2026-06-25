@@ -1413,6 +1413,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
   const stats = render.pinterest_analytics;
+  const model = render.model_appearance;
   const [pinTitle, setPinTitle] = useState(render.pin_title || '');
   const [pinDesc, setPinDesc] = useState(render.pin_description || '');
   const [generatingSeo, setGeneratingSeo] = useState(false);
@@ -1573,6 +1574,22 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
         </div>
       ) : (
         <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
+      )}
+
+      {/* Model appearance */}
+      {model && (
+        <div className="px-1 border-t border-zinc-800 pt-1.5 flex items-center gap-1.5 flex-wrap">
+          {model.has_face ? (
+            <>
+              <span className="text-[9px] text-zinc-400">{model.appearance}</span>
+              {model.skin_tone && (
+                <span className={`text-[8px] px-1 rounded ${model.skin_tone === 'light' ? 'bg-amber-950 text-amber-300' : model.skin_tone === 'medium' ? 'bg-orange-950 text-orange-300' : 'bg-zinc-800 text-zinc-300'}`}>{model.skin_tone}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-[9px] text-zinc-600">без лица</span>
+          )}
+        </div>
       )}
 
       {/* Pinterest pin link input */}

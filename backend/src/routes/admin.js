@@ -4,7 +4,7 @@ const fs = require('fs');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
-const { analyzeAesthetics } = require('../llm/aesthetics');
+const { analyzeAesthetics, analyzeModel } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -26,7 +26,7 @@ router.get('/outfits', async (req, res, next) => {
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description, 'pinterest_pin_id', r.pinterest_pin_id, 'pinterest_analytics', r.pinterest_analytics, 'pinterest_analytics_updated_at', r.pinterest_analytics_updated_at))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description, 'pinterest_pin_id', r.pinterest_pin_id, 'pinterest_analytics', r.pinterest_analytics, 'pinterest_analytics_updated_at', r.pinterest_analytics_updated_at, 'model_appearance', r.model_appearance))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
@@ -801,9 +801,15 @@ router.post('/render/:id/analyze', async (req, res, next) => {
     const { rows } = await pool.query('SELECT image_url FROM outfit_renders WHERE id = $1', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
-    const aesthetics = await analyzeAesthetics(rows[0].image_url);
-    await pool.query('UPDATE outfit_renders SET aesthetics = $1 WHERE id = $2', [JSON.stringify(aesthetics), id]);
-    res.json({ aesthetics });
+    const [aesthetics, model_appearance] = await Promise.all([
+      analyzeAesthetics(rows[0].image_url),
+      analyzeModel(rows[0].image_url),
+    ]);
+    await pool.query(
+      'UPDATE outfit_renders SET aesthetics = $1, model_appearance = $2 WHERE id = $3',
+      [JSON.stringify(aesthetics), JSON.stringify(model_appearance), id]
+    );
+    res.json({ aesthetics, model_appearance });
   } catch (err) {
     next(err);
   }
