@@ -1119,8 +1119,9 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
     );
 
     let updated = 0;
+    let lastError = null;
     for (const render of rows) {
-      const analytics = await fetchPinAnalytics(render.pinterest_pin_id);
+      const analytics = await fetchPinAnalytics(render.pinterest_pin_id).catch(e => { lastError = e.message; return null; });
       if (analytics) {
         await pool.query(
           `UPDATE outfit_renders
@@ -1132,7 +1133,7 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
       }
     }
 
-    res.json({ ok: true, total: rows.length, updated });
+    res.json({ ok: true, total: rows.length, updated, last_error: lastError });
   } catch (err) {
     next(err);
   }
