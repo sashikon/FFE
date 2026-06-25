@@ -966,6 +966,20 @@ router.patch('/render/:id/seo', async (req, res, next) => {
   }
 });
 
+// PATCH /api/admin/render/:id/pin-id — manually set pinterest_pin_id
+router.patch('/render/:id/pin-id', async (req, res, next) => {
+  try {
+    const { pinterest_pin_id } = req.body;
+    await pool.query(
+      'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
+      [pinterest_pin_id || null, req.params.id]
+    );
+    res.json({ ok: true, pinterest_pin_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/pinterest/pin/:id — debug: see raw pin data
 router.get('/pinterest/pin/:id', async (req, res, next) => {
   try {
