@@ -29,7 +29,7 @@ router.get('/outfits', async (req, res, next) => {
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
-                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason, 'wrong_source', s.wrong_source)
+                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'label_en', s.label_en, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason, 'wrong_source', s.wrong_source)
                         ORDER BY s.sort_order, s.created_at)
                 FROM outfit_svg_layers s WHERE s.outfit_id = o.id
               ), '[]') AS svg_layers
@@ -222,7 +222,7 @@ router.post('/outfit/:id/svg-layers/from-library', async (req, res, next) => {
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
     const { layerId } = req.params;
-    const { label, sort_order, is_wrong, wrong_reason, wrong_source } = req.body;
+    const { label, label_en, sort_order, is_wrong, wrong_reason, wrong_source } = req.body;
     if (is_wrong === true) {
       const { rows } = await pool.query('SELECT outfit_id FROM outfit_svg_layers WHERE id = $1', [layerId]);
       if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE, wrong_source = NULL WHERE outfit_id = $1', [rows[0].outfit_id]);
@@ -230,12 +230,13 @@ router.patch('/svg-layer/:layerId', async (req, res, next) => {
     await pool.query(
       `UPDATE outfit_svg_layers SET
         label = COALESCE($1, label),
-        sort_order = COALESCE($2, sort_order),
-        is_wrong = COALESCE($3, is_wrong),
-        wrong_reason = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE wrong_reason END,
-        wrong_source = CASE WHEN $5::text IS NOT NULL THEN $5 WHEN $3 = false THEN NULL ELSE wrong_source END
-       WHERE id = $6`,
-      [label ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, wrong_source ?? null, layerId]
+        label_en = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE label_en END,
+        sort_order = COALESCE($3, sort_order),
+        is_wrong = COALESCE($4, is_wrong),
+        wrong_reason = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE wrong_reason END,
+        wrong_source = CASE WHEN $6::text IS NOT NULL THEN $6 WHEN $4 = false THEN NULL ELSE wrong_source END
+       WHERE id = $7`,
+      [label ?? null, label_en ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, wrong_source ?? null, layerId]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -249,6 +250,46 @@ router.delete('/svg-layer/:layerId', async (req, res, next) => {
     const { layerId } = req.params;
     await pool.query('DELETE FROM outfit_svg_layers WHERE id = $1', [layerId]);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/outfit/:id/svg-layers/translate — Claude Haiku translates all RU labels to EN
+router.post('/outfit/:id/svg-layers/translate', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      'SELECT id, label FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
+      [id]
+    );
+    if (!rows.length) return res.json({ ok: true, count: 0 });
+
+    const labelList = rows.map((r, i) => `${i + 1}. ${r.label}`).join('\n');
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{
+        role: 'user',
+        content: `Translate these Russian fashion item names to concise English (2-4 words max each). Return ONLY a JSON array of strings in the same order, no extra text.\n\n${labelList}`,
+      }],
+    });
+
+    const raw = msg.content[0].text.trim();
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) return res.status(500).json({ error: 'Parse error', raw });
+    const translations = JSON.parse(match[0]);
+
+    for (let i = 0; i < rows.length; i++) {
+      const en = translations[i];
+      if (en) await pool.query('UPDATE outfit_svg_layers SET label_en = $1 WHERE id = $2', [en, rows[i].id]);
+    }
+
+    const { rows: updated } = await pool.query(
+      'SELECT id, label_en FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+      [id]
+    );
+    res.json({ ok: true, count: rows.length, layers: updated });
   } catch (err) {
     next(err);
   }

@@ -394,7 +394,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                         <CheckCircle2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-emerald-500 shrink-0 mt-0.5`} />
                         <div>
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
-                            {t('game.visual.correct')} {wrongSvgLayer.label}
+                            {t('game.visual.correct')} {(i18n.language === 'en' && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
                           </h3>
                           {wrongSvgLayer.wrong_reason && (
                             <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
@@ -441,7 +441,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                           className={`object-contain ${isMobile ? 'w-16 h-20' : 'w-24 h-28'}`}
                         />
                         <span className={`text-zinc-300 text-center leading-tight ${isMobile ? 'text-[11px]' : 'text-xs'}`}>
-                          {layer.label}
+                          {(i18n.language === 'en' && layer.label_en) ? layer.label_en : layer.label}
                         </span>
                       </button>
                     ))}
