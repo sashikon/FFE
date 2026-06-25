@@ -966,6 +966,16 @@ router.patch('/render/:id/seo', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/pinterest/pin/:id — debug: see raw pin data
+router.get('/pinterest/pin/:id', async (req, res, next) => {
+  try {
+    const pin = await fetchPinById(req.params.id);
+    res.json(pin);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/admin/pinterest/sync
 // Accepts { pin_ids: string[] } from CSV, fetches each pin individually to get link,
 // matches link to outfit, saves pin_id to renders.
