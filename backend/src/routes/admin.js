@@ -690,7 +690,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       if (titleFreq.get(t) === 1) return t;               // unique — keep as-is
       const n = (titleSeen.get(t) || 0) + 1;
       titleSeen.set(t, n);
-      return `${t.slice(0, TITLE_MAX - 4)} (${n})`;       // e.g. "One word out: … (2)"
+      return `${t.slice(0, TITLE_MAX - 4)} — ${n}`;       // e.g. "Title — 2"
     });
 
     // Pass 2: build CSV rows
@@ -701,7 +701,7 @@ router.get('/pinterest-export', async (req, res, next) => {
         : (outfit.render_url || outfit.image_url);  // best render or sketch
       const description = outfit.pin_description || buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
-      const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
+      const link        = `${BASE_URL}/outfit/${outfit.id}`;
 
       // Thumbnail left blank — only required for video pins
       lines.push(csvRow([finalTitles[i], board, mediaUrl, '', description, link, '', keywords]));
