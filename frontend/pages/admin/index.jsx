@@ -1773,6 +1773,39 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
   );
 }
 
+function CopyPinDescButton({ outfit }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const enRows = outfit.translations?.en?.game_rows || [];
+    const title = outfit.title || outfit.id.slice(0, 8);
+    const layers = enRows.map(r => r.layer).filter(Boolean).join(' · ');
+    const words = enRows.flatMap(r => (r.options || []).map(o => o.word)).filter(Boolean);
+    const desc = [
+      title,
+      layers ? `Layers: ${layers}` : '',
+      words.length ? words.join(', ') : '',
+      'Find the odd one out. Five rounds. No theory — just reading.',
+      `https://ffe-blush.vercel.app/outfit/${outfit.id}`,
+    ].filter(Boolean).join('\n');
+
+    navigator.clipboard.writeText(desc).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
+      title="Скопировать описание для Pinterest"
+    >
+      {copied ? '✓ скопировано' : '📋 пин'}
+    </button>
+  );
+}
+
 function SketchPinField({ outfitId, initialPinId }) {
   const [pinId, setPinId] = useState(initialPinId || '');
   const [input, setInput] = useState('');
@@ -1927,6 +1960,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           </div>
           <div className="flex items-center gap-1 mt-0.5 mb-0.5 flex-wrap">
             <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
+            <CopyPinDescButton outfit={outfit} />
             <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
             {outfit.sketch_pin_analytics && (
               <span className="text-[10px] text-zinc-600 ml-1">
