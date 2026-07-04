@@ -4,10 +4,11 @@ const fs = require('fs');
 const pool = require('../db');
 const { invalidate } = require('../cache');
 const { analyzeOutfit } = require('../llm/pipeline');
-const { analyzeAesthetics } = require('../llm/aesthetics');
+const { analyzeAesthetics, analyzeModel } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
+const { fetchAllPins, fetchPinById, fetchPinAnalytics } = require('../pinterest');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
@@ -21,11 +22,11 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.title_en, o.created_at, o.file_hash, o.pinterest_exported,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.title_en, o.created_at, o.file_hash, o.pinterest_exported, o.sketch_pin_id, o.sketch_pin_analytics, o.sketch_pin_analytics_updated_at,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
-                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at))
+                SELECT json_agg(json_build_object('id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'aesthetics', r.aesthetics, 'pinterest_exported_at', r.pinterest_exported_at, 'pin_title', r.pin_title, 'pin_description', r.pin_description, 'pinterest_pin_id', r.pinterest_pin_id, 'pinterest_analytics', r.pinterest_analytics, 'pinterest_analytics_updated_at', r.pinterest_analytics_updated_at, 'model_appearance', r.model_appearance))
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
@@ -502,6 +503,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       const renderFilter = ids && ids.length ? ids : null;
       const result = await pool.query(
         `SELECT r.id AS render_id, r.image_url AS render_url, r.thumb_url AS render_thumb_url,
+                r.pin_title, r.pin_description,
                 o.id, o.image_url, o.thumb_url, o.title,
                 t.game_rows, o.pinterest_exported
          FROM outfit_renders r
@@ -705,6 +707,7 @@ router.get('/pinterest-export', async (req, res, next) => {
     const rawTitles = rows.map((outfit, i) => {
       const gameRows = outfit.game_rows || [];
       return (
+        outfit.pin_title ||
         outfit.title ||
         buildTitle(gameRows) ||
         (lang === 'ru' ? `Образ ${i + 1}` : `Outfit ${i + 1}`)
@@ -719,7 +722,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       if (titleFreq.get(t) === 1) return t;               // unique — keep as-is
       const n = (titleSeen.get(t) || 0) + 1;
       titleSeen.set(t, n);
-      return `${t.slice(0, TITLE_MAX - 4)} (${n})`;       // e.g. "One word out: … (2)"
+      return `${t.slice(0, TITLE_MAX - 4)} — ${n}`;       // e.g. "Title — 2"
     });
 
     // Pass 2: build CSV rows
@@ -730,12 +733,11 @@ router.get('/pinterest-export', async (req, res, next) => {
       const mediaUrl    = rendersOnly
         ? (outfit.render_url || outfit.image_url)   // specific render image
         : (outfit.render_url || outfit.image_url);  // best render or sketch
-      const description = buildDescription(gameRows);
+      const description = outfit.pin_description || buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
-      const baseLink    = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
       const seen        = (linkSeen.get(outfit.id) || 0) + 1;
       linkSeen.set(outfit.id, seen);
-      const link        = seen > 1 ? `${baseLink}&v=${seen}` : baseLink;
+      const link        = seen > 1 ? `${BASE_URL}/outfit/${outfit.id}?v=${seen}` : `${BASE_URL}/outfit/${outfit.id}`;
 
       // Thumbnail left blank — only required for video pins
       lines.push(csvRow([finalTitles[i], board, mediaUrl, '', description, link, '', keywords]));
@@ -835,9 +837,15 @@ router.post('/render/:id/analyze', async (req, res, next) => {
     const { rows } = await pool.query('SELECT image_url FROM outfit_renders WHERE id = $1', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 
-    const aesthetics = await analyzeAesthetics(rows[0].image_url);
-    await pool.query('UPDATE outfit_renders SET aesthetics = $1 WHERE id = $2', [JSON.stringify(aesthetics), id]);
-    res.json({ aesthetics });
+    const [aesthetics, model_appearance] = await Promise.all([
+      analyzeAesthetics(rows[0].image_url),
+      analyzeModel(rows[0].image_url),
+    ]);
+    await pool.query(
+      'UPDATE outfit_renders SET aesthetics = $1, model_appearance = $2 WHERE id = $3',
+      [JSON.stringify(aesthetics), JSON.stringify(model_appearance), id]
+    );
+    res.json({ aesthetics, model_appearance });
   } catch (err) {
     next(err);
   }
@@ -899,6 +907,275 @@ router.delete('/mechanic-screenshot/:id', async (req, res, next) => {
   try {
     await pool.query('DELETE FROM mechanic_screenshots WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/render/:id/generate-seo — Claude generates Pinterest SEO title+description
+router.post('/render/:id/generate-seo', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { lang = 'en' } = req.body;
+
+    // Load render + outfit data
+    const { rows } = await pool.query(
+      `SELECT r.id, r.aesthetics, r.pin_title, r.pin_description,
+              o.title AS outfit_title,
+              t.game_rows
+       FROM outfit_renders r
+       JOIN outfits o ON o.id = r.outfit_id
+       LEFT JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $2
+       WHERE r.id = $1`,
+      [id, lang]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Render not found' });
+    const render = rows[0];
+
+    const aestheticsTop = render.aesthetics?.top?.slice(0, 3).map(a => a.name).join(', ') || '';
+    const gameRows = render.game_rows || [];
+    const themes = gameRows.map(r => r.theme).filter(Boolean).join(', ');
+    const gameKeywords = gameRows.flatMap(r => r.options || []).filter(Boolean).slice(0, 20).join(', ');
+    const outfitTitle = render.outfit_title || '';
+
+    const isRu = lang === 'ru';
+
+    const prompt = isRu
+      ? `Ты Pinterest SEO-специалист для русской аудитории. Создай title и description для пина.
+
+Данные об образе:
+- Название: ${outfitTitle || '—'}
+- Pinterest-эстетики: ${aestheticsTop || '—'}
+- Темы игры: ${themes || '—'}
+- Ключевые слова образа: ${gameKeywords || '—'}
+
+Правила:
+- Title: 2-6 слов, максимум 100 символов. Пример: «Романтичный образ с буфами»
+- Description: 1-3 предложения, 80-150 символов. Начни с эмоции или визуального образа, заверши призывом или вопросом. Упомяни конкретные элементы.
+- Оба поля — на русском, без хэштегов
+- Ориентируйся на запросы: «идеи образов», «что одеть», «стиль», «эстетика одежды»
+
+Верни строго JSON: {"title": "...", "description": "..."}`
+      : `You are a Pinterest SEO specialist. Generate a pin title and description optimized for 2025 Pinterest search.
+
+Outfit data:
+- Outfit title: ${outfitTitle || '—'}
+- Top Pinterest aesthetics: ${aestheticsTop || '—'}
+- Game semantic layers: ${themes || '—'}
+- Keywords from outfit: ${gameKeywords || '—'}
+
+Rules:
+- Title: 3-7 words, max 100 chars. Include a trending aesthetic if applicable. Examples: "Vamp Romantic Outfit Ideas", "Cocktail Party Dress Inspo"
+- Description: 2-3 sentences, 100-200 chars. Lead with a visual or emotional hook, name specific garment details, end with a call to action or question.
+- No hashtags in either field
+- Target keywords: outfit ideas, dress to impress, aesthetic clothes, style inspo, fashion
+
+Return strict JSON only: {"title": "...", "description": "..."}`;
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const raw = msg.content[0].text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: 'Parse error', raw });
+    const { title, description } = JSON.parse(match[0]);
+
+    await pool.query(
+      'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
+      [title || null, description || null, id]
+    );
+
+    res.json({ ok: true, pin_title: title, pin_description: description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/render/:id/seo — save pin_title / pin_description manually
+router.patch('/render/:id/seo', async (req, res, next) => {
+  try {
+    const { pin_title, pin_description } = req.body;
+    await pool.query(
+      'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
+      [pin_title ?? null, pin_description ?? null, req.params.id]
+    );
+    res.json({ ok: true, pin_title, pin_description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/pinterest/fetch-sketch-analytics
+// Fetches 90-day analytics for all outfits that have a sketch_pin_id.
+router.post('/pinterest/fetch-sketch-analytics', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sketch_pin_id FROM outfits WHERE sketch_pin_id IS NOT NULL`
+    );
+    let updated = 0;
+    for (const outfit of rows) {
+      const analytics = await fetchPinAnalytics(outfit.sketch_pin_id);
+      if (analytics) {
+        await pool.query(
+          `UPDATE outfits SET sketch_pin_analytics = $1, sketch_pin_analytics_updated_at = now() WHERE id = $2`,
+          [JSON.stringify(analytics), outfit.id]
+        );
+        updated++;
+      }
+    }
+    res.json({ ok: true, total: rows.length, updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/outfit/:id/sketch-pin-id — manually set sketch Pinterest pin
+router.patch('/outfit/:id/sketch-pin-id', async (req, res, next) => {
+  try {
+    const { sketch_pin_id } = req.body;
+    await pool.query(
+      'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
+      [sketch_pin_id || null, req.params.id]
+    );
+    res.json({ ok: true, sketch_pin_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/render/:id/pin-id — manually set pinterest_pin_id
+router.patch('/render/:id/pin-id', async (req, res, next) => {
+  try {
+    const { pinterest_pin_id } = req.body;
+    await pool.query(
+      'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
+      [pinterest_pin_id || null, req.params.id]
+    );
+    res.json({ ok: true, pinterest_pin_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/pinterest/import-pins
+// One-shot: accepts parsed pin data from Pinterest archive HTML, saves to DB.
+// { pins: [{ pin_id, board, outfit_id }] }
+router.post('/pinterest/import-pins', async (req, res, next) => {
+  try {
+    const { pins } = req.body;
+    if (!Array.isArray(pins)) return res.status(400).json({ error: 'pins array required' });
+
+    let sketchUpdated = 0, renderUpdated = 0;
+
+    for (const pin of pins) {
+      if (pin.board === 'Fashion sketch') {
+        const r = await pool.query(
+          'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
+          [pin.pin_id, pin.outfit_id]
+        );
+        if (r.rowCount > 0) sketchUpdated++;
+      } else if (pin.board !== 'Collage Item Pins') {
+        const r = await pool.query(
+          `UPDATE outfit_renders SET pinterest_pin_id = $1
+           WHERE id = (SELECT id FROM outfit_renders WHERE outfit_id = $2 ORDER BY created_at DESC LIMIT 1)`,
+          [pin.pin_id, pin.outfit_id]
+        );
+        if (r.rowCount > 0) renderUpdated++;
+      }
+    }
+
+    res.json({ ok: true, sketch_updated: sketchUpdated, render_updated: renderUpdated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/pinterest/pin/:id — debug: see raw pin data
+router.get('/pinterest/pin/:id', async (req, res, next) => {
+  try {
+    const pin = await fetchPinById(req.params.id);
+    res.json(pin);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/pinterest/sync
+// Accepts { pin_ids: string[] } from CSV, fetches each pin individually to get link,
+// matches link to outfit, saves pin_id to renders.
+router.post('/pinterest/sync', async (req, res, next) => {
+  try {
+    const { pin_ids } = req.body;
+    if (!Array.isArray(pin_ids) || !pin_ids.length) {
+      return res.status(400).json({ error: 'pin_ids array required' });
+    }
+
+    const uuidRe = /\/outfit\/([0-9a-f-]{36})/i;
+    const matched = [];
+    const errors = [];
+
+    for (const pinId of pin_ids) {
+      try {
+        const pin = await fetchPinById(pinId);
+        const link = pin.link || '';
+        const m = link.match(uuidRe);
+        if (!m) continue;
+        const outfitId = m[1];
+
+        const { rows } = await pool.query(
+          `SELECT r.id FROM outfit_renders r
+           WHERE r.outfit_id = $1
+           ORDER BY r.created_at DESC LIMIT 1`,
+          [outfitId]
+        );
+
+        if (rows.length) {
+          await pool.query(
+            'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
+            [pinId, rows[0].id]
+          );
+          matched.push({ render_id: rows[0].id, pin_id: pinId, outfit_id: outfitId });
+        }
+      } catch (e) {
+        errors.push({ pin_id: pinId, error: e.message });
+      }
+    }
+
+    res.json({ ok: true, total_pins: pin_ids.length, matched: matched.length, items: matched, errors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/pinterest/fetch-analytics
+// Fetches 90-day analytics for all renders that have a pinterest_pin_id.
+router.post('/pinterest/fetch-analytics', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, pinterest_pin_id FROM outfit_renders
+       WHERE pinterest_pin_id IS NOT NULL
+       ORDER BY created_at DESC`
+    );
+
+    let updated = 0;
+    let lastError = null;
+    for (const render of rows) {
+      const analytics = await fetchPinAnalytics(render.pinterest_pin_id).catch(e => { lastError = e.message; return null; });
+      if (analytics) {
+        await pool.query(
+          `UPDATE outfit_renders
+           SET pinterest_analytics = $1, pinterest_analytics_updated_at = now()
+           WHERE id = $2`,
+          [JSON.stringify(analytics), render.id]
+        );
+        updated++;
+      }
+    }
+
+    res.json({ ok: true, total: rows.length, updated, last_error: lastError });
   } catch (err) {
     next(err);
   }

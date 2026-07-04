@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import useSWR from 'swr';
@@ -8,6 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import GameCard from '../../components/GameCard';
 import ViewSwitcher from '../../components/ViewSwitcher';
 import { fetcher } from '../../lib/api';
+import { sendPinterestEvent } from '../../lib/pinterestEvents';
 
 const FRAME_CLASS = {
   mobile: 'w-[375px] max-w-[95vw] h-[812px] max-h-[85vh] border-[8px] border-zinc-800 rounded-[2rem] shadow-2xl shrink-0',
@@ -28,6 +29,14 @@ export default function OutfitPage() {
     fetcher,
     { refreshInterval: (d) => (!d || !d.game_rows ? 3000 : 0) }
   );
+
+  const pageVisitSent = useRef(false);
+  useEffect(() => {
+    if (data?.game_rows && id && !pageVisitSent.current) {
+      pageVisitSent.current = true;
+      sendPinterestEvent('page_visit', `https://ffe-blush.vercel.app/outfit/${id}`);
+    }
+  }, [data, id]);
   const { data: listData } = useSWR(`/api/outfits?lang=${lang}&page=1`, fetcher);
 
   const handleNext = () => {
@@ -165,6 +174,7 @@ export default function OutfitPage() {
             renders={data.renders?.length > 0 ? data.renders : undefined}
             gameData={data.game_rows}
             outfitId={id}
+            lang={lang}
             isMobile={isMobile}
             isDesktop={isDesktop}
             onNext={handleNext}

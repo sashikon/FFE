@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle2, XCircle, ArrowRight, ZoomIn, Upload } from 'lucide-react';
 import { useTranslation } from 'next-i18next/pages';
 import { fetcher } from '../lib/api';
+import { sendPinterestEvent } from '../lib/pinterestEvents';
 
 // Convert raw Cloudinary URL to browser-friendly format (f_auto converts palette PNG → WebP/JPEG)
 function optimizeCloudinaryUrl(url, width = 700) {
@@ -68,9 +69,10 @@ const shuffleArray = (array) => {
   return arr;
 };
 
-export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders, gameData, outfitId, isMobile, isDesktop, onNext }) {
+export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders, gameData, outfitId, lang: langProp, isMobile, isDesktop, onNext }) {
   const { t: tRaw, i18n } = useTranslation('common');
   const t = (key) => { const v = tRaw(key); return v === key ? (FALLBACK[key] ?? key) : v; };
+  const isEn = (langProp || i18n.language) === 'en';
 
   // Visual level — shown before word rounds when outfit has a marked wrong SVG item
   const wrongSvgLayer = svgLayers?.find((l) => l.is_wrong);
@@ -80,6 +82,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   const [shakeId, setShakeId] = useState(null);
   const [removedId, setRemovedId] = useState(null);
   const [showVisualResult, setShowVisualResult] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const handleSvgTap = (layer) => {
     if (removedId || showVisualResult) return;
@@ -193,6 +196,12 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
     }).then((r) => {
       if (!r.ok) r.text().then((t) => console.error('[saveSession] error', r.status, t));
     }).catch((e) => console.error('[saveSession] fetch failed', e));
+
+    sendPinterestEvent(
+      'game_complete',
+      `https://ffe-blush.vercel.app/outfit/${outfitId}`,
+      { score: finalScore, total: gameData.length }
+    );
   };
 
   const handleNext = () => {
@@ -371,11 +380,15 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                 className={`w-full ${isMobile ? 'max-w-[200px]' : 'max-w-sm'} aspect-[3/4] bg-zinc-950/50 rounded-xl overflow-hidden relative border border-zinc-800 cursor-pointer group mx-auto`}
                 onClick={() => setIsModalOpen(true)}
               >
+                {!imgLoaded && (
+                  <div className="absolute inset-0 bg-zinc-800 animate-pulse rounded-xl" />
+                )}
                 <img
                   src={imageSrc}
                   alt={t('game.outfitAlt')}
-                  className="w-full h-full object-contain absolute inset-0 p-2 transition-transform duration-500 group-hover:scale-105"
-                  onError={(e) => { e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
+                  className={`w-full h-full object-contain absolute inset-0 p-2 transition-all duration-500 group-hover:scale-105 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImgLoaded(true)}
+                  onError={(e) => { setImgLoaded(true); e.target.src = 'https://placehold.co/600x800/18181b/e4e4e7?text=Изображение+не+найдено'; }}
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-xl">
                   <ZoomIn className={`text-white ${isMobile ? 'w-10 h-10' : 'w-12 h-12'}`} />
@@ -400,7 +413,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                         <CheckCircle2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-emerald-500 shrink-0 mt-0.5`} />
                         <div>
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
-                            {t('game.visual.correct')} {(i18n.language === 'en' && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
+                            {t('game.visual.correct')} {(isEn && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
                           </h3>
                           {(wrongSvgLayer.wrong_reason || wrongSvgLayer.wrong_reason_en) && (
                             <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
@@ -449,7 +462,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                           className={`object-contain ${isMobile ? 'w-16 h-20' : 'w-24 h-28'}`}
                         />
                         <span className={`text-zinc-300 text-center leading-tight ${isMobile ? 'text-[11px]' : 'text-xs'}`}>
-                          {(i18n.language === 'en' && layer.label_en) ? layer.label_en : layer.label}
+                          {(isEn && layer.label_en) ? layer.label_en : layer.label}
                         </span>
                       </button>
                     ))}

@@ -1252,6 +1252,8 @@ function RendersGallery({ outfits, onMutate }) {
     (outfits || []).flatMap((o) => (o.renders || []).map((r) => ({ ...r, outfit: o })))
   );
   const [filter, setFilter] = useState('all'); // 'all' | 'pinterest' | 'new'
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
 
   // Sync when outfits data changes
   useEffect(() => {
@@ -1281,6 +1283,83 @@ function RendersGallery({ outfits, onMutate }) {
     );
   };
 
+  const handleArchiveImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    const html = await file.text();
+    // Parse pin blocks: split on pin URLs
+    const blocks = html.split(/<a href="https:\/\/www\.pinterest\.com\/pin\/(\d+)\/"/).slice(1);
+    const pins = [];
+    const uuidRe = /\/outfit\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    for (let i = 0; i < blocks.length; i += 2) {
+      const pinId = blocks[i];
+      const block = blocks[i + 1] || '';
+      const boardMatch = block.match(/Board Name: ([^\n<]+)/);
+      const canonicalMatch = block.match(/Canonical Link:[\s\S]*?href="([^"]+)"/);
+      const board = boardMatch ? boardMatch[1].trim().replace(/&amp;/g, '&') : '';
+      const canonical = canonicalMatch ? canonicalMatch[1] : '';
+      const uuidMatch = canonical.match(uuidRe);
+      if (uuidMatch) pins.push({ pin_id: pinId, board, outfit_id: uuidMatch[1] });
+    }
+    if (!pins.length) { alert('Пины не найдены в файле'); return; }
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const data = await apiPost('/api/admin/pinterest/import-pins', { pins });
+      setSyncResult(data);
+      onMutate();
+    } catch (e) {
+      alert('Ошибка импорта: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleCsvSync = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    const text = await file.text();
+    // Extract pin IDs from URLs like https://www.pinterest.com/pin/123456789/
+    const pinIds = [...text.matchAll(/\/pin\/(\d+)\//g)].map((m) => m[1]);
+    const unique = [...new Set(pinIds)];
+    if (!unique.length) { alert('PIN ID не найдены в CSV'); return; }
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const data = await apiPost('/api/admin/pinterest/sync', { pin_ids: unique });
+      setSyncResult(data);
+      if (data.matched > 0) {
+        await apiPost('/api/admin/pinterest/fetch-analytics', {});
+        onMutate();
+      }
+    } catch (e) {
+      alert('Ошибка синхронизации: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleFetchAnalytics = async () => {
+    setSyncing(true);
+    try {
+      const [r1, r2] = await Promise.all([
+        apiPost('/api/admin/pinterest/fetch-analytics', {}),
+        apiPost('/api/admin/pinterest/fetch-sketch-analytics', {}),
+      ]);
+      const err = r1.last_error || r2.last_error;
+      if (err) alert('Pinterest API: ' + err);
+      onMutate();
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const withPinId = localRenders.filter((r) => r.pinterest_pin_id).length;
+
   const pExported = localRenders.filter((r) => r.pinterest_exported_at).length;
   const notUploaded = localRenders.filter((r) => !r.pinterest_exported_at).length;
 
@@ -1302,20 +1381,40 @@ function RendersGallery({ outfits, onMutate }) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h2 className="text-lg font-medium text-zinc-300">ИИ рендеры</h2>
-        <button
-          onClick={() => setFilter('all')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-        >{localRenders.length} всего</button>
-        <button
-          onClick={() => setFilter('pinterest')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}
-        >{pExported} в Pinterest</button>
-        <button
-          onClick={() => setFilter('new')}
-          className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-        >{notUploaded} не загружено</button>
+        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} всего</button>
+        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} в Pinterest</button>
+        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} не загружено</button>
+      </div>
+
+      {/* Pinterest sync bar */}
+      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800 flex-wrap">
+        <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
+        <span className="text-[11px] text-zinc-600">{withPinId} пинов связано</span>
+        <div className="flex-1" />
+        <Tip text="Загрузи HTML архив Pinterest (папка pins/0001.html) — автоматически привяжет все пины к образам и рендерам" width="w-72">
+          <label className={`flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors cursor-pointer ${syncing ? 'opacity-40 pointer-events-none' : ''}`}>
+            {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+            Загрузить архив Pinterest
+            <input type="file" accept=".html" className="hidden" onChange={handleArchiveImport} disabled={syncing} />
+          </label>
+        </Tip>
+        {withPinId > 0 && (
+          <Tip text="Обновить данные показов, кликов и сохранений за последние 90 дней" width="w-52">
+            <button onClick={handleFetchAnalytics} disabled={syncing} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40">
+              {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+              Обновить аналитику
+            </button>
+          </Tip>
+        )}
+        {syncResult && (
+          <span className="text-[11px] text-emerald-400">
+            {syncResult.sketch_updated !== undefined
+              ? `✓ эскизы: ${syncResult.sketch_updated}, рендеры: ${syncResult.render_updated}`
+              : `✓ ${syncResult.matched} из ${syncResult.total_pins} привязано`}
+          </span>
+        )}
       </div>
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
         {visible.map((render) => (
@@ -1337,6 +1436,15 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
+  const stats = render.pinterest_analytics;
+  const [model, setModel] = useState(render.model_appearance || null);
+  const [pinTitle, setPinTitle] = useState(render.pin_title || '');
+  const [pinDesc, setPinDesc] = useState(render.pin_description || '');
+  const [generatingSeo, setGeneratingSeo] = useState(false);
+  const [seoLang, setSeoLang] = useState('en');
+  const [editingSeo, setEditingSeo] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
   const top = aesthetics?.top;
 
   const handleAnalyze = async (e) => {
@@ -1345,11 +1453,54 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
     try {
       const data = await apiPost(`/api/admin/render/${render.id}/analyze`);
       setAesthetics(data.aesthetics);
+      if (data.model_appearance) setModel(data.model_appearance);
       onAnalyzed(render.id, data.aesthetics);
     } catch (err) {
       alert('Ошибка анализа: ' + err.message);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleGenerateSeo = async (lang) => {
+    setGeneratingSeo(true);
+    setSeoLang(lang);
+    try {
+      const data = await apiPost(`/api/admin/render/${render.id}/generate-seo`, { lang });
+      setPinTitle(data.pin_title || '');
+      setPinDesc(data.pin_description || '');
+    } catch (err) {
+      alert('Ошибка SEO: ' + err.message);
+    } finally {
+      setGeneratingSeo(false);
+    }
+  };
+
+  const handleSaveSeo = async () => {
+    await apiPatch(`/api/admin/render/${render.id}/seo`, { pin_title: editTitle, pin_description: editDesc });
+    setPinTitle(editTitle);
+    setPinDesc(editDesc);
+    setEditingSeo(false);
+  };
+
+  const [pinIdInput, setPinIdInput] = useState('');
+  const [savingPinId, setSavingPinId] = useState(false);
+  const [currentPinId, setCurrentPinId] = useState(render.pinterest_pin_id || '');
+
+  const handleSavePinId = async () => {
+    const raw = pinIdInput.trim();
+    const m = raw.match(/\/pin\/(\d+)/);
+    const pinId = m ? m[1] : raw.replace(/\D/g, '');
+    if (!pinId) return;
+    setSavingPinId(true);
+    try {
+      await apiPatch(`/api/admin/render/${render.id}/pin-id`, { pinterest_pin_id: pinId });
+      setCurrentPinId(pinId);
+      setPinIdInput('');
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setSavingPinId(false);
     }
   };
 
@@ -1449,7 +1600,166 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       ) : (
         <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
       )}
+
+      {/* Model appearance */}
+      {model && (
+        <div className="px-1 border-t border-zinc-800 pt-1.5 flex items-center gap-1.5 flex-wrap">
+          {model.has_face ? (
+            <>
+              <span className="text-[9px] text-zinc-400">{model.appearance}</span>
+              {model.skin_tone && (
+                <span className={`text-[8px] px-1 rounded ${model.skin_tone === 'light' ? 'bg-amber-950 text-amber-300' : model.skin_tone === 'medium' ? 'bg-orange-950 text-orange-300' : 'bg-zinc-800 text-zinc-300'}`}>{model.skin_tone}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-[9px] text-zinc-600">без лица</span>
+          )}
+        </div>
+      )}
+
+      {/* Pinterest pin link input */}
+      <div className="px-1 border-t border-zinc-800 pt-2">
+        {currentPinId ? (
+          <div className="flex items-center justify-between">
+            <a href={`https://www.pinterest.com/pin/${currentPinId}/`} target="_blank" rel="noreferrer" className="text-[9px] text-rose-400 hover:text-rose-300 truncate">pin/{currentPinId.slice(-6)}</a>
+            <button onClick={() => setCurrentPinId('')} className="text-[9px] text-zinc-600 hover:text-zinc-400 ml-1 shrink-0">×</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <input
+              value={pinIdInput}
+              onChange={(e) => setPinIdInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSavePinId()}
+              placeholder="ссылка на пин…"
+              className="flex-1 bg-transparent text-[9px] text-zinc-400 placeholder-zinc-700 outline-none min-w-0"
+            />
+            {pinIdInput && (
+              <button onClick={handleSavePinId} disabled={savingPinId} className="text-[9px] text-rose-400 hover:text-rose-300 shrink-0">
+                {savingPinId ? '…' : '✓'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Pinterest analytics */}
+      {stats && (
+        <div className="px-1 border-t border-zinc-800 pt-2 grid grid-cols-2 gap-x-2 gap-y-0.5">
+          {[
+            { label: 'показы', value: stats.impressions },
+            { label: 'клики', value: stats.pin_clicks },
+            { label: 'переходы', value: stats.outbound_clicks },
+            { label: 'сохр.', value: stats.saves },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex items-center justify-between">
+              <span className="text-[9px] text-zinc-600">{label}</span>
+              <span className="text-[10px] text-zinc-300 font-medium tabular-nums">{value ?? '—'}</span>
+            </div>
+          ))}
+          {render.pinterest_analytics_updated_at && (
+            <p className="col-span-2 text-[8px] text-zinc-700 mt-0.5">
+              {new Date(render.pinterest_analytics_updated_at).toLocaleDateString('ru')}
+            </p>
+          )}
+        </div>
+      )}
+      {!stats && render.pinterest_pin_id && (
+        <div className="px-1 border-t border-zinc-800 pt-1.5">
+          <p className="text-[9px] text-zinc-700">пин привязан · нажми «Обновить аналитику»</p>
+        </div>
+      )}
+
+      {/* Pinterest SEO */}
+      <div className="px-1 border-t border-zinc-800 pt-2">
+        {editingSeo ? (
+          <div className="space-y-1.5">
+            <input
+              autoFocus
+              value={editTitle}
+              onChange={e => setEditTitle(e.target.value)}
+              placeholder="Title (до 100 символов)"
+              maxLength={100}
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400"
+            />
+            <textarea
+              value={editDesc}
+              onChange={e => setEditDesc(e.target.value)}
+              placeholder="Description (до 500 символов)"
+              maxLength={500}
+              rows={3}
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400 resize-none"
+            />
+            <div className="flex gap-2">
+              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">Сохранить</button>
+              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">отмена</button>
+            </div>
+          </div>
+        ) : pinTitle ? (
+          <div className="space-y-1">
+            <div className="flex items-start justify-between gap-1">
+              <p className="text-[10px] text-zinc-300 font-medium leading-tight flex-1">{pinTitle}</p>
+              <button
+                onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
+                className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
+              >ред.</button>
+            </div>
+            {pinDesc && <p className="text-[9px] text-zinc-500 leading-snug">{pinDesc}</p>}
+            <div className="flex gap-2 pt-0.5">
+              {['en', 'ru'].map(l => (
+                <button key={l} onClick={() => handleGenerateSeo(l)} disabled={generatingSeo} className="text-[9px] text-zinc-600 hover:text-violet-400 transition-colors disabled:opacity-40">
+                  {generatingSeo && seoLang === l ? <Loader2 size={9} className="animate-spin inline" /> : <Sparkles size={9} className="inline" />} {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-zinc-700">Pinterest SEO:</span>
+            {['en', 'ru'].map(l => (
+              <button key={l} onClick={() => handleGenerateSeo(l)} disabled={generatingSeo} className="flex items-center gap-0.5 text-[9px] text-zinc-500 hover:text-violet-400 transition-colors disabled:opacity-40">
+                {generatingSeo && seoLang === l ? <Loader2 size={9} className="animate-spin" /> : <Sparkles size={9} />} {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function TranslateAllSvgLabelsButton({ outfits }) {
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+
+  const needsTranslation = (outfits || []).filter((o) =>
+    o.svg_layers?.some((l) => l.label && !l.label_en)
+  );
+
+  const handleRun = async () => {
+    if (!needsTranslation.length) return;
+    setRunning(true);
+    setDone(0);
+    for (const o of needsTranslation) {
+      try {
+        await apiPost(`/api/admin/outfit/${o.id}/svg-layers/translate`, {});
+        setDone((n) => n + 1);
+      } catch {}
+    }
+    setRunning(false);
+  };
+
+  if (!needsTranslation.length) return null;
+  return (
+    <Tip text={`Перевести EN названия SVG-предметов для ${needsTranslation.length} образов`} width="w-56">
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+      >
+        {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
+        {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести EN все (${needsTranslation.length})`}
+      </button>
+    </Tip>
   );
 }
 
@@ -1491,7 +1801,6 @@ function TranslateAllButton({ outfits, onMutate }) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
 
-  // Outfits that have SVG layers but need EN translation (no label_en on any layer OR no title_en)
   const needsTranslation = (outfits || []).filter((o) => {
     const layers = o.svg_layers || [];
     const hasLayers = layers.some((l) => l.label);
@@ -1506,11 +1815,9 @@ function TranslateAllButton({ outfits, onMutate }) {
     setDone(0);
     for (const o of needsTranslation) {
       try {
-        // Translate SVG labels + wrong_reason
         if ((o.svg_layers || []).some((l) => l.label && !l.label_en)) {
           await apiPost(`/api/admin/outfit/${o.id}/svg-layers/translate`, {});
         }
-        // Generate EN title
         if (!o.title_en) {
           await apiPost(`/api/admin/outfit/${o.id}/generate-title`, { lang: 'en' });
         }
@@ -1533,6 +1840,82 @@ function TranslateAllButton({ outfits, onMutate }) {
         {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести все (${needsTranslation.length})`}
       </button>
     </Tip>
+  );
+}
+
+function CopyPinDescButton({ outfit }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const enRows = outfit.translations?.en?.game_rows || [];
+    const title = outfit.title || outfit.id.slice(0, 8);
+    const layers = enRows.map(r => r.layer).filter(Boolean).join(' · ');
+    const words = enRows.flatMap(r => (r.options || []).map(o => o.word)).filter(Boolean);
+    const desc = [
+      title,
+      layers ? `Layers: ${layers}` : '',
+      words.length ? words.join(', ') : '',
+      'Find the odd one out. Five rounds. No theory — just reading.',
+      `https://ffe-blush.vercel.app/outfit/${outfit.id}`,
+    ].filter(Boolean).join('\n');
+
+    navigator.clipboard.writeText(desc).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
+      title="Скопировать описание для Pinterest"
+    >
+      {copied ? '✓ скопировано' : '📋 пин'}
+    </button>
+  );
+}
+
+function SketchPinField({ outfitId, initialPinId }) {
+  const [pinId, setPinId] = useState(initialPinId || '');
+  const [input, setInput] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const raw = input.trim();
+    const m = raw.match(/\/pin\/(\d+)/);
+    const id = m ? m[1] : raw.replace(/\D/g, '');
+    if (!id) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/api/admin/outfit/${outfitId}/sketch-pin-id`, { sketch_pin_id: id });
+      setPinId(id);
+      setInput('');
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (pinId) return (
+    <span className="flex items-center gap-1">
+      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">эскиз↗</a>
+      <button onClick={() => setPinId('')} className="text-[10px] text-zinc-700 hover:text-zinc-400">×</button>
+    </span>
+  );
+
+  return (
+    <span className="flex items-center gap-0.5 ml-1">
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+        placeholder="пин эскиза…"
+        className="bg-transparent text-[10px] text-zinc-600 placeholder-zinc-800 outline-none w-20"
+      />
+      {input && <button onClick={handleSave} disabled={saving} className="text-[10px] text-rose-500">{saving ? '…' : '✓'}</button>}
+    </span>
   );
 }
 
@@ -1699,7 +2082,19 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               </Tip>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <div className="flex items-center gap-1 mt-0.5 mb-0.5 flex-wrap">
+            <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
+            <CopyPinDescButton outfit={outfit} />
+            <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
+            {outfit.sketch_pin_analytics && (
+              <span className="text-[10px] text-zinc-600 ml-1">
+                👁 {outfit.sketch_pin_analytics.impressions ?? 0}
+                {' · '}↗ {outfit.sketch_pin_analytics.outbound_clicks ?? 0}
+                {' · '}♡ {outfit.sketch_pin_analytics.saves ?? 0}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             {(['ru', 'en']).map((lang) => {
               const t = outfit.translations?.[lang];
               const status = t?.status || 'pending';
