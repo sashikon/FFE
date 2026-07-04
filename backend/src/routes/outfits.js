@@ -45,7 +45,7 @@ router.get('/outfit/:id', async (req, res, next) => {
 
     const [svgResult, renderResult] = await Promise.all([
       pool.query(
-        'SELECT id, label, label_en, svg_url, sort_order, is_wrong, wrong_reason FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+        'SELECT id, label, label_en, svg_url, sort_order, is_wrong, wrong_reason, wrong_reason_en FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
         [id]
       ),
       pool.query(

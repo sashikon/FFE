@@ -29,7 +29,7 @@ router.get('/outfits', async (req, res, next) => {
                 FROM outfit_renders r WHERE r.outfit_id = o.id
               ), '[]') AS renders,
               COALESCE((
-                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'label_en', s.label_en, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason, 'wrong_source', s.wrong_source)
+                SELECT json_agg(json_build_object('id', s.id, 'label', s.label, 'label_en', s.label_en, 'svg_url', s.svg_url, 'sort_order', s.sort_order, 'is_wrong', s.is_wrong, 'wrong_reason', s.wrong_reason, 'wrong_reason_en', s.wrong_reason_en, 'wrong_source', s.wrong_source)
                         ORDER BY s.sort_order, s.created_at)
                 FROM outfit_svg_layers s WHERE s.outfit_id = o.id
               ), '[]') AS svg_layers
@@ -222,7 +222,7 @@ router.post('/outfit/:id/svg-layers/from-library', async (req, res, next) => {
 router.patch('/svg-layer/:layerId', async (req, res, next) => {
   try {
     const { layerId } = req.params;
-    const { label, label_en, sort_order, is_wrong, wrong_reason, wrong_source } = req.body;
+    const { label, label_en, sort_order, is_wrong, wrong_reason, wrong_reason_en, wrong_source } = req.body;
     if (is_wrong === true) {
       const { rows } = await pool.query('SELECT outfit_id FROM outfit_svg_layers WHERE id = $1', [layerId]);
       if (rows.length) await pool.query('UPDATE outfit_svg_layers SET is_wrong = FALSE, wrong_source = NULL WHERE outfit_id = $1', [rows[0].outfit_id]);
@@ -234,9 +234,10 @@ router.patch('/svg-layer/:layerId', async (req, res, next) => {
         sort_order = COALESCE($3, sort_order),
         is_wrong = COALESCE($4, is_wrong),
         wrong_reason = CASE WHEN $5::text IS NOT NULL THEN $5 ELSE wrong_reason END,
-        wrong_source = CASE WHEN $6::text IS NOT NULL THEN $6 WHEN $4 = false THEN NULL ELSE wrong_source END
-       WHERE id = $7`,
-      [label ?? null, label_en ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, wrong_source ?? null, layerId]
+        wrong_reason_en = CASE WHEN $6::text IS NOT NULL THEN $6 ELSE wrong_reason_en END,
+        wrong_source = CASE WHEN $7::text IS NOT NULL THEN $7 WHEN $4 = false THEN NULL ELSE wrong_source END
+       WHERE id = $8`,
+      [label ?? null, label_en ?? null, sort_order ?? null, is_wrong ?? null, wrong_reason ?? null, wrong_reason_en ?? null, wrong_source ?? null, layerId]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -255,27 +256,39 @@ router.delete('/svg-layer/:layerId', async (req, res, next) => {
   }
 });
 
-// POST /api/admin/outfit/:id/svg-layers/translate — Claude Haiku translates all RU labels to EN
+// POST /api/admin/outfit/:id/svg-layers/translate — Claude Haiku translates labels + wrong_reason to EN
 router.post('/outfit/:id/svg-layers/translate', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { rows } = await pool.query(
-      'SELECT id, label FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
+      'SELECT id, label, wrong_reason FROM outfit_svg_layers WHERE outfit_id = $1 AND label != \'\' ORDER BY sort_order, created_at',
       [id]
     );
     if (!rows.length) return res.json({ ok: true, count: 0 });
 
     const labelList = rows.map((r, i) => `${i + 1}. ${r.label}`).join('\n');
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      messages: [{
-        role: 'user',
-        content: `Translate these Russian fashion item names to concise English (2-4 words max each). Return ONLY a JSON array of strings in the same order, no extra text.\n\n${labelList}`,
-      }],
-    });
+    const wrongLayer = rows.find(r => r.wrong_reason);
 
-    const raw = msg.content[0].text.trim();
+    const [labelMsg, reasonMsg] = await Promise.all([
+      anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{
+          role: 'user',
+          content: `Translate these Russian fashion item names to concise English (2-4 words max each). Return ONLY a JSON array of strings in the same order, no extra text.\n\n${labelList}`,
+        }],
+      }),
+      wrongLayer ? anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        messages: [{
+          role: 'user',
+          content: `Translate this Russian fashion explanation to English. Keep it concise and clear (1-2 sentences). Return only the translation, no extra text.\n\n${wrongLayer.wrong_reason}`,
+        }],
+      }) : Promise.resolve(null),
+    ]);
+
+    const raw = labelMsg.content[0].text.trim();
     const match = raw.match(/\[[\s\S]*\]/);
     if (!match) return res.status(500).json({ error: 'Parse error', raw });
     const translations = JSON.parse(match[0]);
@@ -285,8 +298,13 @@ router.post('/outfit/:id/svg-layers/translate', async (req, res, next) => {
       if (en) await pool.query('UPDATE outfit_svg_layers SET label_en = $1 WHERE id = $2', [en, rows[i].id]);
     }
 
+    if (wrongLayer && reasonMsg) {
+      const reasonEn = reasonMsg.content[0].text.trim();
+      await pool.query('UPDATE outfit_svg_layers SET wrong_reason_en = $1 WHERE id = $2', [reasonEn, wrongLayer.id]);
+    }
+
     const { rows: updated } = await pool.query(
-      'SELECT id, label_en FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
+      'SELECT id, label_en, wrong_reason_en FROM outfit_svg_layers WHERE outfit_id = $1 ORDER BY sort_order, created_at',
       [id]
     );
     res.json({ ok: true, count: rows.length, layers: updated });

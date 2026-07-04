@@ -402,9 +402,11 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                           <h3 className={`font-medium ${isMobile ? 'text-sm' : 'text-base'} mb-1 text-emerald-400`}>
                             {t('game.visual.correct')} {(i18n.language === 'en' && wrongSvgLayer.label_en) ? wrongSvgLayer.label_en : wrongSvgLayer.label}
                           </h3>
-                          {wrongSvgLayer.wrong_reason && (
+                          {(wrongSvgLayer.wrong_reason || wrongSvgLayer.wrong_reason_en) && (
                             <p className={`text-zinc-300 ${isMobile ? 'text-xs leading-snug' : 'text-sm leading-relaxed'}`}>
-                              {wrongSvgLayer.wrong_reason}
+                              {i18n.language === 'en'
+                                ? (wrongSvgLayer.wrong_reason_en || wrongSvgLayer.wrong_reason)
+                                : wrongSvgLayer.wrong_reason}
                             </p>
                           )}
                         </div>

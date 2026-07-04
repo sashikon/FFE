@@ -221,54 +221,78 @@ function Tip({ text, children, width = 'w-52', side = 'top' }) {
 }
 
 function WrongReasonEditor({ layer, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(layer.wrong_reason || '');
+  const [editingRu, setEditingRu] = useState(false);
+  const [editingEn, setEditingEn] = useState(false);
+  const [valueRu, setValueRu] = useState(layer.wrong_reason || '');
+  const [valueEn, setValueEn] = useState(layer.wrong_reason_en || '');
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async () => {
+  const handleSaveRu = async () => {
     setSaving(true);
-    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { wrong_reason: value });
-    onSave(value);
+    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { wrong_reason: valueRu });
+    onSave(valueRu);
     setSaving(false);
-    setEditing(false);
+    setEditingRu(false);
+  };
+
+  const handleSaveEn = async () => {
+    setSaving(true);
+    await apiPatch(`/api/admin/svg-layer/${layer.id}`, { wrong_reason_en: valueEn });
+    setSaving(false);
+    setEditingEn(false);
   };
 
   return (
-    <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider">
-          Лишний предмет: {layer.label}
-        </span>
-        <button
-          onClick={() => setEditing(e => !e)}
-          className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          {editing ? 'отмена' : 'изменить'}
-        </button>
-      </div>
-      {editing ? (
-        <div className="flex flex-col gap-2">
-          <textarea
-            autoFocus
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            rows={3}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-200 px-2 py-1.5 resize-none focus:outline-none focus:border-zinc-500"
-            placeholder="Объясни почему этот предмет лишний в контексте образа…"
-          />
-          <button
-            onClick={handleSave}
-            disabled={saving || !value.trim()}
-            className="self-end text-xs px-3 py-1 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded transition-colors disabled:opacity-40"
-          >
-            {saving ? 'Сохраняю…' : 'Сохранить'}
+    <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2 space-y-2">
+      <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider block">
+        Лишний предмет: {layer.label}
+      </span>
+
+      {/* RU reason */}
+      <div>
+        <div className="flex items-center justify-between mb-0.5">
+          <span className="text-[9px] text-zinc-500 uppercase tracking-wider">RU</span>
+          <button onClick={() => setEditingRu(e => !e)} className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors">
+            {editingRu ? 'отмена' : 'изменить'}
           </button>
         </div>
-      ) : (
-        <p className="text-xs text-zinc-400">
-          {layer.wrong_reason || <span className="italic text-zinc-600">Объяснение не задано — нажми «изменить»</span>}
-        </p>
-      )}
+        {editingRu ? (
+          <div className="flex flex-col gap-2">
+            <textarea autoFocus value={valueRu} onChange={e => setValueRu(e.target.value)} rows={3}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-200 px-2 py-1.5 resize-none focus:outline-none focus:border-zinc-500"
+              placeholder="Объясни почему этот предмет лишний…" />
+            <button onClick={handleSaveRu} disabled={saving || !valueRu.trim()}
+              className="self-end text-xs px-3 py-1 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded disabled:opacity-40">
+              {saving ? 'Сохраняю…' : 'Сохранить'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-400">{valueRu || <span className="italic text-zinc-600">не задано</span>}</p>
+        )}
+      </div>
+
+      {/* EN reason */}
+      <div>
+        <div className="flex items-center justify-between mb-0.5">
+          <span className="text-[9px] text-blue-500 uppercase tracking-wider">EN</span>
+          <button onClick={() => setEditingEn(e => !e)} className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors">
+            {editingEn ? 'cancel' : 'edit'}
+          </button>
+        </div>
+        {editingEn ? (
+          <div className="flex flex-col gap-2">
+            <textarea autoFocus value={valueEn} onChange={e => setValueEn(e.target.value)} rows={3}
+              className="w-full bg-zinc-900 border border-blue-800 rounded text-xs text-blue-200 px-2 py-1.5 resize-none focus:outline-none focus:border-blue-600"
+              placeholder="Explain why this item doesn't belong…" />
+            <button onClick={handleSaveEn} disabled={saving || !valueEn.trim()}
+              className="self-end text-xs px-3 py-1 bg-blue-900 hover:bg-blue-800 text-blue-200 rounded disabled:opacity-40">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-blue-400/70">{valueEn || <span className="italic text-zinc-600">not set — click «Перевести» to auto-translate</span>}</p>
+        )}
+      </div>
     </div>
   );
 }
