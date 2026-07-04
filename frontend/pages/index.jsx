@@ -60,12 +60,12 @@ export default function GalleryPage() {
 
   const meta = isRu
     ? {
-        title: 'Язык моды — расшифруй каждый образ | FFE',
+        title: 'FFE — игра про язык моды: расшифруй каждый образ',
         description:
           'Умеешь читать образы? Угадывай стилевые коды, тренируй модный глаз и проверяй интуицию в игре FFE. Каждый образ — это шифр. Сможешь его разгадать?',
       }
     : {
-        title: 'The Language of Fashion — Decode Every Outfit | FFE',
+        title: 'FFE — Fashion Language Game: Decode Every Outfit',
         description:
           "Can you crack the fashion code? Browse outfits and test your style intuition in FFE's visual fashion game. Every look tells a story — find the word that doesn't belong.",
       };

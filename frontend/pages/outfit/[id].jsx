@@ -84,15 +84,15 @@ export default function OutfitPage() {
   const meta = isRu
     ? {
         title: outfitTitle
-          ? `${outfitTitle} — расшифруй образ | FFE`
-          : 'Расшифруй этот образ | FFE — Язык моды',
+          ? `${outfitTitle} — расшифруй образ · модная игра FFE`
+          : 'Расшифруй этот образ — модная игра FFE',
         description:
           'Одно слово лишнее — найдёшь его? Проверь свой стилевой слух в игре FFE и узнай, насколько хорошо ты говоришь на языке моды.',
       }
     : {
         title: outfitTitleEn
-          ? `${outfitTitleEn} — Decode This Outfit | FFE`
-          : 'Decode This Outfit | FFE — The Language of Fashion',
+          ? `${outfitTitleEn} — Fashion Decoding Game | FFE`
+          : 'Decode the Outfit — Fashion Decoding Game | FFE',
         description:
           "One word doesn't belong. Can you find it? Play FFE's fashion decoding game and see how well you speak the language of style.",
       };
