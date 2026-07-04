@@ -691,6 +691,8 @@ router.get('/pinterest-export', async (req, res, next) => {
     });
 
     // Pass 2: build CSV rows
+    // Track duplicate outfit links — Pinterest rejects pins with identical destination URLs
+    const linkSeen = new Map();
     for (const [i, outfit] of rows.entries()) {
       const gameRows    = outfit.game_rows || [];
       const mediaUrl    = rendersOnly
@@ -698,7 +700,10 @@ router.get('/pinterest-export', async (req, res, next) => {
         : (outfit.render_url || outfit.image_url);  // best render or sketch
       const description = buildDescription(gameRows);
       const keywords    = buildKeywords(gameRows);
-      const link        = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
+      const baseLink    = `${BASE_URL}/outfit/${outfit.id}?lang=${lang}`;
+      const seen        = (linkSeen.get(outfit.id) || 0) + 1;
+      linkSeen.set(outfit.id, seen);
+      const link        = seen > 1 ? `${baseLink}&v=${seen}` : baseLink;
 
       // Thumbnail left blank — only required for video pins
       lines.push(csvRow([finalTitles[i], board, mediaUrl, '', description, link, '', keywords]));
