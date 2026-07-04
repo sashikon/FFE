@@ -1,0 +1,1 @@
+ALTER TABLE outfits ADD COLUMN IF NOT EXISTS title_en TEXT;

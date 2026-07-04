@@ -1472,6 +1472,9 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
   const [title, setTitle] = useState(outfit.title || '');
   const [editingTitle, setEditingTitle] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
+  const [titleEn, setTitleEn] = useState(outfit.title_en || '');
+  const [editingTitleEn, setEditingTitleEn] = useState(false);
+  const [generatingTitleEn, setGeneratingTitleEn] = useState(false);
 
   const handleTitleSave = async (val) => {
     const t = val.trim();
@@ -1481,16 +1484,35 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
     onTitleChange?.(outfit.id, t);
   };
 
+  const handleTitleEnSave = async (val) => {
+    const t = val.trim();
+    setTitleEn(t);
+    setEditingTitleEn(false);
+    await apiPatch(`/api/admin/outfit/${outfit.id}/title`, { title_en: t });
+  };
+
   const handleGenerateTitle = async () => {
     setGeneratingTitle(true);
     try {
-      const data = await apiPost(`/api/admin/outfit/${outfit.id}/generate-title`, {});
+      const data = await apiPost(`/api/admin/outfit/${outfit.id}/generate-title`, { lang: 'ru' });
       setTitle(data.title);
       onTitleChange?.(outfit.id, data.title);
     } catch (e) {
       alert('Ошибка: ' + e.message);
     } finally {
       setGeneratingTitle(false);
+    }
+  };
+
+  const handleGenerateTitleEn = async () => {
+    setGeneratingTitleEn(true);
+    try {
+      const data = await apiPost(`/api/admin/outfit/${outfit.id}/generate-title`, { lang: 'en' });
+      setTitleEn(data.title_en);
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    } finally {
+      setGeneratingTitleEn(false);
     }
   };
 
@@ -1568,6 +1590,38 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                   className="shrink-0 text-zinc-600 hover:text-violet-400 transition-colors disabled:opacity-40"
                 >
                   {generatingTitle ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                </button>
+              </Tip>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+            {editingTitleEn ? (
+              <input
+                autoFocus
+                value={titleEn}
+                onChange={(e) => setTitleEn(e.target.value)}
+                onBlur={() => handleTitleEnSave(titleEn)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTitleEnSave(titleEn); if (e.key === 'Escape') setEditingTitleEn(false); }}
+                className="flex-1 min-w-0 bg-zinc-800 border border-blue-700 rounded px-2 py-0.5 text-xs text-blue-300 outline-none"
+                placeholder="EN title…"
+              />
+            ) : (
+              <button
+                onClick={() => setEditingTitleEn(true)}
+                className="text-xs text-blue-500 hover:text-blue-300 truncate transition-colors text-left"
+                title="EN title"
+              >
+                {titleEn || <span className="opacity-40">EN title</span>}
+              </button>
+            )}
+            {!editingTitleEn && (
+              <Tip text="Сгенерировать EN название через ИИ" width="w-44">
+                <button
+                  onClick={handleGenerateTitleEn}
+                  disabled={generatingTitleEn}
+                  className="shrink-0 text-zinc-700 hover:text-blue-400 transition-colors disabled:opacity-40"
+                >
+                  {generatingTitleEn ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 </button>
               </Tip>
             )}

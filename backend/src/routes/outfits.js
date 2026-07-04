@@ -38,7 +38,7 @@ router.get('/outfit/:id', async (req, res, next) => {
     const lang = req.query.lang || 'ru';
 
     const { rows } = await pool.query(
-      'SELECT id, image_url, thumb_url, title FROM outfits WHERE id = $1',
+      'SELECT id, image_url, thumb_url, title, title_en FROM outfits WHERE id = $1',
       [id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });

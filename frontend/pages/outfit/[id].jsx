@@ -70,6 +70,7 @@ export default function OutfitPage() {
   const isRu = i18n.language === 'ru';
   const siteUrl = 'https://ffe-blush.vercel.app';
   const outfitTitle = data?.title;
+  const outfitTitleEn = data?.title_en;
 
   const meta = isRu
     ? {
@@ -80,8 +81,8 @@ export default function OutfitPage() {
           'Одно слово лишнее — найдёшь его? Проверь свой стилевой слух в игре FFE и узнай, насколько хорошо ты говоришь на языке моды.',
       }
     : {
-        title: outfitTitle
-          ? `${outfitTitle} — Decode This Outfit | FFE`
+        title: outfitTitleEn
+          ? `${outfitTitleEn} — Decode This Outfit | FFE`
           : 'Decode This Outfit | FFE — The Language of Fashion',
         description:
           "One word doesn't belong. Can you find it? Play FFE's fashion decoding game and see how well you speak the language of style.",

@@ -21,7 +21,7 @@ router.use(requireAdminToken);
 router.get('/outfits', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.created_at, o.file_hash, o.pinterest_exported,
+      `SELECT o.id, o.image_url, o.thumb_url, o.title, o.title_en, o.created_at, o.file_hash, o.pinterest_exported,
               json_object_agg(t.lang, json_build_object('status', t.status, 'error_msg', t.error_msg, 'game_rows', t.game_rows))
                 FILTER (WHERE t.lang IS NOT NULL) AS translations,
               COALESCE((
@@ -295,43 +295,57 @@ router.post('/outfit/:id/svg-layers/translate', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/outfit/:id/title — save title
+// PATCH /api/admin/outfit/:id/title — save title (and optional title_en)
 router.patch('/outfit/:id/title', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title } = req.body;
-    await pool.query('UPDATE outfits SET title = $1 WHERE id = $2', [title || null, id]);
-    res.json({ ok: true, title: title || null });
+    const { title, title_en } = req.body;
+    await pool.query(
+      `UPDATE outfits SET
+        title    = CASE WHEN $1::text IS NOT NULL THEN $1 ELSE title END,
+        title_en = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE title_en END
+       WHERE id = $3`,
+      [title ?? null, title_en ?? null, id]
+    );
+    res.json({ ok: true, title: title ?? null, title_en: title_en ?? null });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/admin/outfit/:id/generate-title — generate title via Claude from game_rows
+// POST /api/admin/outfit/:id/generate-title — generate RU title via Claude from game_rows
 router.post('/outfit/:id/generate-title', async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { lang = 'ru' } = req.body;
     const { rows } = await pool.query(
-      `SELECT game_rows FROM outfit_translations WHERE outfit_id = $1 AND lang = 'ru' AND status = 'ready'`,
-      [id]
+      `SELECT game_rows FROM outfit_translations WHERE outfit_id = $1 AND lang = $2 AND status = 'ready'`,
+      [id, lang]
     );
-    if (!rows.length || !rows[0].game_rows) return res.status(400).json({ error: 'Нет игровых данных' });
+    if (!rows.length || !rows[0].game_rows) return res.status(400).json({ error: 'No game data' });
 
     const rounds = rows[0].game_rows;
-    const context = rounds.map((r) => `Тема: ${r.theme}. Объяснение: ${r.explanation}`).join('\n');
+
+    let prompt, field;
+    if (lang === 'en') {
+      const context = rounds.map((r) => `Theme: ${r.theme}. Explanation: ${r.explanation}`).join('\n');
+      prompt = `Based on this outfit description, create a short English title (2–4 words) for a gallery card. Style it like a fashion editorial title. Only the title, no quotes or explanation.\n\n${context}`;
+      field = 'title_en';
+    } else {
+      const context = rounds.map((r) => `Тема: ${r.theme}. Объяснение: ${r.explanation}`).join('\n');
+      prompt = `На основе описания образа придумай короткое название (2–4 слова) для карточки в галерее. Только название, без кавычек и пояснений.\n\n${context}`;
+      field = 'title';
+    }
 
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 60,
-      messages: [{
-        role: 'user',
-        content: `На основе описания образа придумай короткое название (2–4 слова) для карточки в галерее. Только название, без кавычек и пояснений.\n\n${context}`,
-      }],
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const title = msg.content[0].text.trim().replace(/^["«»]+|["«»]+$/g, '');
-    await pool.query('UPDATE outfits SET title = $1 WHERE id = $2', [title, id]);
-    res.json({ title });
+    const title = msg.content[0].text.trim().replace(/^["«»"]+|["«»"]+$/g, '');
+    await pool.query(`UPDATE outfits SET ${field} = $1 WHERE id = $2`, [title, id]);
+    res.json({ [field]: title });
   } catch (err) {
     next(err);
   }
