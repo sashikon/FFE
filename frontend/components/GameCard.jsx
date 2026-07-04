@@ -3,6 +3,12 @@ import { CheckCircle2, XCircle, ArrowRight, ZoomIn, Upload } from 'lucide-react'
 import { useTranslation } from 'next-i18next/pages';
 import { fetcher } from '../lib/api';
 
+// Convert raw Cloudinary URL to browser-friendly format (f_auto converts palette PNG → WebP/JPEG)
+function optimizeCloudinaryUrl(url, width = 700) {
+  if (!url || !url.includes('res.cloudinary.com')) return url;
+  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`);
+}
+
 const FALLBACK = {
   'game.title': 'НАЙДИ ЛИШНЕЕ',
   'game.outfitAlt': 'Образ',
@@ -123,7 +129,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   const [selectedOption, setSelectedOption] = useState(null);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [imageSrc, setImageSrc] = useState(initialImageSrc);
+  const [imageSrc, setImageSrc] = useState(() => optimizeCloudinaryUrl(initialImageSrc));
   const [stepResults, setStepResults] = useState(new Array(gameData.length).fill(null));
   const [shuffledOptions, setShuffledOptions] = useState(() => shuffleArray(gameData[0].options));
   const explanationRef = useRef(null);
