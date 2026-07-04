@@ -154,6 +154,9 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') return;
+      // Disable keyboard shortcuts during visual and render levels
+      if (hasVisualLevel && !visualDone) return;
+      if (hasRenderLevel && renderChoices && !renderLevelDone) return;
       if (e.key === 'Enter' && isAnswered && !isGameOver) { handleNext(); return; }
       if (!isAnswered && !isGameOver) {
         const num = parseInt(e.key);
@@ -162,7 +165,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAnswered, isGameOver, shuffledOptions, currentStep]);
+  }, [isAnswered, isGameOver, shuffledOptions, currentStep, hasVisualLevel, visualDone, hasRenderLevel, renderChoices, renderLevelDone]);
 
   const handleOptionClick = (option) => {
     if (isAnswered) return;
@@ -227,6 +230,17 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
     setStepResults(new Array(gameData.length).fill(null));
     setIsGameOver(false);
     setShuffledOptions(shuffleArray(gameData[0].options));
+    // Reset visual level
+    setVisualDone(false);
+    setShakeId(null);
+    setRemovedId(null);
+    setShowVisualResult(false);
+    setImgLoaded(false);
+    // Reset render level
+    setRenderChoices(null);
+    setRenderSelected(null);
+    setRenderShake(null);
+    setRenderLevelDone(false);
   };
 
   const [showComingSoon, setShowComingSoon] = useState(false);
@@ -545,11 +559,11 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                     className="py-3 px-4 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg flex items-center gap-2 transition-colors border border-zinc-700"
                   >
                     <Upload size={14} /> <span>{t('game.uploadPhoto')}</span>
-                    <span className="text-zinc-600 text-[10px]">скоро</span>
+                    <span className="text-zinc-600 text-[10px]">{isEn ? 'soon' : 'скоро'}</span>
                   </button>
                   {showComingSoon && (
                     <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-zinc-700 text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
-                      Функция появится совсем скоро ✦
+                      {isEn ? 'Coming soon ✦' : 'Функция появится совсем скоро ✦'}
                     </div>
                   )}
                 </div>
@@ -593,7 +607,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
                           {idx + 1}
                         </span>
                       )}
-                      <span className="w-full break-words hyphens-auto flex items-center justify-center gap-2 h-full" lang="ru">
+                      <span className="w-full break-words hyphens-auto flex items-center justify-center gap-2 h-full" lang={isEn ? 'en' : 'ru'}>
                         {swatch && (
                           <span
                             className="shrink-0 rounded-full border border-white/20"
