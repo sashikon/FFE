@@ -1464,7 +1464,7 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
     setDone(0);
     for (const o of untitled) {
       try {
-        await apiPost(`/api/admin/outfit/${o.id}/generate-title`, {});
+        await apiPost(`/api/admin/outfit/${o.id}/generate-title`, { lang: 'ru' });
         setDone((n) => n + 1);
       } catch {}
     }
@@ -1482,6 +1482,55 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
         {running ? `Называю… ${done}/${untitled.length}` : `Назвать все (${untitled.length})`}
+      </button>
+    </Tip>
+  );
+}
+
+function TranslateAllButton({ outfits, onMutate }) {
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+
+  // Outfits that have SVG layers but need EN translation (no label_en on any layer OR no title_en)
+  const needsTranslation = (outfits || []).filter((o) => {
+    const layers = o.svg_layers || [];
+    const hasLayers = layers.some((l) => l.label);
+    const missingLabelEn = layers.some((l) => l.label && !l.label_en);
+    const missingTitleEn = !o.title_en;
+    return hasLayers && (missingLabelEn || missingTitleEn);
+  });
+
+  const handleRun = async () => {
+    if (!needsTranslation.length) return;
+    setRunning(true);
+    setDone(0);
+    for (const o of needsTranslation) {
+      try {
+        // Translate SVG labels + wrong_reason
+        if ((o.svg_layers || []).some((l) => l.label && !l.label_en)) {
+          await apiPost(`/api/admin/outfit/${o.id}/svg-layers/translate`, {});
+        }
+        // Generate EN title
+        if (!o.title_en) {
+          await apiPost(`/api/admin/outfit/${o.id}/generate-title`, { lang: 'en' });
+        }
+        setDone((n) => n + 1);
+      } catch {}
+    }
+    setRunning(false);
+    onMutate();
+  };
+
+  if (!needsTranslation.length) return null;
+  return (
+    <Tip text={`Перевести SVG-метки, пояснения и заголовки на EN для ${needsTranslation.length} образов`} width="w-64">
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+      >
+        {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px] font-semibold">EN</span>}
+        {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести все (${needsTranslation.length})`}
       </button>
     </Tip>
   );
@@ -1997,6 +2046,7 @@ export default function AdminPage() {
                   {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
                   {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
                   <GenerateAllTitlesButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
+                  <TranslateAllButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   {dupCount > 0 && (
                     <button
                       onClick={() => setShowDuplicates((v) => !v)}
