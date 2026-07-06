@@ -54,7 +54,7 @@ const Confetti = () => {
   );
 };
 
-export default function ResultScreen({ score, total, outfitId, onRestart, onNext }) {
+export default function ResultScreen({ score, total, outfitId, onRestart, onNext, imageSrc }) {
   const { t: tRaw, i18n } = useTranslation('common');
   const t = (key, vars) => { const v = tRaw(key, vars); return v === key ? (FALLBACK[key] ?? key) : v; };
   const [isCopied, setIsCopied] = useState(false);
@@ -93,13 +93,30 @@ export default function ResultScreen({ score, total, outfitId, onRestart, onNext
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-4 relative">
+    <div className="flex-1 flex items-center justify-center p-4 relative overflow-hidden">
+      {imageSrc && (
+        <img
+          src={imageSrc}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ filter: 'blur(12px) brightness(0.3)', transform: 'scale(1.05)' }}
+        />
+      )}
+      <div className="absolute inset-0 bg-black/50" />
       {perfect && <Confetti />}
-      <div className="w-full bg-zinc-900 rounded-2xl p-6 text-center border border-zinc-800 shadow-2xl mx-auto max-w-md relative z-10">
+      <div className="w-full bg-zinc-900/70 backdrop-blur-sm rounded-2xl p-6 text-center border border-zinc-800 shadow-2xl mx-auto max-w-md relative z-10">
         <h1 className="text-2xl font-serif mb-2">{t('result.title')}</h1>
         <p className="text-zinc-400 mb-6">{t('result.subtitle')}</p>
-        <div className={`text-6xl font-light mb-2 ${perfect ? 'text-emerald-400' : 'text-white'}`}>
-          {score} <span className="text-2xl text-zinc-500">/ {total}</span>
+        <style>{`
+          @keyframes score-pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          .score-pop { animation: score-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+        `}</style>
+        <div className={`score-pop text-7xl font-light mb-2 ${perfect ? 'text-emerald-400' : 'text-white'}`}>
+          {score} <span className="text-3xl text-zinc-500">/ {total}</span>
         </div>
         <p className={`mb-8 font-medium ${perfect ? 'text-emerald-400' : 'text-zinc-400'}`}>
           {getMessage()}

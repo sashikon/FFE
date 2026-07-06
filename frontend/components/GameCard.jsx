@@ -259,7 +259,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
   };
 
   if (isGameOver) {
-    return <ResultScreen score={score} total={gameData.length} outfitId={outfitId} onRestart={handleRestart} onNext={onNext} />;
+    return <ResultScreen score={score} total={gameData.length} outfitId={outfitId} onRestart={handleRestart} onNext={onNext} imageSrc={imageSrc} />;
   }
 
   // Render level — shown after word rounds, before result screen
