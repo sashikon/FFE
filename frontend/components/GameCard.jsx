@@ -147,7 +147,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
 
   useEffect(() => {
     if (isAnswered && explanationRef.current) {
-      setTimeout(() => explanationRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 150);
+      setTimeout(() => explanationRef.current.scrollIntoView({ behavior: 'smooth', block: isMobile ? 'start' : 'nearest' }), 150);
     }
   }, [isAnswered]);
 
@@ -573,6 +573,16 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
 
           {/* Game panel */}
           <div className={`${isDesktop ? 'col-span-7' : ''} flex flex-col w-full`}>
+            {isMobile && isAnswered && (
+              <div className="sticky top-[80px] z-30 -mx-4 w-[calc(100%+2rem)] mb-4 overflow-hidden border-b border-zinc-800 shadow-lg">
+                <img
+                  src={imageSrc}
+                  alt={t('game.outfitAlt')}
+                  className="w-full object-cover"
+                  style={{ height: 80 }}
+                />
+              </div>
+            )}
             <main key={currentStep} className={`bg-zinc-900 ${isMobile ? 'rounded-2xl p-5' : 'rounded-2xl p-8'} border border-zinc-800 shadow-xl`}>
               <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-medium text-zinc-200 ${isMobile ? 'mb-2' : 'mb-3'} text-center`}>
                 {currentData.theme}
@@ -622,7 +632,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
               </div>
 
               {isAnswered && (
-                <div ref={explanationRef} className="animate-in fade-in duration-500">
+                <div ref={explanationRef} className="animate-in fade-in duration-500" style={isMobile ? { scrollMarginTop: 168 } : undefined}>
                   <div className={`${isMobile ? 'p-4' : 'p-5'} rounded-xl border ${isCorrect ? 'bg-emerald-950/30 border-emerald-900/50' : 'bg-rose-950/30 border-rose-900/50'} ${isMobile ? 'mb-5' : 'mb-6'}`}>
                     <div className="flex items-start gap-3">
                       {isCorrect
