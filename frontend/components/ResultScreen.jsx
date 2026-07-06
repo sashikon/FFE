@@ -105,21 +105,21 @@ export default function ResultScreen({ score, total, outfitId, onRestart, onNext
           {getMessage()}
         </p>
         <div className="flex flex-col gap-3">
-          <button
-            onClick={handleShare}
-            className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-lg font-medium hover:bg-emerald-500 transition-colors"
-          >
-            {isCopied ? <Check size={20} /> : <Share2 size={20} />}
-            {isCopied ? t('copied') : t('share')}
-          </button>
           {onNext && (
             <button
               onClick={onNext}
-              className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-zinc-200 py-3 rounded-lg font-medium hover:bg-zinc-700 transition-colors border border-zinc-700"
+              className="w-full flex items-center justify-center gap-2 bg-white text-zinc-900 py-3 rounded-lg font-medium hover:bg-zinc-100 transition-colors"
             >
               <ArrowRight size={20} /> {t('next')}
             </button>
           )}
+          <button
+            onClick={handleShare}
+            className="w-full flex items-center justify-center gap-2 bg-transparent text-zinc-300 py-3 rounded-lg font-medium hover:bg-zinc-800 transition-colors border border-zinc-700"
+          >
+            {isCopied ? <Check size={20} /> : <Share2 size={20} />}
+            {isCopied ? t('copied') : t('share')}
+          </button>
           <button
             onClick={onRestart}
             className="w-full flex items-center justify-center gap-2 bg-zinc-800/50 text-zinc-500 py-2.5 rounded-lg font-medium hover:bg-zinc-700 hover:text-zinc-200 transition-colors text-sm"
