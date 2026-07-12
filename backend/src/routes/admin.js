@@ -929,6 +929,7 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
     // Load render + outfit data
     const { rows } = await pool.query(
       `SELECT r.id, r.aesthetics, r.pin_title, r.pin_description,
+              r.image_url AS render_url,
               o.title AS outfit_title,
               t.game_rows
        FROM outfit_renders r
@@ -945,6 +946,7 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
     const themes = gameRows.map(r => r.theme).filter(Boolean).join(', ');
     const gameKeywords = gameRows.flatMap(r => r.options || []).filter(Boolean).slice(0, 20).join(', ');
     const outfitTitle = render.outfit_title || '';
+    const renderUrl = render.render_url || null;
 
     const isRu = lang === 'ru';
 
@@ -980,10 +982,18 @@ Rules:
 
 Return strict JSON only: {"title": "...", "description": "..."}`;
 
+    // Build message content — attach render image if available so Claude sees actual colors
+    const userContent = renderUrl
+      ? [
+          { type: 'image', source: { type: 'url', url: renderUrl } },
+          { type: 'text', text: prompt },
+        ]
+      : prompt;
+
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: userContent }],
     });
 
     const raw = msg.content[0].text.trim();
