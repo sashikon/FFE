@@ -512,13 +512,12 @@ router.get('/pinterest-export', async (req, res, next) => {
       const result = await pool.query(
         `SELECT r.id AS render_id, r.image_url AS render_url, r.thumb_url AS render_thumb_url,
                 r.pin_title, r.pin_description,
-                o.id, o.image_url, o.thumb_url, o.title,
+                o.id, o.image_url, o.thumb_url, o.title, o.title_en,
                 t.game_rows, o.pinterest_exported
          FROM outfit_renders r
          JOIN outfits o ON o.id = r.outfit_id
-         JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
-         WHERE t.status = 'ready'
-           AND r.pinterest_exported_at IS NULL
+         LEFT JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1 AND t.status = 'ready'
+         WHERE r.pinterest_exported_at IS NULL
            AND ($2::uuid[] IS NULL OR r.id = ANY($2::uuid[]))
          ORDER BY o.created_at DESC, r.created_at DESC`,
         [lang, renderFilter]
@@ -526,7 +525,7 @@ router.get('/pinterest-export', async (req, res, next) => {
       rows = result.rows;
     } else {
       const result = await pool.query(
-        `SELECT o.id, o.image_url, o.thumb_url, o.title,
+        `SELECT o.id, o.image_url, o.thumb_url, o.title, o.title_en,
                 t.game_rows,
                 o.pinterest_exported,
                 COALESCE(
@@ -559,8 +558,14 @@ router.get('/pinterest-export', async (req, res, next) => {
     function buildTitle(gameRows) {
       if (!Array.isArray(gameRows) || !gameRows.length) return null;
 
-      const silhouette  = (gameRows[0]?.options || [])[0] || '';
-      const assocRow    = gameRows.length > 4 ? gameRows[4] : gameRows[gameRows.length - 1];
+      // Find silhouette/form row by theme name, fallback to first row
+      const formThemes = ['form', 'silhouette', 'форма', 'силуэт', 'shape'];
+      const formRow = gameRows.find(r => formThemes.some(k => r.theme?.toLowerCase().includes(k))) || gameRows[0];
+      const silhouette  = (formRow?.options || [])[0] || '';
+      // Association row: last row, or row with theme containing 'assoc'/'code'/'смысл'
+      const assocThemes = ['association', 'code', 'смысл', 'ассоц', 'meaning'];
+      const assocRow = gameRows.find(r => assocThemes.some(k => r.theme?.toLowerCase().includes(k)))
+        || (gameRows.length > 4 ? gameRows[4] : gameRows[gameRows.length - 1]);
       const association = (assocRow?.options || [])[0] || '';
 
       if (!silhouette && !association) return null;
@@ -712,11 +717,13 @@ router.get('/pinterest-export', async (req, res, next) => {
     const lines  = [csvRow(header)];
 
     // Pass 1: generate raw titles for every outfit
+    // Priority: SEO pin_title → localised outfit title → computed → fallback
     const rawTitles = rows.map((outfit, i) => {
       const gameRows = outfit.game_rows || [];
+      const localisedTitle = lang === 'en' ? (outfit.title_en || outfit.title) : outfit.title;
       return (
         outfit.pin_title ||
-        outfit.title ||
+        localisedTitle ||
         buildTitle(gameRows) ||
         (lang === 'ru' ? `Образ ${i + 1}` : `Outfit ${i + 1}`)
       ).slice(0, TITLE_MAX);
