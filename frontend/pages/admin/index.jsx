@@ -937,9 +937,9 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                         )}
                       </div>
 
-                      {/* Title */}
-                      <span className="flex-1 min-w-0 text-xs text-zinc-300 truncate">
-                        {(lang === 'en' ? (outfit.title_en || outfit.title) : outfit.title) || outfit.id}
+                      {/* Title — same priority as CSV: pin_title → title_en → title */}
+                      <span className={`flex-1 min-w-0 text-xs truncate ${outfit.pin_title ? 'text-zinc-300' : 'text-zinc-500 italic'}`}>
+                        {outfit.pin_title || (lang === 'en' ? (outfit.title_en || outfit.title) : outfit.title) || outfit.id}
                       </span>
                     </label>
                   );

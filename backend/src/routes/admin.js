@@ -459,6 +459,7 @@ router.get('/pinterest-preview', async (req, res, next) => {
       // Per-render mode: one row per un-exported render
       const { rows } = await pool.query(
         `SELECT r.id, r.thumb_url AS render_thumb, r.image_url AS render_url,
+                r.pin_title,
                 o.id AS outfit_id, o.thumb_url, o.image_url, o.title, o.title_en
          FROM outfit_renders r
          JOIN outfits o ON o.id = r.outfit_id
