@@ -25,6 +25,8 @@ const PINTEREST_REDIRECT =
     : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
 
 router.get('/pinterest-auth', (req, res) => {
+  // ?debug=1 — show what redirect URI we send (for troubleshooting)
+  if (req.query.debug) return res.json({ redirect_uri: PINTEREST_REDIRECT, app_id: process.env.PINTEREST_APP_ID });
   const url = new URL('https://www.pinterest.com/oauth/');
   url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
   url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
