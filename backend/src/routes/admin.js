@@ -16,6 +16,48 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout
 const upload = multer({ dest: '/tmp/ffe-uploads/' });
 
 const router = express.Router();
+
+// ─── Pinterest OAuth — must be registered BEFORE requireAdminToken ────────────
+
+const PINTEREST_REDIRECT =
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
+
+router.get('/pinterest-auth', (req, res) => {
+  const url = new URL('https://www.pinterest.com/oauth/');
+  url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
+  url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'boards:read,pins:write,pins:read,user_accounts:read');
+  url.searchParams.set('state', 'ffe-admin');
+  res.redirect(url.toString());
+});
+
+router.get('/pinterest-callback', async (req, res, next) => {
+  try {
+    const { code, error } = req.query;
+    if (error) return res.status(400).send(`Pinterest OAuth error: ${error}`);
+    if (!code)  return res.status(400).send('Missing code');
+    const tokens = await exchangeCodeForToken(code, PINTEREST_REDIRECT);
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Pinterest OAuth</title>
+<style>body{font-family:monospace;background:#111;color:#eee;padding:2rem;max-width:700px;margin:auto}
+pre{background:#222;padding:1rem;border-radius:8px;word-break:break-all;white-space:pre-wrap}
+h2{color:#e60023}.note{color:#aaa;font-size:.85rem;margin-top:1rem}</style></head><body>
+<h2>✅ Pinterest OAuth успешен</h2>
+<p>Скопируй <strong>access_token</strong> в Railway → Variables → <code>PINTEREST_ACCESS_TOKEN</code>:</p>
+<pre>${tokens.access_token}</pre>
+<p>Refresh token (сохрани на случай обновления):</p>
+<pre>${tokens.refresh_token || '—'}</pre>
+<p class="note">Срок действия: ${Math.round((tokens.expires_in || 0) / 86400)} дней.</p>
+</body></html>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 router.use(requireAdminToken);
 
 // GET /api/admin/outfits
@@ -1200,48 +1242,6 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
     }
 
     res.json({ ok: true, total: rows.length, updated, last_error: lastError });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ─── Pinterest OAuth ──────────────────────────────────────────────────────────
-
-const PINTEREST_REDIRECT =
-  (process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
-
-// GET /api/admin/pinterest-auth — redirect to Pinterest OAuth page (no token needed, just a redirect)
-router.get('/pinterest-auth', (req, res) => {
-  const url = new URL('https://www.pinterest.com/oauth/');
-  url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
-  url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'boards:read,pins:write,pins:read,user_accounts:read');
-  url.searchParams.set('state', 'ffe-admin');
-  res.redirect(url.toString());
-});
-
-// GET /api/admin/pinterest-callback — exchange code → show token
-router.get('/pinterest-callback', async (req, res, next) => {
-  try {
-    const { code, error } = req.query;
-    if (error) return res.status(400).send(`Pinterest OAuth error: ${error}`);
-    if (!code)  return res.status(400).send('Missing code');
-    const tokens = await exchangeCodeForToken(code, PINTEREST_REDIRECT);
-    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Pinterest OAuth</title>
-<style>body{font-family:monospace;background:#111;color:#eee;padding:2rem;max-width:700px;margin:auto}
-pre{background:#222;padding:1rem;border-radius:8px;word-break:break-all;white-space:pre-wrap}
-h2{color:#e60023}.note{color:#aaa;font-size:.85rem;margin-top:1rem}</style></head><body>
-<h2>✅ Pinterest OAuth успешен</h2>
-<p>Скопируй <strong>access_token</strong> в Railway → Variables → <code>PINTEREST_ACCESS_TOKEN</code>:</p>
-<pre>${tokens.access_token}</pre>
-<p>Refresh token (сохрани на случай обновления):</p>
-<pre>${tokens.refresh_token || '—'}</pre>
-<p class="note">Срок действия: ${Math.round((tokens.expires_in || 0) / 86400)} дней.</p>
-</body></html>`);
   } catch (err) {
     next(err);
   }
