@@ -133,7 +133,7 @@ async function createPin({ boardId, title, description, imageUrl, link, keywords
  * Exchange OAuth authorization code for access + refresh tokens.
  */
 async function exchangeCodeForToken(code, redirectUri) {
-  const appId     = process.env.PINTEREST_APP_ID;
+  const appId     = process.env.PINTEREST_APP_ID || '1584485';
   const appSecret = process.env.PINTEREST_APP_SECRET;
   const creds     = Buffer.from(`${appId}:${appSecret}`).toString('base64');
 
@@ -153,7 +153,7 @@ async function exchangeCodeForToken(code, redirectUri) {
  * Refresh an expired access token.
  */
 async function refreshAccessToken(refreshToken) {
-  const appId     = process.env.PINTEREST_APP_ID;
+  const appId     = process.env.PINTEREST_APP_ID || '1584485';
   const appSecret = process.env.PINTEREST_APP_SECRET;
   const creds     = Buffer.from(`${appId}:${appSecret}`).toString('base64');
 

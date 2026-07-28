@@ -19,16 +19,14 @@ const router = express.Router();
 
 // ─── Pinterest OAuth — must be registered BEFORE requireAdminToken ────────────
 
-const PINTEREST_REDIRECT =
-  (process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
+const PINTEREST_REDIRECT = 'https://ffe-production.up.railway.app/api/admin/pinterest-callback';
+const PINTEREST_APP_ID   = process.env.PINTEREST_APP_ID || '1584485';
 
 router.get('/pinterest-auth', (req, res) => {
   // ?debug=1 — show what redirect URI we send (for troubleshooting)
-  if (req.query.debug) return res.json({ redirect_uri: PINTEREST_REDIRECT, app_id: process.env.PINTEREST_APP_ID });
+  if (req.query.debug) return res.json({ redirect_uri: PINTEREST_REDIRECT, app_id: PINTEREST_APP_ID });
   const url = new URL('https://www.pinterest.com/oauth/');
-  url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
+  url.searchParams.set('client_id', PINTEREST_APP_ID);
   url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'boards:read,pins:write,pins:read,user_accounts:read');
