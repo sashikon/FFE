@@ -1212,8 +1212,8 @@ const PINTEREST_REDIRECT =
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
 
-// GET /api/admin/pinterest-auth — redirect to Pinterest OAuth page
-router.get('/pinterest-auth', requireAdminToken, (req, res) => {
+// GET /api/admin/pinterest-auth — redirect to Pinterest OAuth page (no token needed, just a redirect)
+router.get('/pinterest-auth', (req, res) => {
   const url = new URL('https://www.pinterest.com/oauth/');
   url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
   url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
