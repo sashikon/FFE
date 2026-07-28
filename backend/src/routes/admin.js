@@ -8,7 +8,7 @@ const { analyzeAesthetics, analyzeModel } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const { fetchAllPins, fetchPinById, fetchPinAnalytics } = require('../pinterest');
+const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, createPin, exchangeCodeForToken } = require('../pinterest');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
@@ -1200,6 +1200,111 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
     }
 
     res.json({ ok: true, total: rows.length, updated, last_error: lastError });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Pinterest OAuth ──────────────────────────────────────────────────────────
+
+const PINTEREST_REDIRECT =
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : 'https://ffe-production.up.railway.app') + '/api/admin/pinterest-callback';
+
+// GET /api/admin/pinterest-auth — redirect to Pinterest OAuth page
+router.get('/pinterest-auth', requireAdminToken, (req, res) => {
+  const url = new URL('https://www.pinterest.com/oauth/');
+  url.searchParams.set('client_id', process.env.PINTEREST_APP_ID);
+  url.searchParams.set('redirect_uri', PINTEREST_REDIRECT);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'boards:read,pins:write,pins:read,user_accounts:read');
+  url.searchParams.set('state', 'ffe-admin');
+  res.redirect(url.toString());
+});
+
+// GET /api/admin/pinterest-callback — exchange code → show token
+router.get('/pinterest-callback', async (req, res, next) => {
+  try {
+    const { code, error } = req.query;
+    if (error) return res.status(400).send(`Pinterest OAuth error: ${error}`);
+    if (!code)  return res.status(400).send('Missing code');
+    const tokens = await exchangeCodeForToken(code, PINTEREST_REDIRECT);
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Pinterest OAuth</title>
+<style>body{font-family:monospace;background:#111;color:#eee;padding:2rem;max-width:700px;margin:auto}
+pre{background:#222;padding:1rem;border-radius:8px;word-break:break-all;white-space:pre-wrap}
+h2{color:#e60023}.note{color:#aaa;font-size:.85rem;margin-top:1rem}</style></head><body>
+<h2>✅ Pinterest OAuth успешен</h2>
+<p>Скопируй <strong>access_token</strong> в Railway → Variables → <code>PINTEREST_ACCESS_TOKEN</code>:</p>
+<pre>${tokens.access_token}</pre>
+<p>Refresh token (сохрани на случай обновления):</p>
+<pre>${tokens.refresh_token || '—'}</pre>
+<p class="note">Срок действия: ${Math.round((tokens.expires_in || 0) / 86400)} дней.</p>
+</body></html>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/pinterest-boards — list boards
+router.get('/pinterest-boards', requireAdminToken, async (req, res, next) => {
+  try {
+    const boards = await getBoards();
+    res.json({ boards });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/pinterest-post-renders — post selected renders as pins
+// body: { ids: [renderUUID, ...], board_id: "...", lang: "en" }
+router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next) => {
+  try {
+    const { ids, board_id, lang = 'en' } = req.body;
+    if (!ids?.length) return res.status(400).json({ error: 'ids required' });
+    if (!board_id)    return res.status(400).json({ error: 'board_id required' });
+
+    const BASE_URL = 'https://ffe-blush.vercel.app';
+    const TITLE_MAX = 100;
+    const DESC_MAX  = 500;
+
+    const { rows } = await pool.query(
+      `SELECT r.id AS render_id, r.image_url AS render_url,
+              r.pin_title, r.pin_description,
+              o.id AS outfit_id, o.title, o.title_en
+       FROM outfit_renders r
+       JOIN outfits o ON o.id = r.outfit_id
+       WHERE r.id = ANY($1::uuid[])`,
+      [ids]
+    );
+
+    const results = [];
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const title = (row.pin_title ||
+          (lang === 'en' ? row.title_en || row.title : row.title) ||
+          'FFE Outfit').slice(0, TITLE_MAX);
+        const description = (row.pin_description || '').slice(0, DESC_MAX);
+        const link = `${BASE_URL}/outfit/${row.outfit_id}`;
+
+        const pin = await createPin({ boardId: board_id, title, description, imageUrl: row.render_url, link });
+
+        await pool.query(
+          `UPDATE outfit_renders
+           SET pinterest_exported_at = now(), pinterest_pin_id = $1
+           WHERE id = $2`,
+          [pin.id, row.render_id]
+        );
+        results.push({ render_id: row.render_id, pin_id: pin.id, ok: true });
+      } catch (e) {
+        failed++;
+        results.push({ render_id: row.render_id, ok: false, error: e.message });
+      }
+    }
+
+    res.json({ ok: true, posted: results.filter(r => r.ok).length, failed, results });
   } catch (err) {
     next(err);
   }

@@ -7,8 +7,8 @@ function pinterestHeaders(token) {
   return { 'Authorization': `Bearer ${token || ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
 }
 
-async function pinterestGet(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: pinterestHeaders(READ_TOKEN) });
+async function pinterestGet(path, token) {
+  const res = await fetch(`${BASE}${path}`, { headers: pinterestHeaders(token || READ_TOKEN) });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Pinterest API ${res.status}: ${text}`);
@@ -96,4 +96,82 @@ async function fetchPinById(pinId) {
   return pinterestGet(`/pins/${pinId}`);
 }
 
-module.exports = { sendPinterestEvents, fetchAllPins, fetchPinById, fetchPinAnalytics };
+/**
+ * Get user's boards.
+ */
+async function getBoards(token) {
+  const data = await pinterestGet('/boards?page_size=50', token);
+  return data.items || [];
+}
+
+/**
+ * Create a single pin.
+ */
+async function createPin({ boardId, title, description, imageUrl, link, keywords }, token) {
+  const body = {
+    board_id: boardId,
+    title: (title || '').slice(0, 100),
+    description: (description || '').slice(0, 500),
+    link,
+    media_source: { source_type: 'image_url', url: imageUrl },
+  };
+  if (keywords?.length) body.note = keywords.slice(0, 10).join(', ');
+
+  const res = await fetch(`${BASE}/pins`, {
+    method: 'POST',
+    headers: pinterestHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Pinterest createPin ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Exchange OAuth authorization code for access + refresh tokens.
+ */
+async function exchangeCodeForToken(code, redirectUri) {
+  const appId     = process.env.PINTEREST_APP_ID;
+  const appSecret = process.env.PINTEREST_APP_SECRET;
+  const creds     = Buffer.from(`${appId}:${appSecret}`).toString('base64');
+
+  const res = await fetch(`${BASE}/oauth/token`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Pinterest token exchange ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Refresh an expired access token.
+ */
+async function refreshAccessToken(refreshToken) {
+  const appId     = process.env.PINTEREST_APP_ID;
+  const appSecret = process.env.PINTEREST_APP_SECRET;
+  const creds     = Buffer.from(`${appId}:${appSecret}`).toString('base64');
+
+  const res = await fetch(`${BASE}/oauth/token`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Pinterest token refresh ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+module.exports = {
+  sendPinterestEvents,
+  fetchAllPins, fetchPinById, fetchPinAnalytics,
+  getBoards, createPin,
+  exchangeCodeForToken, refreshAccessToken,
+};

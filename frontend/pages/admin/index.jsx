@@ -785,6 +785,10 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
   const [items, setItems] = useState(null); // null = loading
   const [selected, setSelected] = useState(new Set());
   const [exporting, setExporting] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postProgress, setPostProgress] = useState(null); // { done, total, failed }
+  const [boards, setBoards] = useState(null);
+  const [boardId, setBoardId] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}) });
@@ -795,6 +799,44 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       })
       .catch((e) => alert('Ошибка загрузки превью: ' + e.message));
   }, [lang, onlyNew, rendersOnly]);
+
+  // Load boards for direct posting
+  useEffect(() => {
+    if (!rendersOnly) return;
+    adminFetcher('/api/admin/pinterest-boards')
+      .then((data) => {
+        setBoards(data.boards || []);
+        if (data.boards?.length) setBoardId(data.boards[0].id);
+      })
+      .catch(() => setBoards([]));
+  }, [rendersOnly]);
+
+  const handlePost = async () => {
+    if (!selected.size || !boardId) return;
+    setPosting(true);
+    setPostProgress({ done: 0, total: selected.size, failed: 0 });
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const res = await fetch(`${BASE}/api/admin/pinterest-post-renders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'x-admin-token': token } : {}) },
+        body: JSON.stringify({ ids: [...selected], board_id: boardId, lang }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setPostProgress({ done: data.posted, total: selected.size, failed: data.failed });
+      if (data.failed === 0) {
+        onExported();
+        setTimeout(onClose, 1500);
+      }
+    } catch (e) {
+      alert('Ошибка публикации: ' + e.message);
+      setPostProgress(null);
+    } finally {
+      setPosting(false);
+    }
+  };
 
   const toggleAll = () => {
     if (selected.size === items.length) setSelected(new Set());
@@ -951,22 +993,63 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
 
         {/* Footer */}
         {items?.length > 0 && (
-          <div className="px-5 py-4 border-t border-zinc-800 flex items-center justify-between shrink-0">
-            <p className="text-xs text-zinc-600">
-              После скачивания все выбранные {rendersOnly ? 'рендеры получат метку P на миниатюре' : `образы получат метку P·${lang.toUpperCase()}`}
-            </p>
-            <div className="flex gap-2">
-              <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
-                Отмена
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={exporting || !selected.size}
-                className="flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Upload size={12} />
-                {exporting ? 'Готовлю…' : `Скачать CSV (${selected.size})`}
-              </button>
+          <div className="px-5 py-4 border-t border-zinc-800 shrink-0 space-y-3">
+            {/* Board selector for direct posting */}
+            {rendersOnly && boards !== null && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500 shrink-0">Доска:</span>
+                {boards.length === 0 ? (
+                  <span className="text-xs text-zinc-600">Нет досок · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">Авторизоваться</a></span>
+                ) : (
+                  <select
+                    value={boardId}
+                    onChange={(e) => setBoardId(e.target.value)}
+                    className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                  >
+                    {boards.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
+            {/* Progress after posting */}
+            {postProgress && (
+              <div className={`text-xs px-3 py-2 rounded-lg ${postProgress.failed ? 'bg-amber-900/30 text-amber-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
+                {posting
+                  ? `Публикую… ${postProgress.done}/${postProgress.total}`
+                  : `Опубликовано: ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · ошибок: ${postProgress.failed}` : ' ✓'}`}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-zinc-600">
+                {rendersOnly ? 'Рендеры получат метку P после публикации' : `Образы получат метку P·${lang.toUpperCase()}`}
+              </p>
+              <div className="flex gap-2">
+                <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting || !selected.size}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Upload size={12} />
+                  {exporting ? 'Готовлю…' : `CSV (${selected.size})`}
+                </button>
+                {rendersOnly && boards?.length > 0 && (
+                  <button
+                    onClick={handlePost}
+                    disabled={posting || exporting || !selected.size || !boardId}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Upload size={12} />
+                    {posting ? `Публикую…` : `Опубликовать (${selected.size})`}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
