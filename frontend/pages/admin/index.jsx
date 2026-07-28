@@ -32,8 +32,8 @@ function RowsTable({ rows }) {
     <table className="w-full text-xs border-collapse">
       <thead>
         <tr className="text-zinc-500 border-b border-zinc-800">
-          <th className="text-left py-1 pr-3 font-normal w-28">Тема</th>
-          <th className="text-left py-1 font-normal">Варианты (лишнее выделено)</th>
+          <th className="text-left py-1 pr-3 font-normal w-28">Theme</th>
+          <th className="text-left py-1 font-normal">Options (odd one highlighted)</th>
         </tr>
       </thead>
       <tbody>
@@ -80,7 +80,7 @@ function RowsEditor({ outfitId, lang, initialRows }) {
       setTimeout(() => setSaved(false), 2000);
       mutate('/api/admin/outfits');
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setSaving(false);
     }
@@ -98,7 +98,7 @@ function RowsEditor({ outfitId, lang, initialRows }) {
         disabled={saving}
         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs rounded-lg transition-colors disabled:opacity-50"
       >
-        <Save size={12} /> {saved ? 'Сохранено!' : saving ? 'Сохраняю…' : `Сохранить ${lang.toUpperCase()}`}
+        <Save size={12} /> {saved ? 'Saved!' : saving ? 'Saving…' : `Save ${lang.toUpperCase()}`}
       </button>
     </div>
   );
@@ -116,7 +116,7 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
       const data = await apiPost(`/api/admin/render/${render.id}/analyze`);
       onAnalyzed(render.id, data.aesthetics);
     } catch (err) {
-      alert('Ошибка анализа: ' + err.message);
+      alert('Analysis error: ' + err.message);
     } finally {
       setAnalyzing(false);
     }
@@ -130,7 +130,7 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
       setPExported(data.pinterest_exported_at);
       if (onPinterestMark) onPinterestMark(render.id, data.pinterest_exported_at);
     } catch (err) {
-      alert('Ошибка: ' + err.message);
+      alert('Error: ' + err.message);
     }
   };
 
@@ -150,16 +150,16 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
           <button
             onClick={handleAnalyze}
             className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity text-white"
-            title="Анализировать эстетику"
+            title="Analyze aesthetics"
           >
             <Sparkles size={14} />
-            <span className="text-[9px]">Анализ</span>
+            <span className="text-[9px]">Analyze</span>
           </button>
         ) : (
           <button
             onClick={handleAnalyze}
             className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity"
-            title="Переанализировать"
+            title="Re-analyze"
           >
             <RefreshCw size={12} className="text-white/70" />
           </button>
@@ -173,8 +173,8 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
         <button
           onClick={handlePinterestToggle}
           title={pExported
-            ? `В Pinterest с ${new Date(pExported).toLocaleDateString('ru')} — нажми чтобы снять`
-            : 'Отметить как загружено в Pinterest'}
+            ? `In Pinterest since ${new Date(pExported).toLocaleDateString('en')} — click to remove`
+            : 'Mark as uploaded to Pinterest'}
           className={`absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold transition-all ${
             pExported
               ? 'bg-rose-600 text-white opacity-90'
@@ -245,7 +245,7 @@ function WrongReasonEditor({ layer, onSave }) {
   return (
     <div className="mt-3 bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2 space-y-2">
       <span className="text-[10px] text-rose-400 font-semibold uppercase tracking-wider block">
-        Лишний предмет: {layer.label}
+        Odd item: {layer.label}
       </span>
 
       {/* RU reason */}
@@ -253,21 +253,21 @@ function WrongReasonEditor({ layer, onSave }) {
         <div className="flex items-center justify-between mb-0.5">
           <span className="text-[9px] text-zinc-500 uppercase tracking-wider">RU</span>
           <button onClick={() => setEditingRu(e => !e)} className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors">
-            {editingRu ? 'отмена' : 'изменить'}
+            {editingRu ? 'cancel' : 'edit'}
           </button>
         </div>
         {editingRu ? (
           <div className="flex flex-col gap-2">
             <textarea autoFocus value={valueRu} onChange={e => setValueRu(e.target.value)} rows={3}
               className="w-full bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-200 px-2 py-1.5 resize-none focus:outline-none focus:border-zinc-500"
-              placeholder="Объясни почему этот предмет лишний…" />
+              placeholder="Explain why this item doesn't belong…" />
             <button onClick={handleSaveRu} disabled={saving || !valueRu.trim()}
               className="self-end text-xs px-3 py-1 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded disabled:opacity-40">
-              {saving ? 'Сохраняю…' : 'Сохранить'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         ) : (
-          <p className="text-xs text-zinc-400">{valueRu || <span className="italic text-zinc-600">не задано</span>}</p>
+          <p className="text-xs text-zinc-400">{valueRu || <span className="italic text-zinc-600">not set</span>}</p>
         )}
       </div>
 
@@ -290,7 +290,7 @@ function WrongReasonEditor({ layer, onSave }) {
             </button>
           </div>
         ) : (
-          <p className="text-xs text-blue-400/70">{valueEn || <span className="italic text-zinc-600">not set — click «Перевести» to auto-translate</span>}</p>
+          <p className="text-xs text-blue-400/70">{valueEn || <span className="italic text-zinc-600">not set — click «Translate» to auto-translate</span>}</p>
         )}
       </div>
     </div>
@@ -298,14 +298,14 @@ function WrongReasonEditor({ layer, onSave }) {
 }
 
 const SVG_CATS = [
-  { key: 'all', label: 'Все', keywords: null },
-  { key: 'outfit', label: 'Образ', keywords: ['образ', 'outfit', 'look', 'total'] },
-  { key: 'top', label: 'Верх', keywords: ['топ', 'блуза', 'рубашка', 'корсет', 'жакет', 'пиджак', 'свитер', 'кардиган', 'футболка', 'боди'] },
-  { key: 'bottom', label: 'Низ', keywords: ['юбка', 'брюки', 'шорты', 'леггинсы', 'джинсы', 'палаццо', 'бермуды'] },
-  { key: 'dress', label: 'Платье', keywords: ['платье', 'комбинезон', 'сарафан'] },
-  { key: 'outer', label: 'Верхняя', keywords: ['пальто', 'куртка', 'плащ', 'тренч', 'шуба', 'бомбер', 'ветровка'] },
-  { key: 'shoes', label: 'Обувь', keywords: ['ботинки', 'туфли', 'сапоги', 'кроссовки', 'мюли', 'лоферы', 'челси', 'мокасины', 'балетки', 'каблук', 'обувь'] },
-  { key: 'acc', label: 'Аксессуары', keywords: ['перчатки', 'сумка', 'пояс', 'шарф', 'серьги', 'колье', 'браслет', 'кольцо', 'очки', 'шляпа', 'шапка', 'берет', 'аксессуар'] },
+  { key: 'all', label: 'All', keywords: null },
+  { key: 'outfit', label: 'Outfit', keywords: ['образ', 'outfit', 'look', 'total'] },
+  { key: 'top', label: 'Top', keywords: ['топ', 'блуза', 'рубашка', 'корсет', 'жакет', 'пиджак', 'свитер', 'кардиган', 'футболка', 'боди'] },
+  { key: 'bottom', label: 'Bottom', keywords: ['юбка', 'брюки', 'шорты', 'леггинсы', 'джинсы', 'палаццо', 'бермуды'] },
+  { key: 'dress', label: 'Dress', keywords: ['платье', 'комбинезон', 'сарафан'] },
+  { key: 'outer', label: 'Outerwear', keywords: ['пальто', 'куртка', 'плащ', 'тренч', 'шуба', 'бомбер', 'ветровка'] },
+  { key: 'shoes', label: 'Shoes', keywords: ['ботинки', 'туфли', 'сапоги', 'кроссовки', 'мюли', 'лоферы', 'челси', 'мокасины', 'балетки', 'каблук', 'обувь'] },
+  { key: 'acc', label: 'Accessories', keywords: ['перчатки', 'сумка', 'пояс', 'шарф', 'серьги', 'колье', 'браслет', 'кольцо', 'очки', 'шляпа', 'шапка', 'берет', 'аксессуар'] },
 ];
 
 function getItemCategory(label) {
@@ -338,7 +338,7 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
       onAdd(data.layer);
       onClose();
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
       setAdding(null);
     }
   };
@@ -358,7 +358,7 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
-          <span className="text-sm font-medium text-zinc-200">Выбрать из загруженных</span>
+          <span className="text-sm font-medium text-zinc-200">Pick from library</span>
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
         </div>
 
@@ -380,9 +380,9 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
         </div>
 
         <div className="overflow-y-auto p-3 pt-2.5">
-          {!items && <p className="text-xs text-zinc-600 text-center py-6">Загружаю…</p>}
+          {!items && <p className="text-xs text-zinc-600 text-center py-6">Loading…</p>}
           {items && filtered.length === 0 && (
-            <p className="text-xs text-zinc-600 text-center py-6">Нет предметов в этой категории</p>
+            <p className="text-xs text-zinc-600 text-center py-6">No items in this category</p>
           )}
           {filtered.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
@@ -430,7 +430,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         wrong_source: l.id === data.wrong_layer_id ? 'ai' : null,
       })));
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setAnalyzing(false);
     }
@@ -470,7 +470,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
       setLayers((prev) => [...prev, ...data.layers].sort((a, b) => a.sort_order - b.sort_order));
       setPending([]);
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setUploading(false);
     }
@@ -502,7 +502,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
         setLayers(prev => prev.map(l => ({ ...l, label_en: enMap[l.id] ?? l.label_en })));
       }
     } catch (e) {
-      alert('Ошибка перевода: ' + e.message);
+      alert('Translation error: ' + e.message);
     } finally {
       setTranslating(false);
     }
@@ -512,48 +512,48 @@ function SvgLayersSection({ outfitId, initialLayers }) {
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-          SVG-слои ({layers.length})
+          SVG layers ({layers.length})
         </span>
         <div className="flex items-center gap-3">
           {layers.filter(l => l.label).length >= 2 && (
             <>
-              <Tip side="top" width="w-52" text="Claude переводит названия предметов на EN — для английской версии игры">
+              <Tip side="top" width="w-52" text="Claude translates item names to EN — for the English game version">
                 <button
                   onClick={handleTranslateLabels}
                   disabled={translating}
                   className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
                 >
                   {translating ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
-                  {translating ? 'Перевожу…' : 'Перевести'}
+                  {translating ? 'Translating…' : 'Translate'}
                 </button>
               </Tip>
-              <Tip side="top" width="w-60" text="Claude смотрит на эскиз образа и определяет, какой предмет из списка семиотически не вписывается — по силуэту, детали или стилю. Результат можно исправить вручную">
+              <Tip side="top" width="w-60" text="Claude looks at the outfit sketch and finds the item that doesn't belong semiotically — by silhouette, detail or style. Result can be corrected manually">
                 <button
                   onClick={handleAnalyze}
                   disabled={analyzing}
                   className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
                 >
                   {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  {analyzing ? 'Анализирую…' : 'Найти лишний'}
+                  {analyzing ? 'Analyzing…' : 'Find odd one'}
                 </button>
               </Tip>
             </>
           )}
-          <Tip text="Выбрать SVG из уже загруженных предметов других образов — без повторной загрузки файла">
+          <Tip text="Pick an SVG from items already uploaded for other outfits — no need to re-upload">
             <button
               onClick={() => setShowLibrary(true)}
               className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
             >
-              <LayoutGrid size={12} /> Выбрать
+              <LayoutGrid size={12} /> Pick
             </button>
           </Tip>
-          <Tip text="Загрузить новый SVG-файл предмета с диска">
+          <Tip text="Upload a new SVG item file from disk">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            <Upload size={12} /> Загрузить
+            <Upload size={12} /> Upload
           </button>
           </Tip>
         </div>
@@ -572,7 +572,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
       {/* Pending files — label before upload */}
       {pending.length > 0 && (
         <div className="mb-4 bg-zinc-800/50 rounded-xl p-3 space-y-2 border border-zinc-700">
-          <p className="text-[11px] text-zinc-400 mb-2">Назови каждый предмет перед загрузкой:</p>
+          <p className="text-[11px] text-zinc-400 mb-2">Name each item before uploading:</p>
           {pending.map((p, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-600 w-4 shrink-0">{i + 1}</span>
@@ -580,7 +580,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
               <input
                 value={p.label}
                 onChange={(e) => setPending((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
-                placeholder="платье, обувь, леггинсы…"
+                placeholder="dress, shoes, leggings…"
                 className="flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-white placeholder-zinc-600 outline-none focus:border-zinc-400"
               />
             </div>
@@ -591,16 +591,16 @@ function SvgLayersSection({ outfitId, initialLayers }) {
               disabled={uploading}
               className="flex items-center gap-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded transition-colors disabled:opacity-50"
             >
-              {uploading ? <><Loader2 size={11} className="animate-spin" /> Загружаю…</> : `Загрузить ${pending.length} файл${pending.length > 1 ? 'а' : ''}`}
+              {uploading ? <><Loader2 size={11} className="animate-spin" /> Uploading…</> : `Upload ${pending.length} file${pending.length > 1 ? 's' : ''}`}
             </button>
-            <button onClick={() => setPending([])} className="text-xs text-zinc-500 hover:text-zinc-300 px-2">отмена</button>
+            <button onClick={() => setPending([])} className="text-xs text-zinc-500 hover:text-zinc-300 px-2">cancel</button>
           </div>
         </div>
       )}
 
       {/* Uploaded layers */}
       {layers.length === 0 && pending.length === 0 ? (
-        <p className="text-xs text-zinc-600 italic">Нет SVG-слоёв — загрузи файлы предметов одежды</p>
+        <p className="text-xs text-zinc-600 italic">No SVG layers — upload clothing item files</p>
       ) : layers.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {layers.map((layer) => (
@@ -621,19 +621,19 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   side="top"
                   width="w-56"
                   text={layer.wrong_source === 'ai'
-                    ? 'Помечено ИИ — Claude проанализировал эскиз образа и определил этот предмет как семиотически чужеродный'
-                    : 'Помечено вручную — предмет специально загружен или выбран как ловушка для игровой механики'}
+                    ? 'Marked by AI — Claude analyzed the outfit sketch and flagged this item as semantically mismatched'
+                    : 'Marked manually — item was intentionally added or selected as a trap for the game mechanic'}
                 >
                   <span className={`absolute bottom-1 left-1 text-[8px] font-medium px-1 py-0.5 rounded leading-none cursor-default ${
                     layer.wrong_source === 'ai'
                       ? 'bg-violet-900/80 text-violet-300'
                       : 'bg-amber-900/80 text-amber-300'
                   }`}>
-                    {layer.wrong_source === 'ai' ? 'ИИ' : 'вручную'}
+                    {layer.wrong_source === 'ai' ? 'AI' : 'manual'}
                   </span>
                 </Tip>
               )}
-              <Tip text={layer.is_wrong ? 'Снять метку лишнего — предмет вернётся в состав образа' : 'Отметить как лишний — этот предмет станет целью в игровой механике'}>
+              <Tip text={layer.is_wrong ? 'Remove odd mark — item returns to the outfit' : 'Mark as odd — this item becomes the target in the game mechanic'}>
                 <button onClick={() => handleToggleWrong(layer)}>
                   <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
                 </button>
@@ -652,7 +652,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   <button
                     onClick={() => { setEditingId(layer.id); setEditLabel(layer.label); }}
                     className="w-full text-[10px] text-zinc-400 hover:text-zinc-200 text-center truncate transition-colors"
-                    title={layer.label || 'Нажми чтобы добавить название'}
+                    title={layer.label || 'Click to add a label'}
                   >
                     {layer.label || '—'}
                   </button>
@@ -670,7 +670,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   <button
                     onClick={() => { setEditingEnId(layer.id); setEditLabelEn(layer.label_en || ''); }}
                     className="w-full text-[9px] text-blue-500 hover:text-blue-300 text-center truncate transition-colors"
-                    title="EN: нажми чтобы редактировать"
+                    title="EN: click to edit"
                   >
                     {layer.label_en || <span className="opacity-40">EN</span>}
                   </button>
@@ -712,7 +712,7 @@ function RendersSection({ outfitId, initialRenders }) {
       const data = await apiPost(`/api/admin/outfit/${outfitId}/renders`, form);
       setRenders((prev) => [...prev, ...data.renders]);
     } catch (e) {
-      alert('Ошибка загрузки: ' + e.message);
+      alert('Upload error: ' + e.message);
     } finally {
       setUploading(false);
     }
@@ -744,7 +744,7 @@ function RendersSection({ outfitId, initialRenders }) {
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-          Рендеры ({renders.length})
+          Renders ({renders.length})
         </span>
         <div className="flex items-center gap-3">
           {unanalyzed > 0 && (
@@ -752,7 +752,7 @@ function RendersSection({ outfitId, initialRenders }) {
               onClick={handleAnalyzeAll}
               className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
             >
-              <Sparkles size={11} /> Анализ всех ({unanalyzed})
+              <Sparkles size={11} /> Analyze all ({unanalyzed})
             </button>
           )}
           <button
@@ -760,14 +760,14 @@ function RendersSection({ outfitId, initialRenders }) {
             disabled={uploading}
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            <ImagePlus size={12} /> {uploading ? 'Загружаю…' : 'Добавить'}
+            <ImagePlus size={12} /> {uploading ? 'Uploading…' : 'Add'}
           </button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => handleUpload(e.target.files)} />
       </div>
       {renders.length === 0 ? (
-        <p className="text-xs text-zinc-600 italic">Нет рендеров</p>
+        <p className="text-xs text-zinc-600 italic">No renders</p>
       ) : (
         <div className="flex flex-wrap gap-3">
           {renders.map((r) => (
@@ -797,7 +797,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         setItems(data.outfits || []);
         setSelected(new Set((data.outfits || []).map((o) => o.id)));
       })
-      .catch((e) => alert('Ошибка загрузки превью: ' + e.message));
+      .catch((e) => alert('Preview load error: ' + e.message));
   }, [lang, onlyNew, rendersOnly]);
 
   // Load boards for direct posting
@@ -831,7 +831,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         setTimeout(onClose, 1500);
       }
     } catch (e) {
-      alert('Ошибка публикации: ' + e.message);
+      alert('Post error: ' + e.message);
       setPostProgress(null);
     } finally {
       setPosting(false);
@@ -871,7 +871,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       onExported();
       onClose();
     } catch (e) {
-      alert('Ошибка экспорта: ' + e.message);
+      alert('Export error: ' + e.message);
     } finally {
       setExporting(false);
     }
@@ -888,13 +888,13 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
           <div>
             <p className="text-sm font-medium text-zinc-100">
-              Экспорт Pinterest · {lang.toUpperCase()}
-              {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">только новые</span>}
-              {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">ИИ рендеры</span>}
+              Pinterest Export · {lang.toUpperCase()}
+              {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">new only</span>}
+              {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">AI renders</span>}
             </p>
             {items && (
               <p className="text-xs text-zinc-500 mt-0.5">
-                {selected.size} из {items.length} образов выбрано
+                {selected.size} of {items.length} selected
               </p>
             )}
           </div>
@@ -905,17 +905,17 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         <div className="overflow-y-auto flex-1 px-4 py-3">
           {!items && (
             <div className="flex items-center justify-center py-16 text-zinc-600">
-              <Loader2 size={20} className="animate-spin mr-2" /> Загружаю список…
+              <Loader2 size={20} className="animate-spin mr-2" /> Loading list…
             </div>
           )}
 
           {items?.length === 0 && (
             <div className="text-center py-16 text-zinc-600">
-              <p className="text-sm">Нет {rendersOnly ? 'рендеров' : 'образов'} для экспорта.</p>
+              <p className="text-sm">No {rendersOnly ? 'renders' : 'outfits'} to export.</p>
               <p className="text-xs mt-1">
                 {rendersOnly
-                  ? 'Все ИИ рендеры уже отмечены как загруженные в Pinterest. Или рендеры ещё не загружены.'
-                  : `Все готовые образы уже отмечены как загруженные в Pinterest ${lang.toUpperCase()}.`}
+                  ? 'All AI renders are already marked as uploaded to Pinterest, or no renders exist yet.'
+                  : `All ready outfits are already marked as uploaded to Pinterest ${lang.toUpperCase()}.`}
               </p>
             </div>
           )}
@@ -930,7 +930,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                   onChange={toggleAll}
                   className="accent-rose-500"
                 />
-                {selected.size === items.length ? 'Снять все' : 'Выбрать все'}
+                {selected.size === items.length ? 'Deselect all' : 'Select all'}
               </label>
 
               <div className="space-y-1">
@@ -970,11 +970,11 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                               alt=""
                               className="w-10 h-12 object-cover rounded-lg bg-zinc-700 border border-violet-700"
                             />
-                            <span className="absolute -bottom-1 -right-1 bg-violet-600 text-white text-[8px] rounded px-0.5 leading-tight">ИИ</span>
+                            <span className="absolute -bottom-1 -right-1 bg-violet-600 text-white text-[8px] rounded px-0.5 leading-tight">AI</span>
                           </div>
                         ) : (
                           <div className="w-10 h-12 rounded-lg bg-zinc-800 border border-dashed border-zinc-700 flex items-center justify-center">
-                            <span className="text-[9px] text-zinc-600 text-center leading-tight px-0.5">нет рендера</span>
+                            <span className="text-[9px] text-zinc-600 text-center leading-tight px-0.5">no render</span>
                           </div>
                         )}
                       </div>
@@ -997,9 +997,9 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             {/* Board selector for direct posting */}
             {rendersOnly && boards !== null && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500 shrink-0">Доска:</span>
+                <span className="text-xs text-zinc-500 shrink-0">Board:</span>
                 {boards.length === 0 ? (
-                  <span className="text-xs text-zinc-600">Нет досок · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">Авторизоваться</a></span>
+                  <span className="text-xs text-zinc-600">No boards · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">Authorize</a></span>
                 ) : (
                   <select
                     value={boardId}
@@ -1018,18 +1018,18 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             {postProgress && (
               <div className={`text-xs px-3 py-2 rounded-lg ${postProgress.failed ? 'bg-amber-900/30 text-amber-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
                 {posting
-                  ? `Публикую… ${postProgress.done}/${postProgress.total}`
-                  : `Опубликовано: ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · ошибок: ${postProgress.failed}` : ' ✓'}`}
+                  ? `Posting… ${postProgress.done}/${postProgress.total}`
+                  : `Posted: ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · errors: ${postProgress.failed}` : ' ✓'}`}
               </div>
             )}
 
             <div className="flex items-center justify-between">
               <p className="text-xs text-zinc-600">
-                {rendersOnly ? 'Рендеры получат метку P после публикации' : `Образы получат метку P·${lang.toUpperCase()}`}
+                {rendersOnly ? 'Renders will be marked P after posting' : `Outfits will be marked P·${lang.toUpperCase()}`}
               </p>
               <div className="flex gap-2">
                 <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
-                  Отмена
+                  Cancel
                 </button>
                 <button
                   onClick={handleExport}
@@ -1037,7 +1037,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                   className="flex items-center gap-1.5 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
                 >
                   <Upload size={12} />
-                  {exporting ? 'Готовлю…' : `CSV (${selected.size})`}
+                  {exporting ? 'Preparing…' : `CSV (${selected.size})`}
                 </button>
                 {rendersOnly && boards?.length > 0 && (
                   <button
@@ -1046,7 +1046,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                     className="flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
                   >
                     <Upload size={12} />
-                    {posting ? `Публикую…` : `Опубликовать (${selected.size})`}
+                    {posting ? `Posting…` : `Post (${selected.size})`}
                   </button>
                 )}
               </div>
@@ -1079,7 +1079,7 @@ function MechanicScreenshots({ mechanicKey }) {
       }
       mutate();
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setUploading(false);
       fileRef.current && (fileRef.current.value = '');
@@ -1100,20 +1100,20 @@ function MechanicScreenshots({ mechanicKey }) {
       )}
 
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Скриншоты</span>
+        <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Screenshots</span>
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
           className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
         >
-          <ImagePlus size={11} /> {uploading ? 'Загружаю…' : 'Добавить'}
+          <ImagePlus size={11} /> {uploading ? 'Uploading…' : 'Add'}
         </button>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => handleUpload(e.target.files)} />
       </div>
 
       {shots.length === 0 && !uploading && (
-        <p className="text-[11px] text-zinc-700 italic">Скриншотов пока нет — нажми «Добавить»</p>
+        <p className="text-[11px] text-zinc-700 italic">No screenshots yet — click Add</p>
       )}
 
       {shots.length > 0 && (
@@ -1149,43 +1149,43 @@ function MechanicsBoard({ outfits }) {
   const MECHANICS = [
     {
       num: '01',
-      name: 'Словесные раунды',
+      name: 'Word Rounds',
       color: 'zinc',
-      status: `${readyRu} из ${total} образов`,
-      trigger: 'Автоматически когда статус RU = ready',
-      description: '5 последовательных раундов по семиотическим слоям образа. В каждом — 4 слова, одно лишнее. Игрок находит его.',
+      status: `${readyRu} of ${total} outfits`,
+      trigger: 'Automatically when RU status = ready',
+      description: '5 sequential rounds by semiotic layer of the outfit. Each round has 4 words — one doesn\'t belong. The player finds it.',
       rounds: [
-        { name: 'Форма', desc: 'Силуэт и конструкция — трапеция, футляр, буфы, складки' },
-        { name: 'Детали', desc: 'Декоративные элементы, фурнитура, отделка' },
-        { name: 'Цвет', desc: 'Цветовая семантика образа' },
-        { name: 'Смысл', desc: 'Архетип и нарратив — doll-like, power, romantic' },
-        { name: 'Ассоциации', desc: 'Культурные и контекстуальные коды' },
+        { name: 'Form', desc: 'Silhouette and construction — trapeze, sheath, puff sleeves, pleats' },
+        { name: 'Details', desc: 'Decorative elements, hardware, trim' },
+        { name: 'Color', desc: 'Color semantics of the outfit' },
+        { name: 'Meaning', desc: 'Archetype and narrative — doll-like, power, romantic' },
+        { name: 'Associations', desc: 'Cultural and contextual codes' },
       ],
     },
     {
       num: '02',
-      name: 'Цветовые свотчи',
+      name: 'Color Swatches',
       color: 'amber',
-      status: `Все образы с раундом «Цвет»`,
-      trigger: 'Автоматически в раунде с theme = "цвет" / "color"',
-      description: 'В раунде цвета рядом с каждым словом-вариантом появляется цветной кружок. Визуальный якорь помогает соотнести название цвета с реальным оттенком.',
+      status: `All outfits with a «Color» round`,
+      trigger: 'Automatically in rounds with theme = "цвет" / "color"',
+      description: 'In the color round, each word option gets a colored circle next to it. A visual anchor to match color names with actual shades.',
       rounds: [
-        { name: 'Словарь', desc: '17 цветов RU + 25 EN → HEX (бежевый, графит, антрацит, ivory, taupe…)' },
-        { name: 'Fallback', desc: 'Если цвет не в словаре — свотч не показывается, слово выводится как обычно' },
+        { name: 'Dictionary', desc: '17 RU colors + 25 EN → HEX (beige, graphite, anthracite, ivory, taupe…)' },
+        { name: 'Fallback', desc: 'If color not in dictionary — swatch hidden, word shown as normal' },
       ],
     },
     {
       num: '03',
-      name: 'Визуальный уровень',
+      name: 'Visual Level',
       color: 'violet',
-      status: `${withVisual} из ${total} образов`,
-      trigger: `Когда у образа есть SVG-слои и один отмечен is_wrong (сейчас ${withSvg} образов с SVG)`,
-      description: 'Первый уровень перед словесными раундами. Показывает карточки предметов одежды (SVG). Один предмет — лишний. Игрок тапает его чтобы убрать из образа.',
+      status: `${withVisual} of ${total} outfits`,
+      trigger: `When outfit has SVG layers and one is marked is_wrong (currently ${withSvg} outfits with SVG)`,
+      description: 'First level before word rounds. Shows clothing item cards (SVG). One item doesn\'t belong. Player taps it to remove from the outfit.',
       rounds: [
-        { name: 'Правильный тап', desc: 'Карточка вылетает с анимацией → появляется объяснение почему лишний → кнопка перехода к раундам' },
-        { name: 'Неправильный тап', desc: 'Карточка трясётся → попробуй снова' },
-        { name: 'Данные', desc: 'SVG-слои с метками + is_wrong: true на лишнем предмете + wrong_reason (из Claude-анализа или вручную)' },
-        { name: 'Подготовка', desc: 'Загрузи SVG предметов → кнопка «Найти лишний» или клик по карточке для ручной пометки' },
+        { name: 'Correct tap', desc: 'Card flies out with animation → explanation appears → button to proceed to rounds' },
+        { name: 'Wrong tap', desc: 'Card shakes → try again' },
+        { name: 'Data', desc: 'SVG layers with labels + is_wrong: true on the odd item + wrong_reason (from Claude analysis or manual)' },
+        { name: 'Preparation', desc: 'Upload SVG items → click «Find odd one» or click a card to mark manually' },
       ],
     },
   ];
@@ -1199,8 +1199,8 @@ function MechanicsBoard({ outfits }) {
   return (
     <div className="space-y-6">
       <div className="mb-2">
-        <h2 className="text-lg font-medium text-zinc-300 mb-1">Игровые механики</h2>
-        <p className="text-xs text-zinc-600">Что реализовано в игре и как включается</p>
+        <h2 className="text-lg font-medium text-zinc-300 mb-1">Game Mechanics</h2>
+        <p className="text-xs text-zinc-600">What is implemented and how it activates</p>
       </div>
 
       {MECHANICS.map((m) => {
@@ -1257,23 +1257,23 @@ function CoverageBoard() {
         <div className="flex items-start gap-3">
           <LayoutGrid size={18} className="text-violet-400 shrink-0 mt-0.5" />
           <div className="space-y-2 text-sm">
-            <p className="text-zinc-200 font-medium">Coverage — покрытие трендовых эстетик</p>
+            <p className="text-zinc-200 font-medium">Coverage — trending aesthetic coverage</p>
             <p className="text-zinc-400 leading-relaxed">
-              Каждый ИИ рендер анализируется Claude Vision и относится к одной из 12 трендовых категорий Pinterest.
-              Этот раздел показывает, какие эстетики уже охвачены контентом, а где дыры — туда нужно досъёмить.
+              Each AI render is analyzed by Claude Vision and assigned to one of 12 trending Pinterest categories.
+              This section shows which aesthetics are already covered and where the gaps are — those need more content.
             </p>
             <div className="pt-1 space-y-1 text-zinc-500 text-xs leading-relaxed">
               <p>
-                <span className="text-zinc-300">Зачем это нужно для Pinterest:</span>{' '}
-                Pinterest — поисковик визуального контента. Пользователи ищут именно по этим категориям:
-                «Gala & Formal Dresses», «Streetwear Fashion», «Red Carpet Evening Gowns» и т.д.
-                Чем шире покрытие эстетик — тем больше точек входа в аккаунт FFE из органического поиска.
+                <span className="text-zinc-300">Why this matters for Pinterest:</span>{' '}
+                Pinterest is a visual content search engine. Users search by these exact categories:
+                "Gala & Formal Dresses", "Streetwear Fashion", "Red Carpet Evening Gowns" etc.
+                The wider the aesthetic coverage — the more organic discovery entry points for FFE.
               </p>
               <p>
-                <span className="text-zinc-300">Как использовать:</span>{' '}
-                Смотришь какие строки пустые или с малым числом → идёшь снимать рендеры именно в этой эстетике →
-                загружаешь в карточку образа → запускаешь «Анализ» → рендер попадает в нужную строку здесь.
-                Далее экспортируешь Pinterest CSV с этими рендерами.
+                <span className="text-zinc-300">How to use:</span>{' '}
+                Find empty or low rows → generate renders in that aesthetic →
+                upload to the outfit card → click "Analyze" → render appears in the right row here.
+                Then export Pinterest CSV with those renders.
               </p>
             </div>
           </div>
@@ -1289,13 +1289,13 @@ function CoverageBoard() {
       {!isLoading && total === 0 && (
         <div className="text-center py-16 text-zinc-600">
           <Sparkles size={32} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Нет проанализированных рендеров.</p>
-          <p className="text-xs mt-1">Откройте карточку образа → наведите на рендер → нажмите «Анализ»</p>
+          <p className="text-sm">No analyzed renders.</p>
+          <p className="text-xs mt-1">Open an outfit card → hover over a render → click Analyze</p>
         </div>
       )}
 
       {!isLoading && total > 0 && (<>
-      <p className="text-xs text-zinc-600 mb-4">{total} рендеров проанализировано</p>
+      <p className="text-xs text-zinc-600 mb-4">{total} renders analyzed</p>
       <div className="space-y-2">
         {AESTHETICS.map((aesthetic) => {
           const primary = (byAesthetic[aesthetic] || []).filter((r) => r.rank === 0);
@@ -1348,7 +1348,7 @@ function RendersGallery({ outfits, onMutate }) {
   }, [outfits]);
 
   const handleDelete = async (renderId) => {
-    if (!confirm('Удалить рендер?')) return;
+    if (!confirm('Delete render?')) return;
     await apiDelete(`/api/admin/render/${renderId}`);
     setLocalRenders((prev) => prev.filter((r) => r.id !== renderId));
     onMutate();
@@ -1385,7 +1385,7 @@ function RendersGallery({ outfits, onMutate }) {
       const uuidMatch = canonical.match(uuidRe);
       if (uuidMatch) pins.push({ pin_id: pinId, board, outfit_id: uuidMatch[1] });
     }
-    if (!pins.length) { alert('Пины не найдены в файле'); return; }
+    if (!pins.length) { alert('No pins found in file'); return; }
     setSyncing(true);
     setSyncResult(null);
     try {
@@ -1393,7 +1393,7 @@ function RendersGallery({ outfits, onMutate }) {
       setSyncResult(data);
       onMutate();
     } catch (e) {
-      alert('Ошибка импорта: ' + e.message);
+      alert('Import error: ' + e.message);
     } finally {
       setSyncing(false);
     }
@@ -1407,7 +1407,7 @@ function RendersGallery({ outfits, onMutate }) {
     // Extract pin IDs from URLs like https://www.pinterest.com/pin/123456789/
     const pinIds = [...text.matchAll(/\/pin\/(\d+)\//g)].map((m) => m[1]);
     const unique = [...new Set(pinIds)];
-    if (!unique.length) { alert('PIN ID не найдены в CSV'); return; }
+    if (!unique.length) { alert('No PIN IDs found in CSV'); return; }
     setSyncing(true);
     setSyncResult(null);
     try {
@@ -1418,7 +1418,7 @@ function RendersGallery({ outfits, onMutate }) {
         onMutate();
       }
     } catch (e) {
-      alert('Ошибка синхронизации: ' + e.message);
+      alert('Sync error: ' + e.message);
     } finally {
       setSyncing(false);
     }
@@ -1435,7 +1435,7 @@ function RendersGallery({ outfits, onMutate }) {
       if (err) alert('Pinterest API: ' + err);
       onMutate();
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setSyncing(false);
     }
@@ -1456,8 +1456,8 @@ function RendersGallery({ outfits, onMutate }) {
     return (
       <div className="text-center py-24 text-zinc-600">
         <ImagePlus size={40} className="mx-auto mb-4 opacity-20" />
-        <p className="text-sm">Нет загруженных рендеров.</p>
-        <p className="text-xs mt-1">Откройте карточку образа и загрузите ИИ рендеры.</p>
+        <p className="text-sm">No renders uploaded.</p>
+        <p className="text-xs mt-1">Open an outfit card and upload AI renders.</p>
       </div>
     );
   }
@@ -1465,37 +1465,37 @@ function RendersGallery({ outfits, onMutate }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <h2 className="text-lg font-medium text-zinc-300">ИИ рендеры</h2>
-        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} всего</button>
-        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} в Pinterest</button>
-        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} не загружено</button>
+        <h2 className="text-lg font-medium text-zinc-300">AI Renders</h2>
+        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} total</button>
+        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} in Pinterest</button>
+        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} not uploaded</button>
       </div>
 
       {/* Pinterest sync bar */}
       <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800 flex-wrap">
         <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
-        <span className="text-[11px] text-zinc-600">{withPinId} пинов связано</span>
+        <span className="text-[11px] text-zinc-600">{withPinId} pins linked</span>
         <div className="flex-1" />
-        <Tip text="Загрузи HTML архив Pinterest (папка pins/0001.html) — автоматически привяжет все пины к образам и рендерам" width="w-72">
+        <Tip text="Upload Pinterest HTML archive (pins/0001.html folder) — automatically links pins to outfits and renders" width="w-72">
           <label className={`flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors cursor-pointer ${syncing ? 'opacity-40 pointer-events-none' : ''}`}>
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-            Загрузить архив Pinterest
+            Upload Pinterest archive
             <input type="file" accept=".html" className="hidden" onChange={handleArchiveImport} disabled={syncing} />
           </label>
         </Tip>
         {withPinId > 0 && (
-          <Tip text="Обновить данные показов, кликов и сохранений за последние 90 дней" width="w-52">
+          <Tip text="Refresh impressions, clicks and saves data for the last 90 days" width="w-52">
             <button onClick={handleFetchAnalytics} disabled={syncing} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40">
               {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-              Обновить аналитику
+              Refresh analytics
             </button>
           </Tip>
         )}
         {syncResult && (
           <span className="text-[11px] text-emerald-400">
             {syncResult.sketch_updated !== undefined
-              ? `✓ эскизы: ${syncResult.sketch_updated}, рендеры: ${syncResult.render_updated}`
-              : `✓ ${syncResult.matched} из ${syncResult.total_pins} привязано`}
+              ? `✓ sketches: ${syncResult.sketch_updated}, renders: ${syncResult.render_updated}`
+              : `✓ ${syncResult.matched} of ${syncResult.total_pins} linked`}
           </span>
         )}
       </div>
@@ -1539,7 +1539,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       if (data.model_appearance) setModel(data.model_appearance);
       onAnalyzed(render.id, data.aesthetics);
     } catch (err) {
-      alert('Ошибка анализа: ' + err.message);
+      alert('Analysis error: ' + err.message);
     } finally {
       setAnalyzing(false);
     }
@@ -1553,7 +1553,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       setPinTitle(data.pin_title || '');
       setPinDesc(data.pin_description || '');
     } catch (err) {
-      alert('Ошибка SEO: ' + err.message);
+      alert('SEO error: ' + err.message);
     } finally {
       setGeneratingSeo(false);
     }
@@ -1581,7 +1581,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       setCurrentPinId(pinId);
       setPinIdInput('');
     } catch (err) {
-      alert('Ошибка: ' + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setSavingPinId(false);
     }
@@ -1595,7 +1595,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       setPExported(data.pinterest_exported_at);
       onPinterestMark(render.id, data.pinterest_exported_at);
     } catch (err) {
-      alert('Ошибка: ' + err.message);
+      alert('Error: ' + err.message);
     }
   };
 
@@ -1617,7 +1617,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="bg-black/70 rounded-xl px-3 py-2 flex items-center gap-2">
               <Loader2 size={14} className="animate-spin text-violet-400" />
-              <span className="text-xs text-zinc-300">Анализ…</span>
+              <span className="text-xs text-zinc-300">Analyzing…</span>
             </div>
           </div>
         ) : (
@@ -1628,9 +1628,9 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
                 ? 'bg-violet-900/80 text-violet-300 opacity-0 group-hover:opacity-100 hover:bg-violet-800'
                 : 'bg-black/70 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-violet-300'
             }`}
-            title={top ? 'Переанализировать' : 'Анализировать эстетику'}
+            title={top ? 'Re-analyze' : 'Analyze aesthetics'}
           >
-            <Sparkles size={10} /> {top ? 'Заново' : 'Анализ'}
+            <Sparkles size={10} /> {top ? 'Re-run' : 'Analyze'}
           </button>
         )}
 
@@ -1638,8 +1638,8 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
         <button
           onClick={handlePinterestToggle}
           title={pExported
-            ? `В Pinterest с ${new Date(pExported).toLocaleDateString('ru')} — нажми чтобы снять`
-            : 'Отметить как загружено в Pinterest'}
+            ? `In Pinterest since ${new Date(pExported).toLocaleDateString('en')} — click to remove`
+            : 'Mark as uploaded to Pinterest'}
           className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold transition-all z-10 ${
             pExported
               ? 'bg-rose-600 text-white'
@@ -1681,7 +1681,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
           ))}
         </div>
       ) : (
-        <p className="text-[9px] text-zinc-700 italic px-1">без анализа</p>
+        <p className="text-[9px] text-zinc-700 italic px-1">not analyzed</p>
       )}
 
       {/* Model appearance */}
@@ -1695,7 +1695,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               )}
             </>
           ) : (
-            <span className="text-[9px] text-zinc-600">без лица</span>
+            <span className="text-[9px] text-zinc-600">no face</span>
           )}
         </div>
       )}
@@ -1713,7 +1713,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               value={pinIdInput}
               onChange={(e) => setPinIdInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSavePinId()}
-              placeholder="ссылка на пин…"
+              placeholder="pin link…"
               className="flex-1 bg-transparent text-[9px] text-zinc-400 placeholder-zinc-700 outline-none min-w-0"
             />
             {pinIdInput && (
@@ -1729,10 +1729,10 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       {stats && (
         <div className="px-1 border-t border-zinc-800 pt-2 grid grid-cols-2 gap-x-2 gap-y-0.5">
           {[
-            { label: 'показы', value: stats.impressions },
-            { label: 'клики', value: stats.pin_clicks },
-            { label: 'переходы', value: stats.outbound_clicks },
-            { label: 'сохр.', value: stats.saves },
+            { label: 'impressions', value: stats.impressions },
+            { label: 'clicks', value: stats.pin_clicks },
+            { label: 'outbound', value: stats.outbound_clicks },
+            { label: 'saves', value: stats.saves },
           ].map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[9px] text-zinc-600">{label}</span>
@@ -1748,7 +1748,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       )}
       {!stats && render.pinterest_pin_id && (
         <div className="px-1 border-t border-zinc-800 pt-1.5">
-          <p className="text-[9px] text-zinc-700">пин привязан · нажми «Обновить аналитику»</p>
+          <p className="text-[9px] text-zinc-700">pin linked · click "Refresh analytics"</p>
         </div>
       )}
 
@@ -1760,21 +1760,21 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               autoFocus
               value={editTitle}
               onChange={e => setEditTitle(e.target.value)}
-              placeholder="Title (до 100 символов)"
+              placeholder="Title (up to 100 chars)"
               maxLength={100}
               className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400"
             />
             <textarea
               value={editDesc}
               onChange={e => setEditDesc(e.target.value)}
-              placeholder="Description (до 500 символов)"
+              placeholder="Description (up to 500 chars)"
               maxLength={500}
               rows={3}
               className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400 resize-none"
             />
             <div className="flex gap-2">
-              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">Сохранить</button>
-              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">отмена</button>
+              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">Save</button>
+              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">cancel</button>
             </div>
           </div>
         ) : pinTitle ? (
@@ -1784,7 +1784,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               <button
                 onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
                 className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
-              >ред.</button>
+              >edit</button>
             </div>
             {pinDesc && <p className="text-[9px] text-zinc-500 leading-snug">{pinDesc}</p>}
             <div className="flex gap-2 pt-0.5">
@@ -1833,14 +1833,14 @@ function TranslateAllSvgLabelsButton({ outfits }) {
 
   if (!needsTranslation.length) return null;
   return (
-    <Tip text={`Перевести EN названия SVG-предметов для ${needsTranslation.length} образов`} width="w-56">
+    <Tip text={`Translate EN SVG item labels for ${needsTranslation.length} outfits`} width="w-56">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
-        {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести EN все (${needsTranslation.length})`}
+        {running ? `Translating… ${done}/${needsTranslation.length}` : `Translate EN all (${needsTranslation.length})`}
       </button>
     </Tip>
   );
@@ -1867,14 +1867,14 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
 
   if (!untitled.length) return null;
   return (
-    <Tip text={`Сгенерировать названия для ${untitled.length} образов без названия`} width="w-52">
+    <Tip text={`Generate titles for ${untitled.length} untitled outfits`} width="w-52">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-        {running ? `Называю… ${done}/${untitled.length}` : `Назвать все (${untitled.length})`}
+        {running ? `Titling… ${done}/${untitled.length}` : `Title all (${untitled.length})`}
       </button>
     </Tip>
   );
@@ -1913,14 +1913,14 @@ function TranslateAllButton({ outfits, onMutate }) {
 
   if (!needsTranslation.length) return null;
   return (
-    <Tip text={`Перевести SVG-метки, пояснения и заголовки на EN для ${needsTranslation.length} образов`} width="w-64">
+    <Tip text={`Translate SVG labels, explanations and titles to EN for ${needsTranslation.length} outfits`} width="w-64">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px] font-semibold">EN</span>}
-        {running ? `Перевожу… ${done}/${needsTranslation.length}` : `Перевести все (${needsTranslation.length})`}
+        {running ? `Translating… ${done}/${needsTranslation.length}` : `Translate all (${needsTranslation.length})`}
       </button>
     </Tip>
   );
@@ -1952,9 +1952,9 @@ function CopyPinDescButton({ outfit }) {
     <button
       onClick={handleCopy}
       className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
-      title="Скопировать описание для Pinterest"
+      title="Copy Pinterest description"
     >
-      {copied ? '✓ скопировано' : '📋 пин'}
+      {copied ? '✓ copied' : '📋 pin'}
     </button>
   );
 }
@@ -1975,7 +1975,7 @@ function SketchPinField({ outfitId, initialPinId }) {
       setPinId(id);
       setInput('');
     } catch (err) {
-      alert('Ошибка: ' + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -1983,7 +1983,7 @@ function SketchPinField({ outfitId, initialPinId }) {
 
   if (pinId) return (
     <span className="flex items-center gap-1">
-      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">эскиз↗</a>
+      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">sketch↗</a>
       <button onClick={() => setPinId('')} className="text-[10px] text-zinc-700 hover:text-zinc-400">×</button>
     </span>
   );
@@ -1994,7 +1994,7 @@ function SketchPinField({ outfitId, initialPinId }) {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-        placeholder="пин эскиза…"
+        placeholder="sketch pin…"
         className="bg-transparent text-[10px] text-zinc-600 placeholder-zinc-800 outline-none w-20"
       />
       {input && <button onClick={handleSave} disabled={saving} className="text-[10px] text-rose-500">{saving ? '…' : '✓'}</button>}
@@ -2037,7 +2037,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
       setTitle(data.title);
       onTitleChange?.(outfit.id, data.title);
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setGeneratingTitle(false);
     }
@@ -2049,7 +2049,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
       const data = await apiPost(`/api/admin/outfit/${outfit.id}/generate-title`, { lang: 'en' });
       setTitleEn(data.title_en);
     } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert('Error: ' + e.message);
     } finally {
       setGeneratingTitleEn(false);
     }
@@ -2065,7 +2065,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
       const data = await apiPost(`/api/admin/outfit/${outfit.id}/image`, form);
       setSketchUrl(data.thumb_url || data.image_url);
     } catch (err) {
-      alert('Ошибка: ' + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setSketchUploading(false);
       e.target.value = '';
@@ -2092,7 +2092,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           <button
             onClick={() => sketchFileRef.current?.click()}
             disabled={sketchUploading}
-            title="Заменить эскиз"
+            title="Replace sketch"
             className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
           >
             {sketchUploading
@@ -2116,13 +2116,13 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               <button
                 onClick={() => setEditingTitle(true)}
                 className="text-sm font-medium text-zinc-200 truncate hover:text-white transition-colors text-left"
-                title="Нажми чтобы изменить название"
+                title="Click to edit title"
               >
                 {title || <span className="text-zinc-600 font-normal">{outfit.id.slice(0, 8)}</span>}
               </button>
             )}
             {!editingTitle && (
-              <Tip text={title ? 'Сгенерировать новое название через ИИ' : 'Придумать название через ИИ'} width="w-44">
+              <Tip text={title ? 'Generate new title with AI' : 'Generate title with AI'} width="w-44">
                 <button
                   onClick={handleGenerateTitle}
                   disabled={generatingTitle}
@@ -2154,7 +2154,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               </button>
             )}
             {!editingTitleEn && (
-              <Tip text="Сгенерировать EN название через ИИ" width="w-44">
+              <Tip text="Generate EN title with AI" width="w-44">
                 <button
                   onClick={handleGenerateTitleEn}
                   disabled={generatingTitleEn}
@@ -2166,7 +2166,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             )}
           </div>
           <div className="flex items-center gap-1 mt-0.5 mb-0.5 flex-wrap">
-            <span className="text-[10px] text-zinc-600 font-mono select-all" title="системный ID образа">{outfit.id.slice(0, 8)}</span>
+            <span className="text-[10px] text-zinc-600 font-mono select-all" title="outfit system ID">{outfit.id.slice(0, 8)}</span>
             <CopyPinDescButton outfit={outfit} />
             <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
             {outfit.sketch_pin_analytics && (
@@ -2193,7 +2193,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               );
             })}
             {outfit.renders?.length > 0 && (
-              <span className="flex items-center gap-1 text-xs text-zinc-500" title="ИИ рендеры">
+              <span className="flex items-center gap-1 text-xs text-zinc-500" title="AI renders">
                 <ImagePlus size={11} className="text-zinc-600" />
                 {outfit.renders.length}
               </span>
@@ -2205,8 +2205,8 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                   key={l}
                   onClick={() => onPinterestMark(outfit.id, l, !date)}
                   title={date
-                    ? `В Pinterest ${l.toUpperCase()} с ${new Date(date).toLocaleDateString('ru')} — нажми чтобы снять метку`
-                    : `Отметить как загружено в Pinterest ${l.toUpperCase()}`}
+                    ? `In Pinterest ${l.toUpperCase()} since ${new Date(date).toLocaleDateString('en')} — click to remove mark`
+                    : `Mark as uploaded to Pinterest ${l.toUpperCase()}`}
                   className={`text-[10px] border rounded px-1 py-0.5 leading-none transition-colors ${
                     date
                       ? 'text-rose-400 border-rose-800 hover:bg-rose-950'
@@ -2222,7 +2222,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             <button
               onClick={() => setExpanded((v) => !v)}
               className="p-2 text-zinc-400 hover:text-white transition-colors"
-              title={expanded ? 'Скрыть ряды' : 'Показать ряды'}
+              title={expanded ? 'Collapse' : 'Expand'}
             >
               {expanded ? <ChevronUp size={16} /> : <Eye size={16} />}
             </button>
@@ -2232,7 +2232,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             target="_blank"
             rel="noreferrer"
             className="p-2 text-zinc-400 hover:text-white transition-colors"
-            title="Открыть"
+            title="Open"
           >
             <Edit3 size={16} />
           </a>
@@ -2240,7 +2240,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             <button
               onClick={() => onRetry(outfit.id)}
               className="p-2 text-zinc-400 hover:text-yellow-400 transition-colors"
-              title="Повторить анализ"
+              title="Retry analysis"
             >
               <RefreshCw size={16} />
             </button>
@@ -2248,7 +2248,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           <button
             onClick={() => onDelete(outfit.id)}
             className="p-2 text-zinc-400 hover:text-rose-400 transition-colors"
-            title="Удалить"
+            title="Delete"
           >
             <Trash2 size={16} />
           </button>
@@ -2279,7 +2279,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                         onClick={() => setEditingLang(editingLang === lang ? null : lang)}
                         className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                       >
-                        {editingLang === lang ? 'Отмена' : 'Редактировать JSON'}
+                        {editingLang === lang ? 'Cancel' : 'Edit JSON'}
                       </button>
                     </div>
                     {editingLang === lang ? (
@@ -2339,7 +2339,7 @@ export default function AdminPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Удалить образ?')) return;
+    if (!confirm('Delete outfit?')) return;
     await apiDelete(`/api/admin/outfit/${id}`);
     mutate('/api/admin/outfits');
   };
@@ -2373,7 +2373,7 @@ export default function AdminPage() {
       URL.revokeObjectURL(url);
       mutate('/api/admin/outfits');
     } catch (e) {
-      alert('Ошибка экспорта: ' + e.message);
+      alert('Export error: ' + e.message);
     } finally {
       setCsvExporting(false);
     }
@@ -2394,13 +2394,13 @@ export default function AdminPage() {
               onClick={() => setView('outfits')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'outfits' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <Upload size={13} /> Образы
+              <Upload size={13} /> Outfits
             </button>
             <button
               onClick={() => setView('renders')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'renders' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <ImagePlus size={13} /> Рендеры
+              <ImagePlus size={13} /> Renders
             </button>
             <button
               onClick={() => setView('coverage')}
@@ -2412,42 +2412,42 @@ export default function AdminPage() {
               onClick={() => setView('mechanics')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'mechanics' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <Sparkles size={13} /> Механики
+              <Sparkles size={13} /> Mechanics
             </button>
           </div>
-          <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+          <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Stats</a>
           <div className="flex items-center gap-1 flex-wrap">
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: true, rendersOnly: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
-              title="Новые образы (эскизы) — EN"
+              title="New outfits (sketches) — EN"
             >
-              <Upload size={12} /> Новые EN
+              <Upload size={12} /> New EN
             </button>
             <button
               onClick={() => setExportModal({ lang: 'ru', onlyNew: true, rendersOnly: false })}
               className="px-2 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
-              title="Новые образы — RU"
+              title="New outfits — RU"
             >RU</button>
             <button
               onClick={() => setExportModal({ lang: 'en', rendersOnly: true, onlyNew: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
-              title="ИИ рендеры не загруженные в Pinterest — EN"
+              title="AI renders not uploaded to Pinterest — EN"
             >
-              <ImagePlus size={12} /> Рендеры EN
+              <ImagePlus size={12} /> Renders EN
             </button>
             <button
               onClick={() => setExportModal({ lang: 'ru', rendersOnly: true, onlyNew: false })}
               className="px-2 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
-              title="ИИ рендеры не загруженные в Pinterest — RU"
+              title="AI renders not uploaded to Pinterest — RU"
             >RU</button>
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: false, rendersOnly: false })}
               className="px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-500 text-xs rounded-lg transition-colors"
-              title="Все готовые — EN"
-            >Все</button>
+              title="All ready — EN"
+            >All</button>
           </div>
-          <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
+          <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Gallery</a>
         </div>
       </header>
 
@@ -2471,14 +2471,14 @@ export default function AdminPage() {
           }}
         >
           <Upload size={32} className="mx-auto mb-3 text-zinc-500" />
-          <p className="text-zinc-300 mb-1">Перетащите изображения или</p>
-          <p className="text-zinc-600 text-xs mb-3">Можно загрузить несколько файлов сразу</p>
+          <p className="text-zinc-300 mb-1">Drop images here or</p>
+          <p className="text-zinc-600 text-xs mb-3">Multiple files can be uploaded at once</p>
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploadItems.some((i) => i.status === 'uploading')}
             className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors border border-zinc-700 text-sm disabled:opacity-50"
           >
-            {uploadItems.some((i) => i.status === 'uploading') ? 'Загружаю…' : 'Выбрать файлы'}
+            {uploadItems.some((i) => i.status === 'uploading') ? 'Uploading…' : 'Select files'}
           </button>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleUpload(e.target.files)} />
         </div>
@@ -2493,10 +2493,10 @@ export default function AdminPage() {
                 {item.status === 'error' && <XCircle size={14} className="text-rose-400 shrink-0" />}
                 <span className="text-zinc-300 truncate flex-1">{item.name}</span>
                 <span className="text-xs shrink-0 text-zinc-500">
-                  {item.status === 'uploading' && 'Загружаю…'}
-                  {item.status === 'done' && 'Загружено'}
-                  {item.status === 'duplicate' && 'Дубликат'}
-                  {item.status === 'error' && 'Ошибка'}
+                  {item.status === 'uploading' && 'Uploading…'}
+                  {item.status === 'done' && 'Uploaded'}
+                  {item.status === 'duplicate' && 'Duplicate'}
+                  {item.status === 'error' && 'Error'}
                 </span>
               </div>
             ))}
@@ -2517,12 +2517,12 @@ export default function AdminPage() {
           return (
             <div className="flex flex-col gap-2 mb-4">
               <div className="flex items-center gap-4 flex-wrap">
-                <h2 className="text-lg font-medium text-zinc-300">Образы</h2>
+                <h2 className="text-lg font-medium text-zinc-300">Outfits</h2>
                 <div className="flex items-center gap-3 text-sm flex-wrap">
-                  <span className="text-zinc-400">{total} всего</span>
-                  <span className="text-emerald-400">{ready} готово</span>
-                  {pending > 0 && <span className="text-zinc-400">{pending} в обработке</span>}
-                  {error > 0 && <span className="text-rose-400">{error} с ошибкой</span>}
+                  <span className="text-zinc-400">{total} total</span>
+                  <span className="text-emerald-400">{ready} ready</span>
+                  {pending > 0 && <span className="text-zinc-400">{pending} processing</span>}
+                  {error > 0 && <span className="text-rose-400">{error} with error</span>}
                   <GenerateAllTitlesButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   <TranslateAllButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   {dupCount > 0 && (
@@ -2530,7 +2530,7 @@ export default function AdminPage() {
                       onClick={() => setShowDuplicates((v) => !v)}
                       className={`px-2 py-0.5 rounded text-xs border transition-colors ${showDuplicates ? 'border-yellow-500 text-yellow-400 bg-yellow-950' : 'border-zinc-600 text-yellow-500 hover:border-yellow-500'}`}
                     >
-                      {dupCount} дубликатов
+                      {dupCount} duplicates
                     </button>
                   )}
                 </div>
@@ -2541,38 +2541,38 @@ export default function AdminPage() {
                 <button
                   onClick={() => setPinterestFilter('all')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >все</button>
+                >all</button>
                 <button
                   onClick={() => setPinterestFilter('new-en')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-en' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >новые EN ({newEnCount})</button>
+                >new EN ({newEnCount})</button>
                 <button
                   onClick={() => setPinterestFilter('new-ru')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-ru' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >новые RU ({newRuCount})</button>
+                >new RU ({newRuCount})</button>
                 <button
                   onClick={() => setPinterestFilter('exported')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'exported' ? 'border-rose-700 text-rose-300 bg-rose-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >загружено ({exportedCount})</button>
+                >uploaded ({exportedCount})</button>
                 {/* Sort */}
-                <span className="text-xs text-zinc-600 ml-2">Сортировка:</span>
+                <span className="text-xs text-zinc-600 ml-2">Sort:</span>
                 <button
                   onClick={() => setSort('date')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'date' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >по дате</button>
+                >by date</button>
                 <button
                   onClick={() => setSort('renders')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'renders' ? 'border-violet-500 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >с рендерами</button>
+                >with renders</button>
                 <button
                   onClick={() => setSort(sort === 'svg' ? 'date' : 'svg')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'svg' ? 'border-emerald-500 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >с SVG</button>
+                >with SVG</button>
               </div>
             </div>
           );
         })()}
-        {!data?.outfits && <h2 className="text-lg font-medium mb-4 text-zinc-300">Образы</h2>}
+        {!data?.outfits && <h2 className="text-lg font-medium mb-4 text-zinc-300">Outfits</h2>}
 
         {isLoading && (
           <div className="space-y-3">
