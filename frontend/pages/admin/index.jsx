@@ -182,7 +182,6 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
         <button
           onClick={handlePinterestToggle}
           title={pExported
-            : pExported
             ? `${t('In Pinterest since','В Pinterest с')} ${new Date(pExported).toLocaleDateString(uiLang === 'ru' ? 'ru' : 'en')} — ${t('click to remove','нажми чтобы снять')}`
             : t('Mark as uploaded to Pinterest','Отметить как загружено в Pinterest')}
           className={`absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold transition-all ${
@@ -929,7 +928,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
               <p className="text-sm">{t(rendersOnly ? 'No renders to export.' : 'No outfits to export.', rendersOnly ? 'Нет рендеров для экспорта.' : 'Нет образов для экспорта.')}</p>
               <p className="text-xs mt-1">
                 {rendersOnly
-                  : t('All AI renders are already marked as uploaded to Pinterest, or no renders exist yet.','Все ИИ рендеры уже отмечены как загруженные в Pinterest. Или рендеры ещё не загружены.')
+                  ? t('All AI renders are already marked as uploaded to Pinterest, or no renders exist yet.','Все ИИ рендеры уже отмечены как загруженные в Pinterest. Или рендеры ещё не загружены.')
                   : t(`All ready outfits are already marked as uploaded to Pinterest ${lang.toUpperCase()}.`,`Все готовые образы уже отмечены как загруженные в Pinterest ${lang.toUpperCase()}.`)}
               </p>
             </div>
@@ -1033,7 +1032,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             {postProgress && (
               <div className={`text-xs px-3 py-2 rounded-lg ${postProgress.failed ? 'bg-amber-900/30 text-amber-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
                 {posting
-                  : `${t('Posting…','Публикую…')} ${postProgress.done}/${postProgress.total}`
+                  ? `${t('Posting…','Публикую…')} ${postProgress.done}/${postProgress.total}`
                   : `${t('Posted:','Опубликовано:')} ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · ${t('errors:','ошибок:')} ${postProgress.failed}` : ' ✓'}`}
               </div>
             )}
@@ -1508,7 +1507,6 @@ function RendersGallery({ outfits, onMutate }) {
         {syncResult && (
           <span className="text-[11px] text-emerald-400">
             {syncResult.sketch_updated !== undefined
-              : syncResult.sketch_updated !== undefined
               ? `✓ ${t('sketches:','эскизы:')} ${syncResult.sketch_updated}, ${t('renders:','рендеры:')} ${syncResult.render_updated}`
               : `✓ ${syncResult.matched} ${t('of','из')} ${syncResult.total_pins} ${t('linked','привязано')}`}
           </span>
