@@ -2344,7 +2344,7 @@ function SeoAnalyticsBoard() {
         headers: token ? { 'x-admin-token': token } : {},
         body: form,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || `HTTP ${res.status}`); }
       const json = await res.json();
       setImportResult(json);
       mutateData();

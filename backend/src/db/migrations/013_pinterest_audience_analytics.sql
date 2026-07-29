@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 CREATE TABLE IF NOT EXISTS pinterest_audience_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   imported_at TIMESTAMPTZ DEFAULT NOW(),
