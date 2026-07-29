@@ -1381,35 +1381,40 @@ async function synthesiseSeoStrategy(pool) {
   );
   if (!rows.length) return null;
 
-  const digests = rows.map((r, i) =>
-    `[Report ${i + 1} — ${r.report_type} — ${r.imported_at?.toISOString?.()?.slice(0, 10)}]\n${r.strategy_contribution || JSON.stringify(r.insights?.summary)}`
-  ).join('\n\n');
+  // Build digest — strip quotes so they can't break JSON output
+  const digests = rows.map((r, i) => {
+    const contrib = (r.strategy_contribution || '').replace(/"/g, "'");
+    const summary = typeof r.insights?.summary === 'string'
+      ? r.insights.summary.replace(/"/g, "'")
+      : '';
+    return `[${i + 1}/${r.report_type}/${r.imported_at?.toISOString?.()?.slice(0, 10)}] ${contrib || summary}`;
+  }).join(' || ');
 
-  const prompt = `You are a Pinterest SEO strategist. Below are analytics digests from ${rows.length} Pinterest Analytics reports for FFE, a fashion AI game.
+  const prompt = `Pinterest SEO strategist for FFE (fashion AI game). Synthesise strategy from ${rows.length} analytics reports.
 
-${digests}
+Reports: ${digests.slice(0, 2000)}
 
-Synthesise a combined Pinterest SEO strategy. Return ONLY valid JSON:
-{
-  "top_keywords": [{"keyword": "...", "score": 1-10, "sources": ["report_type..."]}],
-  "audience_affinities": [{"interest": "...", "affinity": "high|medium|low"}],
-  "opportunities": [{"topic": "...", "reason": "..."}],
-  "strategy_notes": "3-5 bullet points as plain text",
-  "prompt_injection": "A concise text block (max 200 chars) to inject into Claude's pin title generation prompt. Format: 'Audience top interests: X, Y, Z. High-value keywords: A, B, C. Trending: D, E.'"
-}
+Return ONLY JSON, no quotes inside string values:
+{"top_keywords":[{"keyword":"phrase","score":9,"sources":["type"]}],"audience_affinities":[{"interest":"topic","affinity":"high"}],"opportunities":[{"topic":"topic","reason":"reason"}],"strategy_notes":"bullet 1. bullet 2. bullet 3.","prompt_injection":"Audience: Art lovers, Home Decor fans. Keywords: fashion game, outfit ideas, style quiz. Trending: aesthetic outfits."}
 
-top_keywords should have 15-25 entries, sorted by score descending.`;
+Rules: top_keywords 15-25 entries sorted by score desc. prompt_injection max 200 chars, no quotes.`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1000,
+    max_tokens: 1200,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const raw = msg.content[0].text.trim();
   const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Strategy synthesis failed');
-  return { ...JSON.parse(match[0]), report_count: rows.length };
+  if (!match) throw new Error('Strategy synthesis: no JSON returned');
+
+  try {
+    return { ...JSON.parse(match[0]), report_count: rows.length };
+  } catch {
+    const cleaned = match[0].replace(/[\x00-\x1f\x7f]/g, ' ');
+    return { ...JSON.parse(cleaned), report_count: rows.length };
+  }
 }
 
 // POST /api/admin/pinterest-audience/import — upload Pinterest Analytics CSV
@@ -1438,25 +1443,30 @@ router.post('/pinterest-audience/import', uploadCsv.single('csv'), async (req, r
     );
     const { id, imported_at } = rows[0];
 
-    // Re-synthesise strategy from all reports
-    const strategy = await synthesiseSeoStrategy(pool);
-    if (strategy) {
-      await pool.query(
-        `INSERT INTO pinterest_seo_strategy (id, updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes)
-         VALUES (1, now(), $1, $2, $3, $4, $5, $6)
-         ON CONFLICT (id) DO UPDATE SET
-           updated_at = now(), report_count = $1,
-           top_keywords = $2, audience_affinities = $3, opportunities = $4,
-           prompt_injection = $5, strategy_notes = $6`,
-        [
-          strategy.report_count,
-          JSON.stringify(strategy.top_keywords),
-          JSON.stringify(strategy.audience_affinities),
-          JSON.stringify(strategy.opportunities),
-          strategy.prompt_injection,
-          strategy.strategy_notes,
-        ]
-      );
+    // Re-synthesise strategy — non-fatal: report is saved even if this fails
+    let strategy = null;
+    try {
+      strategy = await synthesiseSeoStrategy(pool);
+      if (strategy) {
+        await pool.query(
+          `INSERT INTO pinterest_seo_strategy (id, updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes)
+           VALUES (1, now(), $1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO UPDATE SET
+             updated_at = now(), report_count = $1,
+             top_keywords = $2, audience_affinities = $3, opportunities = $4,
+             prompt_injection = $5, strategy_notes = $6`,
+          [
+            strategy.report_count,
+            JSON.stringify(strategy.top_keywords),
+            JSON.stringify(strategy.audience_affinities),
+            JSON.stringify(strategy.opportunities),
+            strategy.prompt_injection,
+            strategy.strategy_notes,
+          ]
+        );
+      }
+    } catch (synthErr) {
+      console.error('[pinterest-audience] strategy synthesis failed:', synthErr.message);
     }
 
     res.json({ ok: true, id, imported_at, analysis, strategy });
