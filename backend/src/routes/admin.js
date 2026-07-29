@@ -996,6 +996,14 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
     const outfitTitle = render.outfit_title || '';
     const renderUrl = render.render_url || null;
 
+    // Inject audience analytics strategy if available
+    const { rows: stratRows } = await pool.query(
+      'SELECT prompt_injection, top_keywords FROM pinterest_seo_strategy WHERE id = 1'
+    );
+    const strategyInjection = stratRows[0]?.prompt_injection || null;
+    const topKw = stratRows[0]?.top_keywords ? JSON.parse(stratRows[0].top_keywords) : null;
+    const stratKeywords = topKw ? topKw.slice(0, 8).map(k => k.keyword).join(', ') : null;
+
     const isRu = lang === 'ru';
 
     const prompt = isRu
@@ -1027,6 +1035,8 @@ Rules:
 - Description: 2-3 sentences, 100-200 chars. Lead with a visual or emotional hook, name specific garment details, end with a call to action or question.
 - No hashtags in either field
 - Target keywords: outfit ideas, dress to impress, aesthetic clothes, style inspo, fashion
+${strategyInjection ? `\nAudience analytics insights (use these to refine keyword selection):\n${strategyInjection}` : ''}
+${stratKeywords ? `- High-value keywords from your audience data: ${stratKeywords}` : ''}
 
 Return strict JSON only: {"title": "...", "description": "..."}`;
 
@@ -1305,6 +1315,194 @@ router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next)
     }
 
     res.json({ ok: true, posted: results.filter(r => r.ok).length, failed, results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PINTEREST AUDIENCE ANALYTICS — CSV Import & SEO Strategy
+// ═══════════════════════════════════════════════════════════════════════════
+
+const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Analyse CSV text with Claude and return structured insights
+async function analyseCsvWithClaude(csvText, fileName) {
+  // Truncate to ~6 KB for the prompt (keep headers + first meaningful rows)
+  const preview = csvText.length > 6000 ? csvText.slice(0, 6000) + '\n... (truncated)' : csvText;
+
+  const prompt = `You are a Pinterest SEO and analytics strategist for a fashion AI game (FFE — Fashion Experience Education). Analyse this Pinterest Analytics CSV export and extract actionable SEO insights.
+
+File name: ${fileName}
+CSV content:
+\`\`\`
+${preview}
+\`\`\`
+
+Return ONLY valid JSON with this exact shape:
+{
+  "report_type": "audience_insights" | "top_pins" | "overview" | "search_terms" | "unknown",
+  "date_from": "YYYY-MM-DD or null",
+  "date_to": "YYYY-MM-DD or null",
+  "summary": "2-3 sentences describing what this report shows",
+  "audience": [{"interest": "...", "affinity": "high|medium|low"}],
+  "top_keywords": [{"keyword": "...", "score": 1-10}],
+  "opportunities": [{"topic": "...", "reason": "..."}],
+  "recommended_keywords": [{"keyword": "...", "score": 1-10, "reason": "..."}],
+  "strategy_contribution": "One paragraph: what this data tells us about what Pinterest pin titles should contain for FFE content. Focus on SEO keywords, audience affinities, and content gaps.",
+  "strategy_notes": "2-3 actionable bullet points for improving pin performance"
+}
+
+Guidelines:
+- recommended_keywords should be 10-20 specific phrases good for Pinterest title SEO
+- Focus on fashion/outfit/aesthetic keywords that match the audience data
+- For top_pins reports: extract which title patterns performed best
+- For search_terms: those ARE the keywords — prioritise them highest`;
+
+  const msg = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = msg.content[0].text.trim();
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Claude returned no JSON: ' + raw.slice(0, 200));
+  return JSON.parse(match[0]);
+}
+
+// Synthesise a combined strategy from all stored report insights
+async function synthesiseSeoStrategy(pool) {
+  const { rows } = await pool.query(
+    `SELECT insights, strategy_contribution, imported_at, report_type
+     FROM pinterest_audience_reports
+     ORDER BY imported_at DESC LIMIT 10`
+  );
+  if (!rows.length) return null;
+
+  const digests = rows.map((r, i) =>
+    `[Report ${i + 1} — ${r.report_type} — ${r.imported_at?.toISOString?.()?.slice(0, 10)}]\n${r.strategy_contribution || JSON.stringify(r.insights?.summary)}`
+  ).join('\n\n');
+
+  const prompt = `You are a Pinterest SEO strategist. Below are analytics digests from ${rows.length} Pinterest Analytics reports for FFE, a fashion AI game.
+
+${digests}
+
+Synthesise a combined Pinterest SEO strategy. Return ONLY valid JSON:
+{
+  "top_keywords": [{"keyword": "...", "score": 1-10, "sources": ["report_type..."]}],
+  "audience_affinities": [{"interest": "...", "affinity": "high|medium|low"}],
+  "opportunities": [{"topic": "...", "reason": "..."}],
+  "strategy_notes": "3-5 bullet points as plain text",
+  "prompt_injection": "A concise text block (max 200 chars) to inject into Claude's pin title generation prompt. Format: 'Audience top interests: X, Y, Z. High-value keywords: A, B, C. Trending: D, E.'"
+}
+
+top_keywords should have 15-25 entries, sorted by score descending.`;
+
+  const msg = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = msg.content[0].text.trim();
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Strategy synthesis failed');
+  return { ...JSON.parse(match[0]), report_count: rows.length };
+}
+
+// POST /api/admin/pinterest-audience/import — upload Pinterest Analytics CSV
+router.post('/pinterest-audience/import', uploadCsv.single('csv'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const csvText = req.file.buffer.toString('utf-8');
+    const fileName = req.file.originalname;
+
+    const analysis = await analyseCsvWithClaude(csvText, fileName);
+
+    const { rows } = await pool.query(
+      `INSERT INTO pinterest_audience_reports
+         (file_name, report_type, date_from, date_to, raw_csv, insights, strategy_contribution)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, imported_at`,
+      [
+        fileName,
+        analysis.report_type || 'unknown',
+        analysis.date_from || null,
+        analysis.date_to   || null,
+        csvText,
+        JSON.stringify(analysis),
+        analysis.strategy_contribution || null,
+      ]
+    );
+    const { id, imported_at } = rows[0];
+
+    // Re-synthesise strategy from all reports
+    const strategy = await synthesiseSeoStrategy(pool);
+    if (strategy) {
+      await pool.query(
+        `INSERT INTO pinterest_seo_strategy (id, updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes)
+         VALUES (1, now(), $1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET
+           updated_at = now(), report_count = $1,
+           top_keywords = $2, audience_affinities = $3, opportunities = $4,
+           prompt_injection = $5, strategy_notes = $6`,
+        [
+          strategy.report_count,
+          JSON.stringify(strategy.top_keywords),
+          JSON.stringify(strategy.audience_affinities),
+          JSON.stringify(strategy.opportunities),
+          strategy.prompt_injection,
+          strategy.strategy_notes,
+        ]
+      );
+    }
+
+    res.json({ ok: true, id, imported_at, analysis, strategy });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/pinterest-audience — list reports + current strategy
+router.get('/pinterest-audience', async (req, res, next) => {
+  try {
+    const { rows: reports } = await pool.query(
+      `SELECT id, imported_at, file_name, report_type, date_from, date_to,
+              insights->'summary' AS summary,
+              insights->'recommended_keywords' AS recommended_keywords
+       FROM pinterest_audience_reports
+       ORDER BY imported_at DESC LIMIT 20`
+    );
+    const { rows: strat } = await pool.query(
+      `SELECT updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes
+       FROM pinterest_seo_strategy WHERE id = 1`
+    );
+    res.json({ reports, strategy: strat[0] || null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/admin/pinterest-audience/:id — delete one report + re-synthesise
+router.delete('/pinterest-audience/:id', async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM pinterest_audience_reports WHERE id = $1', [req.params.id]);
+    const strategy = await synthesiseSeoStrategy(pool);
+    if (strategy) {
+      await pool.query(
+        `INSERT INTO pinterest_seo_strategy (id, updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes)
+         VALUES (1, now(), $1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET
+           updated_at = now(), report_count = $1,
+           top_keywords = $2, audience_affinities = $3, opportunities = $4,
+           prompt_injection = $5, strategy_notes = $6`,
+        [strategy.report_count, JSON.stringify(strategy.top_keywords), JSON.stringify(strategy.audience_affinities), JSON.stringify(strategy.opportunities), strategy.prompt_injection, strategy.strategy_notes]
+      );
+    } else {
+      await pool.query('DELETE FROM pinterest_seo_strategy WHERE id = 1');
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

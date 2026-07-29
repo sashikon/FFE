@@ -2320,6 +2320,224 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
   );
 }
 
+// ─── Pinterest SEO Analytics Board ────────────────────────────────────────────
+function SeoAnalyticsBoard() {
+  const t = useT();
+  const { data, mutate: mutateData } = useSWR('/api/admin/pinterest-audience', adminFetcher);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const fileRef = useRef(null);
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    setImportError(null);
+    try {
+      const form = new FormData();
+      form.append('csv', file);
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      const res = await fetch(`${BASE}/api/admin/pinterest-audience/import`, {
+        method: 'POST',
+        headers: token ? { 'x-admin-token': token } : {},
+        body: form,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setImportResult(json);
+      mutateData();
+    } catch (err) {
+      setImportError(err.message);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm(t('Delete this report?', 'Удалить этот отчёт?'))) return;
+    setDeleting(id);
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      await fetch(`${BASE}/api/admin/pinterest-audience/${id}`, {
+        method: 'DELETE',
+        headers: token ? { 'x-admin-token': token } : {},
+      });
+      mutateData();
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const strategy = data?.strategy;
+  const reports = data?.reports || [];
+
+  const reportTypeLabel = (type) => ({
+    audience_insights: t('Audience Insights', 'Аудитория'),
+    top_pins: t('Top Pins', 'Топ пины'),
+    overview: t('Overview', 'Обзор'),
+    search_terms: t('Search Terms', 'Поисковые запросы'),
+    unknown: t('Unknown', 'Неизвестен'),
+  }[type] || type);
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-medium text-zinc-300">{t('Pinterest SEO Analytics', 'Pinterest SEO Аналитика')}</h2>
+          <p className="text-xs text-zinc-600 mt-0.5">{t('Upload Pinterest Analytics CSVs to build an audience-informed keyword strategy', 'Загружай CSV из Pinterest Analytics — стратегия ключевых слов обновится автоматически')}</p>
+        </div>
+        <div>
+          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImport} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-900 hover:bg-rose-800 border border-rose-700 text-rose-200 text-sm rounded-lg transition-colors disabled:opacity-50"
+          >
+            {importing
+              ? <><Loader2 size={14} className="animate-spin" /> {t('Analyzing…', 'Анализирую…')}</>
+              : <><Upload size={14} /> {t('Upload Pinterest Analytics CSV', 'Загрузить Pinterest Analytics CSV')}</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {importError && (
+        <div className="text-sm text-rose-400 bg-rose-950/50 border border-rose-800 rounded-lg px-4 py-3">
+          {t('Error:', 'Ошибка:')} {importError}
+        </div>
+      )}
+
+      {importResult && (
+        <div className="text-sm text-emerald-400 bg-emerald-950/40 border border-emerald-800 rounded-lg px-4 py-3">
+          ✓ {t('Report imported and strategy updated', 'Отчёт загружен, стратегия обновлена')} — {reportTypeLabel(importResult.analysis?.report_type)}
+        </div>
+      )}
+
+      {/* Current Strategy */}
+      {strategy ? (
+        <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-zinc-200">{t('Current SEO Strategy', 'Текущая SEO-стратегия')}</h3>
+            <span className="text-[11px] text-zinc-600">
+              {t('Based on', 'На основе')} {strategy.report_count} {t('report(s)', 'отчёт(ов)')} · {t('updated', 'обновлено')} {new Date(strategy.updated_at).toLocaleDateString()}
+            </span>
+          </div>
+
+          {strategy.prompt_injection && (
+            <div className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">{t('Injected into pin title generation', 'Инжектируется в генерацию заголовков пинов')}</p>
+              <p className="text-xs text-emerald-300 font-mono leading-relaxed">{strategy.prompt_injection}</p>
+            </div>
+          )}
+
+          {/* Top Keywords */}
+          {strategy.top_keywords?.length > 0 && (
+            <div>
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wide mb-2">{t('Top Keywords', 'Топ ключевые слова')}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {strategy.top_keywords.slice(0, 20).map((kw, i) => (
+                  <span
+                    key={i}
+                    className="text-xs px-2 py-0.5 rounded-full border"
+                    style={{
+                      borderColor: `hsl(${150 - (kw.score || 5) * 10}, 40%, 30%)`,
+                      color: `hsl(${150 - (kw.score || 5) * 10}, 60%, 65%)`,
+                      backgroundColor: `hsl(${150 - (kw.score || 5) * 10}, 20%, 10%)`,
+                    }}
+                  >
+                    {kw.keyword}
+                    <span className="ml-1 opacity-50 text-[9px]">{kw.score}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Opportunities */}
+          {strategy.opportunities?.length > 0 && (
+            <div>
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wide mb-2">{t('Content Opportunities', 'Контентные возможности')}</p>
+              <div className="space-y-1">
+                {strategy.opportunities.slice(0, 5).map((opp, i) => (
+                  <div key={i} className="flex gap-2 text-xs">
+                    <span className="text-rose-400 shrink-0">→</span>
+                    <span className="text-zinc-300 font-medium shrink-0">{opp.topic}</span>
+                    <span className="text-zinc-600">{opp.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Strategy notes */}
+          {strategy.strategy_notes && (
+            <div>
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wide mb-1">{t('Strategy Notes', 'Заметки по стратегии')}</p>
+              <p className="text-xs text-zinc-400 whitespace-pre-line leading-relaxed">{strategy.strategy_notes}</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="border border-dashed border-zinc-800 rounded-xl p-8 text-center">
+          <p className="text-sm text-zinc-500">{t('No strategy yet — upload a Pinterest Analytics CSV to get started', 'Стратегии нет — загрузи Pinterest Analytics CSV чтобы начать')}</p>
+          <p className="text-xs text-zinc-700 mt-2">{t('Download from: Pinterest → Analytics → Export', 'Скачать: Pinterest → Аналитика → Экспорт')}</p>
+        </div>
+      )}
+
+      {/* Import history */}
+      {reports.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-zinc-400 mb-3">{t('Import History', 'История импорта')}</h3>
+          <div className="space-y-2">
+            {reports.map((r) => (
+              <div key={r.id} className="flex items-start gap-3 bg-zinc-900/50 border border-zinc-800 rounded-lg px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-zinc-300 truncate">{r.file_name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 shrink-0">{reportTypeLabel(r.report_type)}</span>
+                    {(r.date_from || r.date_to) && (
+                      <span className="text-[10px] text-zinc-600 shrink-0">{r.date_from} – {r.date_to}</span>
+                    )}
+                  </div>
+                  {r.summary && (
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">{typeof r.summary === 'string' ? r.summary : JSON.stringify(r.summary)}</p>
+                  )}
+                  {r.recommended_keywords && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {(typeof r.recommended_keywords === 'string' ? JSON.parse(r.recommended_keywords) : r.recommended_keywords)
+                        .slice(0, 6).map((kw, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{kw.keyword || kw}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-[10px] text-zinc-700">{new Date(r.imported_at).toLocaleDateString()}</span>
+                  <button
+                    onClick={() => handleDelete(r.id)}
+                    disabled={deleting === r.id}
+                    className="text-zinc-700 hover:text-rose-400 transition-colors"
+                    title={t('Delete', 'Удалить')}
+                  >
+                    {deleting === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [uiLang, setUiLang] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('ffe_admin_ui_lang') || 'en') : 'en');
   const toggleUiLang = () => setUiLang(l => { const n = l === 'en' ? 'ru' : 'en'; localStorage.setItem('ffe_admin_ui_lang', n); return n; });
@@ -2440,6 +2658,12 @@ export default function AdminPage() {
             >
               <Sparkles size={13} /> {t('Mechanics','Механики')}
             </button>
+            <button
+              onClick={() => setView('seo')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'seo' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
+            >
+              <Camera size={13} /> {t('SEO','SEO')}
+            </button>
           </div>
           <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">{t('Stats','Статистика')}</a>
           <div className="flex items-center gap-1 flex-wrap">
@@ -2479,6 +2703,7 @@ export default function AdminPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-10">
+        {view === 'seo' && <SeoAnalyticsBoard />}
         {view === 'coverage' && <CoverageBoard />}
         {view === 'mechanics' && <MechanicsBoard outfits={data?.outfits} />}
         {view === 'renders' && (
