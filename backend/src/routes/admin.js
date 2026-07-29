@@ -1396,17 +1396,21 @@ async function synthesiseSeoStrategy(pool, lang = 'en') {
   }).join(' || ');
 
   const synthesisSystem = lang === 'ru'
-    ? 'You output ONLY valid compact JSON one line. strategy_notes, opportunities.reason — in Russian, max 80 chars each. Keywords in English. prompt_injection in English max 200 chars. No line breaks inside strings, no quotes inside string values.'
-    : 'You output ONLY valid compact JSON one line. All text in English, max 80 chars per string. No line breaks inside strings, no quotes inside string values.';
+    ? 'You output ONLY valid compact JSON, single line. No line breaks or quotes inside string values.'
+    : 'You output ONLY valid compact JSON, single line. No line breaks or quotes inside string values.';
+
+  const exampleJson = lang === 'ru'
+    ? `{"top_keywords":[{"keyword":"outfit ideas","score":9,"sources":["overview"]}],"audience_affinities":[{"interest":"Art","affinity":"high"}],"opportunities":[{"topic":"Educational content","reason":"Аудитория ценит обучающий контент"}],"strategy_notes":"Фокус на вечернем стиле и правилах дресс-кода. Оптимизировать дизайн пинов. Тестировать карусельные пины.","prompt_injection":"Audience: Art lovers, fashion game players. Keywords: evening formal wear, fashion AI game, outfit ideas."}`
+    : `{"top_keywords":[{"keyword":"outfit ideas","score":9,"sources":["overview"]}],"audience_affinities":[{"interest":"Art","affinity":"high"}],"opportunities":[{"topic":"Educational content","reason":"Audience values skill-building"}],"strategy_notes":"Focus on evening wear and dress codes. Optimize pin design with clear CTAs. Test carousel pins.","prompt_injection":"Audience: Art lovers, fashion game players. Keywords: evening formal wear, fashion AI game, outfit ideas."}`;
 
   const prompt = `Pinterest SEO strategist for FFE fashion AI game. Synthesise strategy from ${rows.length} reports.
 
 Reports: ${digests.slice(0, 2000)}
 
-Return ONLY one line of JSON:
-{"top_keywords":[{"keyword":"phrase","score":9,"sources":["type"]}],"audience_affinities":[{"interest":"topic","affinity":"high"}],"opportunities":[{"topic":"topic","reason":"short reason"}],"strategy_notes":"point 1. point 2. point 3.","prompt_injection":"Audience: Art lovers. Keywords: fashion game, outfit ideas. Trending: aesthetic outfits."}
+Return ONLY one line of JSON matching this exact structure (${lang === 'ru' ? 'strategy_notes IN RUSSIAN' : 'all in English'}):
+${exampleJson}
 
-top_keywords: 15-25 entries sorted by score desc. prompt_injection max 200 chars.`;
+top_keywords: 15-25 entries sorted by score desc. prompt_injection max 200 chars in English.`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
