@@ -1327,7 +1327,7 @@ router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next)
 const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Analyse CSV text with Claude and return structured insights
-async function analyseCsvWithClaude(csvText, fileName) {
+async function analyseCsvWithClaude(csvText, fileName, lang = 'en') {
   // Strip double-quotes and newlines from the CSV before sending to Claude
   // so they can't break the JSON Claude outputs
   const safeCsv = csvText
@@ -1335,7 +1335,11 @@ async function analyseCsvWithClaude(csvText, fileName) {
     .replace(/\r?\n/g, ' | ') // newlines → pipe separator
     .slice(0, 2500);           // cap at ~2.5 KB
 
-  const prompt = `You are a Pinterest SEO strategist for FFE (Fashion Experience Education), a fashion AI game. Analyse this Pinterest Analytics CSV export.
+  const langInstruction = lang === 'ru'
+    ? 'Write all text values (summary, reasons, strategy_notes, strategy_contribution) in Russian. Keywords stay in English.'
+    : 'Write all text values in English.';
+
+  const prompt = `You are a Pinterest SEO strategist for FFE (Fashion Experience Education), a fashion AI game. Analyse this Pinterest Analytics CSV export. ${langInstruction}
 
 File: ${fileName}
 CSV: ${safeCsv}
@@ -1373,7 +1377,7 @@ Rules:
 }
 
 // Synthesise a combined strategy from all stored report insights
-async function synthesiseSeoStrategy(pool) {
+async function synthesiseSeoStrategy(pool, lang = 'en') {
   const { rows } = await pool.query(
     `SELECT insights, strategy_contribution, imported_at, report_type
      FROM pinterest_audience_reports
@@ -1390,7 +1394,11 @@ async function synthesiseSeoStrategy(pool) {
     return `[${i + 1}/${r.report_type}/${r.imported_at?.toISOString?.()?.slice(0, 10)}] ${contrib || summary}`;
   }).join(' || ');
 
-  const prompt = `Pinterest SEO strategist for FFE (fashion AI game). Synthesise strategy from ${rows.length} analytics reports.
+  const langInstruction = lang === 'ru'
+    ? 'Write strategy_notes and opportunities reasons in Russian. Keywords stay in English.'
+    : 'Write all text in English.';
+
+  const prompt = `Pinterest SEO strategist for FFE (fashion AI game). Synthesise strategy from ${rows.length} analytics reports. ${langInstruction}
 
 Reports: ${digests.slice(0, 2000)}
 
@@ -1424,7 +1432,8 @@ router.post('/pinterest-audience/import', uploadCsv.single('csv'), async (req, r
     const csvText = req.file.buffer.toString('utf-8');
     const fileName = req.file.originalname;
 
-    const analysis = await analyseCsvWithClaude(csvText, fileName);
+    const lang = req.body?.lang === 'ru' ? 'ru' : 'en';
+    const analysis = await analyseCsvWithClaude(csvText, fileName, lang);
 
     const { rows } = await pool.query(
       `INSERT INTO pinterest_audience_reports
@@ -1446,7 +1455,7 @@ router.post('/pinterest-audience/import', uploadCsv.single('csv'), async (req, r
     // Re-synthesise strategy — non-fatal: report is saved even if this fails
     let strategy = null;
     try {
-      strategy = await synthesiseSeoStrategy(pool);
+      strategy = await synthesiseSeoStrategy(pool, lang);
       if (strategy) {
         await pool.query(
           `INSERT INTO pinterest_seo_strategy (id, updated_at, report_count, top_keywords, audience_affinities, opportunities, prompt_injection, strategy_notes)

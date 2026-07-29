@@ -2323,6 +2323,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
 // ─── Pinterest SEO Analytics Board ────────────────────────────────────────────
 function SeoAnalyticsBoard() {
   const t = useT();
+  const uiLang = useContext(UiLangCtx);
   const { data, mutate: mutateData } = useSWR('/api/admin/pinterest-audience', adminFetcher);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -2339,6 +2340,7 @@ function SeoAnalyticsBoard() {
     try {
       const form = new FormData();
       form.append('csv', file);
+      form.append('lang', uiLang);
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
       const res = await fetch(`${BASE}/api/admin/pinterest-audience/import`, {
