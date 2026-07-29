@@ -2537,7 +2537,11 @@ function SeoAnalyticsBoard() {
 }
 
 export default function AdminPage() {
-  const [uiLang, setUiLang] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('ffe_admin_ui_lang') || 'en') : 'en');
+  const [uiLang, setUiLang] = useState('en');
+  useEffect(() => {
+    const saved = localStorage.getItem('ffe_admin_ui_lang');
+    if (saved) setUiLang(saved);
+  }, []);
   const toggleUiLang = () => setUiLang(l => { const n = l === 'en' ? 'ru' : 'en'; localStorage.setItem('ffe_admin_ui_lang', n); return n; });
   const t = (en, ru) => uiLang === 'ru' ? ru : en;
   const [isDragging, setIsDragging] = useState(false);
