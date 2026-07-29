@@ -114,6 +114,7 @@ function RowsEditor({ outfitId, lang, initialRows }) {
 
 function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
   const t = useT();
+  const uiLang = useContext(UiLangCtx);
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const top = render.aesthetics?.top;
@@ -2023,6 +2024,7 @@ function SketchPinField({ outfitId, initialPinId }) {
 
 function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange }) {
   const t = useT();
+  const uiLang = useContext(UiLangCtx);
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
   const [sketchUrl, setSketchUrl] = useState(null);
