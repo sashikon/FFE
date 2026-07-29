@@ -1328,57 +1328,47 @@ const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 
 // Analyse CSV text with Claude and return structured insights
 async function analyseCsvWithClaude(csvText, fileName) {
-  // Truncate to ~3 KB — keeps headers + first rows, avoids unescaped quote issues in large CSVs
-  const preview = csvText.length > 3000 ? csvText.slice(0, 3000) + '\n... (truncated)' : csvText;
+  // Strip double-quotes and newlines from the CSV before sending to Claude
+  // so they can't break the JSON Claude outputs
+  const safeCsv = csvText
+    .replace(/"/g, "'")        // double quotes → single quotes
+    .replace(/\r?\n/g, ' | ') // newlines → pipe separator
+    .slice(0, 2500);           // cap at ~2.5 KB
 
-  const prompt = `You are a Pinterest SEO and analytics strategist for a fashion AI game (FFE — Fashion Experience Education). Analyse this Pinterest Analytics CSV export and extract actionable SEO insights.
+  const prompt = `You are a Pinterest SEO strategist for FFE (Fashion Experience Education), a fashion AI game. Analyse this Pinterest Analytics CSV export.
 
-File name: ${fileName}
-CSV content:
-\`\`\`
-${preview}
-\`\`\`
+File: ${fileName}
+CSV: ${safeCsv}
 
-CRITICAL: Return ONLY valid JSON. All string values must have internal quotes escaped as \". No unescaped newlines inside strings. No trailing commas. Exact shape:
-{
-  "report_type": "audience_insights" | "top_pins" | "overview" | "search_terms" | "unknown",
-  "date_from": "YYYY-MM-DD or null",
-  "date_to": "YYYY-MM-DD or null",
-  "summary": "2-3 sentences describing what this report shows",
-  "audience": [{"interest": "...", "affinity": "high|medium|low"}],
-  "top_keywords": [{"keyword": "...", "score": 1-10}],
-  "opportunities": [{"topic": "...", "reason": "..."}],
-  "recommended_keywords": [{"keyword": "...", "score": 1-10, "reason": "..."}],
-  "strategy_contribution": "One paragraph: what this data tells us about what Pinterest pin titles should contain for FFE content. Focus on SEO keywords, audience affinities, and content gaps.",
-  "strategy_notes": "2-3 actionable bullet points for improving pin performance"
-}
+Return ONLY a JSON object. Use only simple ASCII strings — no quotes inside string values, no newlines inside strings. Shape:
+{"report_type":"audience_insights|top_pins|overview|search_terms|unknown","date_from":null,"date_to":null,"summary":"2-3 sentences","audience":[{"interest":"word","affinity":"high"}],"top_keywords":[{"keyword":"phrase","score":8}],"opportunities":[{"topic":"topic","reason":"reason"}],"recommended_keywords":[{"keyword":"phrase","score":8,"reason":"short"}],"strategy_contribution":"one paragraph no quotes","strategy_notes":"bullet 1. bullet 2."}
 
-Guidelines:
-- recommended_keywords should be 10-20 specific phrases good for Pinterest title SEO
-- Focus on fashion/outfit/aesthetic keywords that match the audience data
-- For top_pins reports: extract which title patterns performed best
-- For search_terms: those ARE the keywords — prioritise them highest`;
+Rules:
+- recommended_keywords: 10-15 Pinterest SEO phrases for fashion/outfit/aesthetic content
+- top_pins: extract best-performing title patterns
+- search_terms: those ARE the keywords, score them 9-10
+- Keep all string values short, no nested quotes`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
+    max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const raw = msg.content[0].text.trim();
   const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Claude returned no JSON: ' + raw.slice(0, 200));
+  if (!match) throw new Error('Claude returned no JSON: ' + raw.slice(0, 300));
 
-  // Try direct parse first; if it fails, sanitise common Claude output issues
   try {
     return JSON.parse(match[0]);
-  } catch {
-    // Remove control characters and unescaped newlines inside string values
-    const cleaned = match[0]
-      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')   // control chars
-      .replace(/(?<=":[\s]*"[^"\\]*?)(\r?\n)(?=[^"]*?")/g, ' ') // bare newlines inside strings
-      .replace(/([^\\])"(\s*[:,\]}])/g, '$1"$2');             // stray unescaped quotes before delimiters
-    return JSON.parse(cleaned);
+  } catch (e1) {
+    // Aggressive fallback: replace any unescaped control chars and try again
+    try {
+      const cleaned = match[0].replace(/[\x00-\x1f\x7f]/g, ' ');
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      throw new Error(`JSON parse failed: ${e2.message} — raw excerpt: ${match[0].slice(0, 200)}`);
+    }
   }
 }
 
