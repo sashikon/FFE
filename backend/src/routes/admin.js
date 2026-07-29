@@ -1336,26 +1336,26 @@ async function analyseCsvWithClaude(csvText, fileName, lang = 'en') {
     .slice(0, 2500);           // cap at ~2.5 KB
 
   const langInstruction = lang === 'ru'
-    ? 'Write all text values (summary, reasons, strategy_notes, strategy_contribution) in Russian. Keywords stay in English.'
-    : 'Write all text values in English.';
+    ? 'summary, strategy_notes, strategy_contribution — на русском, макс 80 символов каждое. Keywords always English.'
+    : 'All text in English, keep values under 80 chars.';
 
-  const prompt = `You are a Pinterest SEO strategist for FFE (Fashion Experience Education), a fashion AI game. Analyse this Pinterest Analytics CSV export. ${langInstruction}
+  const prompt = `Pinterest SEO analyst for FFE fashion AI game. Analyse CSV. ${langInstruction}
 
 File: ${fileName}
 CSV: ${safeCsv}
 
-Return ONLY a JSON object. Use only simple ASCII strings — no quotes inside string values, no newlines inside strings. Shape:
-{"report_type":"audience_insights|top_pins|overview|search_terms|unknown","date_from":null,"date_to":null,"summary":"2-3 sentences","audience":[{"interest":"word","affinity":"high"}],"top_keywords":[{"keyword":"phrase","score":8}],"opportunities":[{"topic":"topic","reason":"reason"}],"recommended_keywords":[{"keyword":"phrase","score":8,"reason":"short"}],"strategy_contribution":"one paragraph no quotes","strategy_notes":"bullet 1. bullet 2."}
+Return ONLY compact JSON, no line breaks, no quotes inside strings, all text fields max 80 chars:
+{"report_type":"overview","date_from":"2026-01-01","date_to":"2026-01-31","summary":"SHORT summary max 80 chars","audience":[{"interest":"Art","affinity":"high"}],"top_keywords":[{"keyword":"outfit ideas","score":9}],"opportunities":[{"topic":"Topic","reason":"short reason"}],"recommended_keywords":[{"keyword":"phrase","score":8,"reason":"why"}],"strategy_contribution":"SHORT max 80 chars","strategy_notes":"point 1. point 2. point 3."}
 
 Rules:
-- recommended_keywords: 10-15 Pinterest SEO phrases for fashion/outfit/aesthetic content
-- top_pins: extract best-performing title patterns
-- search_terms: those ARE the keywords, score them 9-10
-- Keep all string values short, no nested quotes`;
+- recommended_keywords: 8-12 Pinterest SEO phrases
+- search_terms CSV: extract the actual search terms as keywords score 9-10
+- top_pins CSV: extract title patterns as keywords
+- CRITICAL: every string value must be under 80 characters`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   });
 
