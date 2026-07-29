@@ -1,9 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, createContext, useContext } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid, Camera } from 'lucide-react';
 import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
+
+const UiLangCtx = createContext('en');
+function useT() {
+  const uiL = useContext(UiLangCtx);
+  return (en, ru) => uiL === 'ru' ? ru : en;
+}
 
 const AESTHETICS = [
   'Cocktail Party Outfit Ideas',
@@ -27,13 +33,14 @@ const STATUS_ICON = {
 };
 
 function RowsTable({ rows }) {
+  const t = useT();
   if (!Array.isArray(rows)) return null;
   return (
     <table className="w-full text-xs border-collapse">
       <thead>
         <tr className="text-zinc-500 border-b border-zinc-800">
-          <th className="text-left py-1 pr-3 font-normal w-28">Theme</th>
-          <th className="text-left py-1 font-normal">Options (odd one highlighted)</th>
+          <th className="text-left py-1 pr-3 font-normal w-28">{t('Theme', 'Тема')}</th>
+          <th className="text-left py-1 font-normal">{t('Options (odd one highlighted)', 'Варианты (лишнее выделено)')}</th>
         </tr>
       </thead>
       <tbody>
@@ -67,6 +74,7 @@ function RowsTable({ rows }) {
 }
 
 function RowsEditor({ outfitId, lang, initialRows }) {
+  const t = useT();
   const [rows, setRows] = useState(JSON.stringify(initialRows, null, 2));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -98,13 +106,14 @@ function RowsEditor({ outfitId, lang, initialRows }) {
         disabled={saving}
         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs rounded-lg transition-colors disabled:opacity-50"
       >
-        <Save size={12} /> {saved ? 'Saved!' : saving ? 'Saving…' : `Save ${lang.toUpperCase()}`}
+        <Save size={12} /> {saved ? t('Saved!','Сохранено!') : saving ? t('Saving…','Сохраняю…') : `${t('Save','Сохранить')} ${lang.toUpperCase()}`}
       </button>
     </div>
   );
 }
 
 function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
+  const t = useT();
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const top = render.aesthetics?.top;
@@ -150,16 +159,16 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
           <button
             onClick={handleAnalyze}
             className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity text-white"
-            title="Analyze aesthetics"
+            title={t('Analyze aesthetics','Анализировать эстетику')}
           >
             <Sparkles size={14} />
-            <span className="text-[9px]">Analyze</span>
+            <span className="text-[9px]">{t('Analyze','Анализ')}</span>
           </button>
         ) : (
           <button
             onClick={handleAnalyze}
             className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-lg transition-opacity"
-            title="Re-analyze"
+            title={t('Re-analyze','Переанализировать')}
           >
             <RefreshCw size={12} className="text-white/70" />
           </button>
@@ -173,8 +182,9 @@ function RenderCard({ render, onDelete, onAnalyzed, onPinterestMark }) {
         <button
           onClick={handlePinterestToggle}
           title={pExported
-            ? `In Pinterest since ${new Date(pExported).toLocaleDateString('en')} — click to remove`
-            : 'Mark as uploaded to Pinterest'}
+            : pExported
+            ? `${t('In Pinterest since','В Pinterest с')} ${new Date(pExported).toLocaleDateString(uiLang === 'ru' ? 'ru' : 'en')} — ${t('click to remove','нажми чтобы снять')}`
+            : t('Mark as uploaded to Pinterest','Отметить как загружено в Pinterest')}
           className={`absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold transition-all ${
             pExported
               ? 'bg-rose-600 text-white opacity-90'
@@ -221,6 +231,7 @@ function Tip({ text, children, width = 'w-52', side = 'top' }) {
 }
 
 function WrongReasonEditor({ layer, onSave }) {
+  const t = useT();
   const [editingRu, setEditingRu] = useState(false);
   const [editingEn, setEditingEn] = useState(false);
   const [valueRu, setValueRu] = useState(layer.wrong_reason || '');
@@ -253,21 +264,21 @@ function WrongReasonEditor({ layer, onSave }) {
         <div className="flex items-center justify-between mb-0.5">
           <span className="text-[9px] text-zinc-500 uppercase tracking-wider">RU</span>
           <button onClick={() => setEditingRu(e => !e)} className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors">
-            {editingRu ? 'cancel' : 'edit'}
+            {editingRu ? t('cancel','отмена') : t('edit','изменить')}
           </button>
         </div>
         {editingRu ? (
           <div className="flex flex-col gap-2">
             <textarea autoFocus value={valueRu} onChange={e => setValueRu(e.target.value)} rows={3}
               className="w-full bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-200 px-2 py-1.5 resize-none focus:outline-none focus:border-zinc-500"
-              placeholder="Explain why this item doesn't belong…" />
+              placeholder={t("Explain why this item doesn't belong…",'Объясни почему этот предмет лишний…')} />
             <button onClick={handleSaveRu} disabled={saving || !valueRu.trim()}
               className="self-end text-xs px-3 py-1 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded disabled:opacity-40">
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('Saving…','Сохраняю…') : t('Save','Сохранить')}
             </button>
           </div>
         ) : (
-          <p className="text-xs text-zinc-400">{valueRu || <span className="italic text-zinc-600">not set</span>}</p>
+          <p className="text-xs text-zinc-400">{valueRu || <span className="italic text-zinc-600">{t('not set','не задано')}</span>}</p>
         )}
       </div>
 
@@ -318,6 +329,7 @@ function getItemCategory(label) {
 }
 
 function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
+  const t = useT();
   const [items, setItems] = useState(null);
   const [adding, setAdding] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
@@ -358,7 +370,7 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
-          <span className="text-sm font-medium text-zinc-200">Pick from library</span>
+          <span className="text-sm font-medium text-zinc-200">{t('Pick from library','Выбрать из загруженных')}</span>
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
         </div>
 
@@ -380,9 +392,9 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
         </div>
 
         <div className="overflow-y-auto p-3 pt-2.5">
-          {!items && <p className="text-xs text-zinc-600 text-center py-6">Loading…</p>}
+          {!items && <p className="text-xs text-zinc-600 text-center py-6">{t('Loading…','Загружаю…')}</p>}
           {items && filtered.length === 0 && (
-            <p className="text-xs text-zinc-600 text-center py-6">No items in this category</p>
+            <p className="text-xs text-zinc-600 text-center py-6">{t('No items in this category','Нет предметов в этой категории')}</p>
           )}
           {filtered.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
@@ -407,6 +419,7 @@ function SvgLibraryPicker({ outfitId, existingUrls, onAdd, onClose }) {
 }
 
 function SvgLayersSection({ outfitId, initialLayers }) {
+  const t = useT();
   const [layers, setLayers] = useState(initialLayers || []);
   const [pending, setPending] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -512,48 +525,48 @@ function SvgLayersSection({ outfitId, initialLayers }) {
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-          SVG layers ({layers.length})
+          {t('SVG layers','SVG-слои')} ({layers.length})
         </span>
         <div className="flex items-center gap-3">
           {layers.filter(l => l.label).length >= 2 && (
             <>
-              <Tip side="top" width="w-52" text="Claude translates item names to EN — for the English game version">
+              <Tip side="top" width="w-52" text={t('Claude translates item names to EN — for the English game version','Claude переводит названия предметов на EN — для английской версии игры')}>
                 <button
                   onClick={handleTranslateLabels}
                   disabled={translating}
                   className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
                 >
                   {translating ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
-                  {translating ? 'Translating…' : 'Translate'}
+                  {translating ? t('Translating…','Перевожу…') : t('Translate','Перевести')}
                 </button>
               </Tip>
-              <Tip side="top" width="w-60" text="Claude looks at the outfit sketch and finds the item that doesn't belong semiotically — by silhouette, detail or style. Result can be corrected manually">
+              <Tip side="top" width="w-60" text={t('Claude finds the item that doesn\'t belong semiotically — by silhouette, detail or style. Result can be corrected manually','Claude смотрит на эскиз и определяет, какой предмет из списка семиотически не вписывается. Результат можно исправить вручную')}>
                 <button
                   onClick={handleAnalyze}
                   disabled={analyzing}
                   className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
                 >
                   {analyzing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  {analyzing ? 'Analyzing…' : 'Find odd one'}
+                  {analyzing ? t('Analyzing…','Анализирую…') : t('Find odd one','Найти лишний')}
                 </button>
               </Tip>
             </>
           )}
-          <Tip text="Pick an SVG from items already uploaded for other outfits — no need to re-upload">
+          <Tip text={t('Pick an SVG from items already uploaded for other outfits — no need to re-upload','Выбрать SVG из уже загруженных предметов других образов — без повторной загрузки файла')}>
             <button
               onClick={() => setShowLibrary(true)}
               className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
             >
-              <LayoutGrid size={12} /> Pick
+              <LayoutGrid size={12} /> {t('Pick','Выбрать')}
             </button>
           </Tip>
-          <Tip text="Upload a new SVG item file from disk">
+          <Tip text={t('Upload a new SVG item file from disk','Загрузить новый SVG-файл предмета с диска')}>
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            <Upload size={12} /> Upload
+            <Upload size={12} /> {t('Upload','Загрузить')}
           </button>
           </Tip>
         </div>
@@ -572,7 +585,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
       {/* Pending files — label before upload */}
       {pending.length > 0 && (
         <div className="mb-4 bg-zinc-800/50 rounded-xl p-3 space-y-2 border border-zinc-700">
-          <p className="text-[11px] text-zinc-400 mb-2">Name each item before uploading:</p>
+          <p className="text-[11px] text-zinc-400 mb-2">{t('Name each item before uploading:','Назови каждый предмет перед загрузкой:')}</p>
           {pending.map((p, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-600 w-4 shrink-0">{i + 1}</span>
@@ -580,7 +593,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
               <input
                 value={p.label}
                 onChange={(e) => setPending((prev) => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
-                placeholder="dress, shoes, leggings…"
+                placeholder={t('dress, shoes, leggings…','платье, обувь, леггинсы…')}
                 className="flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-white placeholder-zinc-600 outline-none focus:border-zinc-400"
               />
             </div>
@@ -591,16 +604,16 @@ function SvgLayersSection({ outfitId, initialLayers }) {
               disabled={uploading}
               className="flex items-center gap-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded transition-colors disabled:opacity-50"
             >
-              {uploading ? <><Loader2 size={11} className="animate-spin" /> Uploading…</> : `Upload ${pending.length} file${pending.length > 1 ? 's' : ''}`}
+              {uploading ? <><Loader2 size={11} className="animate-spin" /> {t('Uploading…','Загружаю…')}</> : `${t('Upload','Загрузить')} ${pending.length} ${t(pending.length > 1 ? 'files' : 'file', pending.length > 1 ? 'файла' : 'файл')}`}
             </button>
-            <button onClick={() => setPending([])} className="text-xs text-zinc-500 hover:text-zinc-300 px-2">cancel</button>
+            <button onClick={() => setPending([])} className="text-xs text-zinc-500 hover:text-zinc-300 px-2">{t('cancel','отмена')}</button>
           </div>
         </div>
       )}
 
       {/* Uploaded layers */}
       {layers.length === 0 && pending.length === 0 ? (
-        <p className="text-xs text-zinc-600 italic">No SVG layers — upload clothing item files</p>
+        <p className="text-xs text-zinc-600 italic">{t('No SVG layers — upload clothing item files','Нет SVG-слоёв — загрузи файлы предметов одежды')}</p>
       ) : layers.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {layers.map((layer) => (
@@ -621,19 +634,19 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   side="top"
                   width="w-56"
                   text={layer.wrong_source === 'ai'
-                    ? 'Marked by AI — Claude analyzed the outfit sketch and flagged this item as semantically mismatched'
-                    : 'Marked manually — item was intentionally added or selected as a trap for the game mechanic'}
+                    ? t('Marked by AI — Claude analyzed the outfit sketch and flagged this item as semantically mismatched','Помечено ИИ — Claude проанализировал эскиз и определил этот предмет как семиотически чужеродный')
+                    : t('Marked manually — item was intentionally added or selected as a trap for the game mechanic','Помечено вручную — предмет специально загружен или выбран как ловушка для игровой механики')}
                 >
                   <span className={`absolute bottom-1 left-1 text-[8px] font-medium px-1 py-0.5 rounded leading-none cursor-default ${
                     layer.wrong_source === 'ai'
                       ? 'bg-violet-900/80 text-violet-300'
                       : 'bg-amber-900/80 text-amber-300'
                   }`}>
-                    {layer.wrong_source === 'ai' ? 'AI' : 'manual'}
+                    {layer.wrong_source === 'ai' ? t('AI','ИИ') : t('manual','вручную')}
                   </span>
                 </Tip>
               )}
-              <Tip text={layer.is_wrong ? 'Remove odd mark — item returns to the outfit' : 'Mark as odd — this item becomes the target in the game mechanic'}>
+              <Tip text={layer.is_wrong ? t('Remove odd mark — item returns to the outfit','Снять метку лишнего — предмет вернётся в состав образа') : t('Mark as odd — this item becomes the target in the game mechanic','Отметить как лишний — этот предмет станет целью в игровой механике')}>
                 <button onClick={() => handleToggleWrong(layer)}>
                   <img src={layer.svg_url} alt={layer.label} className={`w-14 h-16 object-contain ${layer.is_wrong ? 'opacity-50' : ''}`} />
                 </button>
@@ -652,7 +665,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   <button
                     onClick={() => { setEditingId(layer.id); setEditLabel(layer.label); }}
                     className="w-full text-[10px] text-zinc-400 hover:text-zinc-200 text-center truncate transition-colors"
-                    title={layer.label || 'Click to add a label'}
+                    title={layer.label || t('Click to add a label','Нажми чтобы добавить название')}
                   >
                     {layer.label || '—'}
                   </button>
@@ -670,7 +683,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
                   <button
                     onClick={() => { setEditingEnId(layer.id); setEditLabelEn(layer.label_en || ''); }}
                     className="w-full text-[9px] text-blue-500 hover:text-blue-300 text-center truncate transition-colors"
-                    title="EN: click to edit"
+                    title={t('EN: click to edit','EN: нажми чтобы редактировать')}
                   >
                     {layer.label_en || <span className="opacity-40">EN</span>}
                   </button>
@@ -698,6 +711,7 @@ function SvgLayersSection({ outfitId, initialLayers }) {
 }
 
 function RendersSection({ outfitId, initialRenders }) {
+  const t = useT();
   const [renders, setRenders] = useState(initialRenders || []);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -744,7 +758,7 @@ function RendersSection({ outfitId, initialRenders }) {
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-          Renders ({renders.length})
+          {t('Renders','Рендеры')} ({renders.length})
         </span>
         <div className="flex items-center gap-3">
           {unanalyzed > 0 && (
@@ -752,7 +766,7 @@ function RendersSection({ outfitId, initialRenders }) {
               onClick={handleAnalyzeAll}
               className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
             >
-              <Sparkles size={11} /> Analyze all ({unanalyzed})
+              <Sparkles size={11} /> {t('Analyze all','Анализ всех')} ({unanalyzed})
             </button>
           )}
           <button
@@ -760,14 +774,14 @@ function RendersSection({ outfitId, initialRenders }) {
             disabled={uploading}
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
           >
-            <ImagePlus size={12} /> {uploading ? 'Uploading…' : 'Add'}
+            <ImagePlus size={12} /> {uploading ? t('Uploading…','Загружаю…') : t('Add','Добавить')}
           </button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => handleUpload(e.target.files)} />
       </div>
       {renders.length === 0 ? (
-        <p className="text-xs text-zinc-600 italic">No renders</p>
+        <p className="text-xs text-zinc-600 italic">{t('No renders','Нет рендеров')}</p>
       ) : (
         <div className="flex flex-wrap gap-3">
           {renders.map((r) => (
@@ -782,6 +796,7 @@ function RendersSection({ outfitId, initialRenders }) {
 }
 
 function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported }) {
+  const t = useT();
   const [items, setItems] = useState(null); // null = loading
   const [selected, setSelected] = useState(new Set());
   const [exporting, setExporting] = useState(false);
@@ -888,13 +903,13 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
           <div>
             <p className="text-sm font-medium text-zinc-100">
-              Pinterest Export · {lang.toUpperCase()}
-              {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">new only</span>}
-              {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">AI renders</span>}
+              {t('Pinterest Export','Экспорт Pinterest')} · {lang.toUpperCase()}
+              {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">{t('new only','только новые')}</span>}
+              {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">{t('AI renders','ИИ рендеры')}</span>}
             </p>
             {items && (
               <p className="text-xs text-zinc-500 mt-0.5">
-                {selected.size} of {items.length} selected
+                {selected.size} {t('of','из')} {items.length} {t('selected','выбрано')}
               </p>
             )}
           </div>
@@ -905,17 +920,17 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
         <div className="overflow-y-auto flex-1 px-4 py-3">
           {!items && (
             <div className="flex items-center justify-center py-16 text-zinc-600">
-              <Loader2 size={20} className="animate-spin mr-2" /> Loading list…
+              <Loader2 size={20} className="animate-spin mr-2" /> {t('Loading list…','Загружаю список…')}
             </div>
           )}
 
           {items?.length === 0 && (
             <div className="text-center py-16 text-zinc-600">
-              <p className="text-sm">No {rendersOnly ? 'renders' : 'outfits'} to export.</p>
+              <p className="text-sm">{t(rendersOnly ? 'No renders to export.' : 'No outfits to export.', rendersOnly ? 'Нет рендеров для экспорта.' : 'Нет образов для экспорта.')}</p>
               <p className="text-xs mt-1">
                 {rendersOnly
-                  ? 'All AI renders are already marked as uploaded to Pinterest, or no renders exist yet.'
-                  : `All ready outfits are already marked as uploaded to Pinterest ${lang.toUpperCase()}.`}
+                  : t('All AI renders are already marked as uploaded to Pinterest, or no renders exist yet.','Все ИИ рендеры уже отмечены как загруженные в Pinterest. Или рендеры ещё не загружены.')
+                  : t(`All ready outfits are already marked as uploaded to Pinterest ${lang.toUpperCase()}.`,`Все готовые образы уже отмечены как загруженные в Pinterest ${lang.toUpperCase()}.`)}
               </p>
             </div>
           )}
@@ -930,7 +945,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                   onChange={toggleAll}
                   className="accent-rose-500"
                 />
-                {selected.size === items.length ? 'Deselect all' : 'Select all'}
+                {selected.size === items.length ? t('Deselect all','Снять все') : t('Select all','Выбрать все')}
               </label>
 
               <div className="space-y-1">
@@ -974,7 +989,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                           </div>
                         ) : (
                           <div className="w-10 h-12 rounded-lg bg-zinc-800 border border-dashed border-zinc-700 flex items-center justify-center">
-                            <span className="text-[9px] text-zinc-600 text-center leading-tight px-0.5">no render</span>
+                            <span className="text-[9px] text-zinc-600 text-center leading-tight px-0.5">{t('no render','нет рендера')}</span>
                           </div>
                         )}
                       </div>
@@ -997,9 +1012,9 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             {/* Board selector for direct posting */}
             {rendersOnly && boards !== null && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500 shrink-0">Board:</span>
+                <span className="text-xs text-zinc-500 shrink-0">{t('Board:','Доска:')}</span>
                 {boards.length === 0 ? (
-                  <span className="text-xs text-zinc-600">No boards · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">Authorize</a></span>
+                  <span className="text-xs text-zinc-600">{t('No boards','Нет досок')} · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">{t('Authorize','Авторизоваться')}</a></span>
                 ) : (
                   <select
                     value={boardId}
@@ -1018,18 +1033,18 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             {postProgress && (
               <div className={`text-xs px-3 py-2 rounded-lg ${postProgress.failed ? 'bg-amber-900/30 text-amber-300' : 'bg-emerald-900/30 text-emerald-300'}`}>
                 {posting
-                  ? `Posting… ${postProgress.done}/${postProgress.total}`
-                  : `Posted: ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · errors: ${postProgress.failed}` : ' ✓'}`}
+                  : `${t('Posting…','Публикую…')} ${postProgress.done}/${postProgress.total}`
+                  : `${t('Posted:','Опубликовано:')} ${postProgress.done}/${postProgress.total}${postProgress.failed ? ` · ${t('errors:','ошибок:')} ${postProgress.failed}` : ' ✓'}`}
               </div>
             )}
 
             <div className="flex items-center justify-between">
               <p className="text-xs text-zinc-600">
-                {rendersOnly ? 'Renders will be marked P after posting' : `Outfits will be marked P·${lang.toUpperCase()}`}
+                {rendersOnly ? t('Renders will be marked P after posting','Рендеры получат метку P после публикации') : t(`Outfits will be marked P·${lang.toUpperCase()}`,`Образы получат метку P·${lang.toUpperCase()}`)}
               </p>
               <div className="flex gap-2">
                 <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
-                  Cancel
+                  {t('Cancel','Отмена')}
                 </button>
                 <button
                   onClick={handleExport}
@@ -1037,7 +1052,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                   className="flex items-center gap-1.5 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
                 >
                   <Upload size={12} />
-                  {exporting ? 'Preparing…' : `CSV (${selected.size})`}
+                  {exporting ? t('Preparing…','Готовлю…') : `CSV (${selected.size})`}
                 </button>
                 {rendersOnly && boards?.length > 0 && (
                   <button
@@ -1046,7 +1061,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                     className="flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
                   >
                     <Upload size={12} />
-                    {posting ? `Posting…` : `Post (${selected.size})`}
+                    {posting ? t('Posting…','Публикую…') : `${t('Post','Опубликовать')} (${selected.size})`}
                   </button>
                 )}
               </div>
@@ -1059,6 +1074,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
 }
 
 function MechanicScreenshots({ mechanicKey }) {
+  const t = useT();
   const { data, mutate } = useSWR('/api/admin/mechanic-screenshots', adminFetcher);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -1100,20 +1116,20 @@ function MechanicScreenshots({ mechanicKey }) {
       )}
 
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Screenshots</span>
+        <span className="text-[11px] text-zinc-600 uppercase tracking-wider">{t('Screenshots','Скриншоты')}</span>
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
           className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
         >
-          <ImagePlus size={11} /> {uploading ? 'Uploading…' : 'Add'}
+          <ImagePlus size={11} /> {uploading ? t('Uploading…','Загружаю…') : t('Add','Добавить')}
         </button>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => handleUpload(e.target.files)} />
       </div>
 
       {shots.length === 0 && !uploading && (
-        <p className="text-[11px] text-zinc-700 italic">No screenshots yet — click Add</p>
+        <p className="text-[11px] text-zinc-700 italic">{t('No screenshots yet — click Add','Скриншотов пока нет — нажми «Добавить»')}</p>
       )}
 
       {shots.length > 0 && (
@@ -1141,6 +1157,7 @@ function MechanicScreenshots({ mechanicKey }) {
 }
 
 function MechanicsBoard({ outfits }) {
+  const t = useT();
   const total = outfits?.length ?? 0;
   const readyRu = outfits?.filter((o) => o.translations?.ru?.status === 'ready').length ?? 0;
   const withVisual = outfits?.filter((o) => o.svg_layers?.some((l) => l.is_wrong)).length ?? 0;
@@ -1151,41 +1168,41 @@ function MechanicsBoard({ outfits }) {
       num: '01',
       name: 'Word Rounds',
       color: 'zinc',
-      status: `${readyRu} of ${total} outfits`,
-      trigger: 'Automatically when RU status = ready',
-      description: '5 sequential rounds by semiotic layer of the outfit. Each round has 4 words — one doesn\'t belong. The player finds it.',
+      status: `${readyRu} ${t('of','из')} ${total} ${t('outfits','образов')}`,
+      trigger: t('Automatically when RU status = ready','Автоматически когда статус RU = ready'),
+      description: t('5 sequential rounds by semiotic layer of the outfit. Each round has 4 words — one doesn\'t belong. The player finds it.','5 последовательных раундов по семиотическим слоям образа. В каждом — 4 слова, одно лишнее. Игрок находит его.'),
       rounds: [
-        { name: 'Form', desc: 'Silhouette and construction — trapeze, sheath, puff sleeves, pleats' },
-        { name: 'Details', desc: 'Decorative elements, hardware, trim' },
-        { name: 'Color', desc: 'Color semantics of the outfit' },
-        { name: 'Meaning', desc: 'Archetype and narrative — doll-like, power, romantic' },
-        { name: 'Associations', desc: 'Cultural and contextual codes' },
+        { name: t('Form','Форма'), desc: t('Silhouette and construction — trapeze, sheath, puff sleeves, pleats','Силуэт и конструкция — трапеция, футляр, буфы, складки') },
+        { name: t('Details','Детали'), desc: t('Decorative elements, hardware, trim','Декоративные элементы, фурнитура, отделка') },
+        { name: t('Color','Цвет'), desc: t('Color semantics of the outfit','Цветовая семантика образа') },
+        { name: t('Meaning','Смысл'), desc: t('Archetype and narrative — doll-like, power, romantic','Архетип и нарратив — doll-like, power, romantic') },
+        { name: t('Associations','Ассоциации'), desc: t('Cultural and contextual codes','Культурные и контекстуальные коды') },
       ],
     },
     {
       num: '02',
       name: 'Color Swatches',
       color: 'amber',
-      status: `All outfits with a «Color» round`,
-      trigger: 'Automatically in rounds with theme = "цвет" / "color"',
-      description: 'In the color round, each word option gets a colored circle next to it. A visual anchor to match color names with actual shades.',
+      status: t('All outfits with a «Color» round','Все образы с раундом «Цвет»'),
+      trigger: t('Automatically in rounds with theme = "цвет" / "color"','Автоматически в раунде с theme = "цвет" / "color"'),
+      description: t('In the color round, each word option gets a colored circle next to it. A visual anchor to match color names with actual shades.','В раунде цвета рядом с каждым словом-вариантом появляется цветной кружок. Визуальный якорь помогает соотнести название цвета с реальным оттенком.'),
       rounds: [
-        { name: 'Dictionary', desc: '17 RU colors + 25 EN → HEX (beige, graphite, anthracite, ivory, taupe…)' },
-        { name: 'Fallback', desc: 'If color not in dictionary — swatch hidden, word shown as normal' },
+        { name: t('Dictionary','Словарь'), desc: '17 RU + 25 EN → HEX (beige, graphite, ivory, taupe…)' },
+        { name: 'Fallback', desc: t('If color not in dictionary — swatch hidden, word shown as normal','Если цвет не в словаре — свотч не показывается, слово выводится как обычно') },
       ],
     },
     {
       num: '03',
       name: 'Visual Level',
       color: 'violet',
-      status: `${withVisual} of ${total} outfits`,
-      trigger: `When outfit has SVG layers and one is marked is_wrong (currently ${withSvg} outfits with SVG)`,
-      description: 'First level before word rounds. Shows clothing item cards (SVG). One item doesn\'t belong. Player taps it to remove from the outfit.',
+      status: `${withVisual} ${t('of','из')} ${total} ${t('outfits','образов')}`,
+      trigger: `${t('When outfit has SVG layers and one is marked is_wrong (currently','Когда у образа есть SVG-слои и один отмечен is_wrong (сейчас')} ${withSvg} ${t('outfits with SVG)','образов с SVG)')}`,
+      description: t('First level before word rounds. Shows clothing item cards (SVG). One item doesn\'t belong. Player taps it to remove from the outfit.','Первый уровень перед словесными раундами. Показывает карточки предметов одежды (SVG). Один предмет — лишний. Игрок тапает его чтобы убрать из образа.'),
       rounds: [
-        { name: 'Correct tap', desc: 'Card flies out with animation → explanation appears → button to proceed to rounds' },
-        { name: 'Wrong tap', desc: 'Card shakes → try again' },
-        { name: 'Data', desc: 'SVG layers with labels + is_wrong: true on the odd item + wrong_reason (from Claude analysis or manual)' },
-        { name: 'Preparation', desc: 'Upload SVG items → click «Find odd one» or click a card to mark manually' },
+        { name: t('Correct tap','Правильный тап'), desc: t('Card flies out with animation → explanation appears → button to proceed to rounds','Карточка вылетает с анимацией → появляется объяснение почему лишний → кнопка перехода к раундам') },
+        { name: t('Wrong tap','Неправильный тап'), desc: t('Card shakes → try again','Карточка трясётся → попробуй снова') },
+        { name: t('Data','Данные'), desc: 'SVG layers + is_wrong: true + wrong_reason (Claude / manual)' },
+        { name: t('Preparation','Подготовка'), desc: t('Upload SVG items → click «Find odd one» or click a card to mark manually','Загрузи SVG предметов → кнопка «Найти лишний» или клик по карточке для ручной пометки') },
       ],
     },
   ];
@@ -1199,8 +1216,8 @@ function MechanicsBoard({ outfits }) {
   return (
     <div className="space-y-6">
       <div className="mb-2">
-        <h2 className="text-lg font-medium text-zinc-300 mb-1">Game Mechanics</h2>
-        <p className="text-xs text-zinc-600">What is implemented and how it activates</p>
+        <h2 className="text-lg font-medium text-zinc-300 mb-1">{t('Game Mechanics','Игровые механики')}</h2>
+        <p className="text-xs text-zinc-600">{t('What is implemented and how it activates','Что реализовано в игре и как включается')}</p>
       </div>
 
       {MECHANICS.map((m) => {
@@ -1238,6 +1255,7 @@ function MechanicsBoard({ outfits }) {
 }
 
 function CoverageBoard() {
+  const t = useT();
   const { data, isLoading } = useSWR('/api/admin/coverage', adminFetcher);
 
   const byAesthetic = {};
@@ -1257,23 +1275,18 @@ function CoverageBoard() {
         <div className="flex items-start gap-3">
           <LayoutGrid size={18} className="text-violet-400 shrink-0 mt-0.5" />
           <div className="space-y-2 text-sm">
-            <p className="text-zinc-200 font-medium">Coverage — trending aesthetic coverage</p>
+            <p className="text-zinc-200 font-medium">{t('Coverage — trending aesthetic coverage','Coverage — покрытие трендовых эстетик')}</p>
             <p className="text-zinc-400 leading-relaxed">
-              Each AI render is analyzed by Claude Vision and assigned to one of 12 trending Pinterest categories.
-              This section shows which aesthetics are already covered and where the gaps are — those need more content.
+              {t('Each AI render is analyzed by Claude Vision and assigned to one of 12 trending Pinterest categories. This section shows which aesthetics are already covered and where the gaps are — those need more content.','Каждый ИИ рендер анализируется Claude Vision и относится к одной из 12 трендовых категорий Pinterest. Этот раздел показывает, какие эстетики уже охвачены контентом, а где дыры — туда нужно досъёмить.')}
             </p>
             <div className="pt-1 space-y-1 text-zinc-500 text-xs leading-relaxed">
               <p>
-                <span className="text-zinc-300">Why this matters for Pinterest:</span>{' '}
-                Pinterest is a visual content search engine. Users search by these exact categories:
-                "Gala & Formal Dresses", "Streetwear Fashion", "Red Carpet Evening Gowns" etc.
-                The wider the aesthetic coverage — the more organic discovery entry points for FFE.
+                <span className="text-zinc-300">{t('Why this matters for Pinterest:','Зачем это нужно для Pinterest:')}</span>{' '}
+                {t('Pinterest is a visual content search engine. Users search by these exact categories: "Gala & Formal Dresses", "Streetwear Fashion", "Red Carpet Evening Gowns" etc. The wider the aesthetic coverage — the more organic discovery entry points for FFE.','Pinterest — поисковик визуального контента. Пользователи ищут именно по этим категориям: «Gala & Formal Dresses», «Streetwear Fashion», «Red Carpet Evening Gowns» и т.д. Чем шире покрытие эстетик — тем больше точек входа в аккаунт FFE из органического поиска.')}
               </p>
               <p>
-                <span className="text-zinc-300">How to use:</span>{' '}
-                Find empty or low rows → generate renders in that aesthetic →
-                upload to the outfit card → click "Analyze" → render appears in the right row here.
-                Then export Pinterest CSV with those renders.
+                <span className="text-zinc-300">{t('How to use:','Как использовать:')}</span>{' '}
+                {t('Find empty or low rows → generate renders in that aesthetic → upload to the outfit card → click "Analyze" → render appears in the right row here. Then export Pinterest CSV with those renders.','Смотришь какие строки пустые или с малым числом → идёшь снимать рендеры именно в этой эстетике → загружаешь в карточку образа → запускаешь «Анализ» → рендер попадает в нужную строку здесь. Далее экспортируешь Pinterest CSV с этими рендерами.')}
               </p>
             </div>
           </div>
@@ -1289,13 +1302,13 @@ function CoverageBoard() {
       {!isLoading && total === 0 && (
         <div className="text-center py-16 text-zinc-600">
           <Sparkles size={32} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No analyzed renders.</p>
-          <p className="text-xs mt-1">Open an outfit card → hover over a render → click Analyze</p>
+          <p className="text-sm">{t('No analyzed renders.','Нет проанализированных рендеров.')}</p>
+          <p className="text-xs mt-1">{t('Open an outfit card → hover over a render → click Analyze','Откройте карточку образа → наведите на рендер → нажмите «Анализ»')}</p>
         </div>
       )}
 
       {!isLoading && total > 0 && (<>
-      <p className="text-xs text-zinc-600 mb-4">{total} renders analyzed</p>
+      <p className="text-xs text-zinc-600 mb-4">{total} {t('renders analyzed','рендеров проанализировано')}</p>
       <div className="space-y-2">
         {AESTHETICS.map((aesthetic) => {
           const primary = (byAesthetic[aesthetic] || []).filter((r) => r.rank === 0);
@@ -1331,6 +1344,7 @@ function CoverageBoard() {
 }
 
 function RendersGallery({ outfits, onMutate }) {
+  const t = useT();
   const [localRenders, setLocalRenders] = useState(() =>
     (outfits || []).flatMap((o) => (o.renders || []).map((r) => ({ ...r, outfit: o })))
   );
@@ -1456,8 +1470,8 @@ function RendersGallery({ outfits, onMutate }) {
     return (
       <div className="text-center py-24 text-zinc-600">
         <ImagePlus size={40} className="mx-auto mb-4 opacity-20" />
-        <p className="text-sm">No renders uploaded.</p>
-        <p className="text-xs mt-1">Open an outfit card and upload AI renders.</p>
+        <p className="text-sm">{t('No renders uploaded.','Нет загруженных рендеров.')}</p>
+        <p className="text-xs mt-1">{t('Open an outfit card and upload AI renders.','Откройте карточку образа и загрузите ИИ рендеры.')}</p>
       </div>
     );
   }
@@ -1465,21 +1479,21 @@ function RendersGallery({ outfits, onMutate }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <h2 className="text-lg font-medium text-zinc-300">AI Renders</h2>
-        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} total</button>
-        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} in Pinterest</button>
-        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} not uploaded</button>
+        <h2 className="text-lg font-medium text-zinc-300">{t('AI Renders','ИИ рендеры')}</h2>
+        <button onClick={() => setFilter('all')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{localRenders.length} {t('total','всего')}</button>
+        <button onClick={() => setFilter('pinterest')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'pinterest' ? 'border-rose-600 text-rose-300 bg-rose-950' : 'border-zinc-700 text-rose-500 hover:text-rose-400'}`}>{pExported} {t('in Pinterest','в Pinterest')}</button>
+        <button onClick={() => setFilter('new')} className={`text-sm px-2.5 py-0.5 rounded-full border transition-colors ${filter === 'new' ? 'border-violet-600 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}>{notUploaded} {t('not uploaded','не загружено')}</button>
       </div>
 
       {/* Pinterest sync bar */}
       <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-900 rounded-xl border border-zinc-800 flex-wrap">
         <span className="text-[11px] text-zinc-500 shrink-0">Pinterest</span>
-        <span className="text-[11px] text-zinc-600">{withPinId} pins linked</span>
+        <span className="text-[11px] text-zinc-600">{withPinId} {t('pins linked','пинов связано')}</span>
         <div className="flex-1" />
         <Tip text="Upload Pinterest HTML archive (pins/0001.html folder) — automatically links pins to outfits and renders" width="w-72">
           <label className={`flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 transition-colors cursor-pointer ${syncing ? 'opacity-40 pointer-events-none' : ''}`}>
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-            Upload Pinterest archive
+            {t('Upload Pinterest archive','Загрузить архив Pinterest')}
             <input type="file" accept=".html" className="hidden" onChange={handleArchiveImport} disabled={syncing} />
           </label>
         </Tip>
@@ -1487,15 +1501,16 @@ function RendersGallery({ outfits, onMutate }) {
           <Tip text="Refresh impressions, clicks and saves data for the last 90 days" width="w-52">
             <button onClick={handleFetchAnalytics} disabled={syncing} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40">
               {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-              Refresh analytics
+              {t('Refresh analytics','Обновить аналитику')}
             </button>
           </Tip>
         )}
         {syncResult && (
           <span className="text-[11px] text-emerald-400">
             {syncResult.sketch_updated !== undefined
-              ? `✓ sketches: ${syncResult.sketch_updated}, renders: ${syncResult.render_updated}`
-              : `✓ ${syncResult.matched} of ${syncResult.total_pins} linked`}
+              : syncResult.sketch_updated !== undefined
+              ? `✓ ${t('sketches:','эскизы:')} ${syncResult.sketch_updated}, ${t('renders:','рендеры:')} ${syncResult.render_updated}`
+              : `✓ ${syncResult.matched} ${t('of','из')} ${syncResult.total_pins} ${t('linked','привязано')}`}
           </span>
         )}
       </div>
@@ -1516,6 +1531,7 @@ function RendersGallery({ outfits, onMutate }) {
 }
 
 function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMark }) {
+  const t = useT();
   const [analyzing, setAnalyzing] = useState(false);
   const [pExported, setPExported] = useState(render.pinterest_exported_at ?? null);
   const [aesthetics, setAesthetics] = useState(render.aesthetics);
@@ -1617,7 +1633,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="bg-black/70 rounded-xl px-3 py-2 flex items-center gap-2">
               <Loader2 size={14} className="animate-spin text-violet-400" />
-              <span className="text-xs text-zinc-300">Analyzing…</span>
+              <span className="text-xs text-zinc-300">{t('Analyzing…','Анализ…')}</span>
             </div>
           </div>
         ) : (
@@ -1628,9 +1644,9 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
                 ? 'bg-violet-900/80 text-violet-300 opacity-0 group-hover:opacity-100 hover:bg-violet-800'
                 : 'bg-black/70 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-violet-300'
             }`}
-            title={top ? 'Re-analyze' : 'Analyze aesthetics'}
+            title={top ? t('Re-analyze','Переанализировать') : t('Analyze aesthetics','Анализировать эстетику')}
           >
-            <Sparkles size={10} /> {top ? 'Re-run' : 'Analyze'}
+            <Sparkles size={10} /> {top ? t('Re-run','Заново') : t('Analyze','Анализ')}
           </button>
         )}
 
@@ -1681,7 +1697,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
           ))}
         </div>
       ) : (
-        <p className="text-[9px] text-zinc-700 italic px-1">not analyzed</p>
+        <p className="text-[9px] text-zinc-700 italic px-1">{t('not analyzed','без анализа')}</p>
       )}
 
       {/* Model appearance */}
@@ -1695,7 +1711,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               )}
             </>
           ) : (
-            <span className="text-[9px] text-zinc-600">no face</span>
+            <span className="text-[9px] text-zinc-600">{t('no face','без лица')}</span>
           )}
         </div>
       )}
@@ -1713,7 +1729,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               value={pinIdInput}
               onChange={(e) => setPinIdInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSavePinId()}
-              placeholder="pin link…"
+              placeholder={t('sketch pin…','пин эскиза…')}
               className="flex-1 bg-transparent text-[9px] text-zinc-400 placeholder-zinc-700 outline-none min-w-0"
             />
             {pinIdInput && (
@@ -1729,10 +1745,10 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       {stats && (
         <div className="px-1 border-t border-zinc-800 pt-2 grid grid-cols-2 gap-x-2 gap-y-0.5">
           {[
-            { label: 'impressions', value: stats.impressions },
-            { label: 'clicks', value: stats.pin_clicks },
-            { label: 'outbound', value: stats.outbound_clicks },
-            { label: 'saves', value: stats.saves },
+            { label: t('impressions','показы'), value: stats.impressions },
+            { label: t('clicks','клики'), value: stats.pin_clicks },
+            { label: t('outbound','переходы'), value: stats.outbound_clicks },
+            { label: t('saves','сохр.'), value: stats.saves },
           ].map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[9px] text-zinc-600">{label}</span>
@@ -1748,7 +1764,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       )}
       {!stats && render.pinterest_pin_id && (
         <div className="px-1 border-t border-zinc-800 pt-1.5">
-          <p className="text-[9px] text-zinc-700">pin linked · click "Refresh analytics"</p>
+          <p className="text-[9px] text-zinc-700">{t('pin linked · click "Refresh analytics"','пин привязан · нажми «Обновить аналитику»')}</p>
         </div>
       )}
 
@@ -1760,21 +1776,21 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               autoFocus
               value={editTitle}
               onChange={e => setEditTitle(e.target.value)}
-              placeholder="Title (up to 100 chars)"
+              placeholder={t('Title (up to 100 chars)','Title (до 100 символов)')}
               maxLength={100}
               className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400"
             />
             <textarea
               value={editDesc}
               onChange={e => setEditDesc(e.target.value)}
-              placeholder="Description (up to 500 chars)"
+              placeholder={t('Description (up to 500 chars)','Description (до 500 символов)')}
               maxLength={500}
               rows={3}
               className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-400 resize-none"
             />
             <div className="flex gap-2">
-              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">Save</button>
-              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">cancel</button>
+              <button onClick={handleSaveSeo} className="text-[10px] px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 rounded transition-colors">{t('Save','Сохранить')}</button>
+              <button onClick={() => setEditingSeo(false)} className="text-[10px] text-zinc-500 hover:text-zinc-300">{t('cancel','отмена')}</button>
             </div>
           </div>
         ) : pinTitle ? (
@@ -1784,7 +1800,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
               <button
                 onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
                 className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
-              >edit</button>
+              >{t('edit','ред.')}</button>
             </div>
             {pinDesc && <p className="text-[9px] text-zinc-500 leading-snug">{pinDesc}</p>}
             <div className="flex gap-2 pt-0.5">
@@ -1811,6 +1827,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
 }
 
 function TranslateAllSvgLabelsButton({ outfits }) {
+  const t = useT();
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
 
@@ -1833,20 +1850,21 @@ function TranslateAllSvgLabelsButton({ outfits }) {
 
   if (!needsTranslation.length) return null;
   return (
-    <Tip text={`Translate EN SVG item labels for ${needsTranslation.length} outfits`} width="w-56">
+    <Tip text={t(`Translate EN SVG item labels for ${needsTranslation.length} outfits`,`Перевести EN названия SVG-предметов для ${needsTranslation.length} образов`)} width="w-56">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px]">EN</span>}
-        {running ? `Translating… ${done}/${needsTranslation.length}` : `Translate EN all (${needsTranslation.length})`}
+        {running ? `${t('Translating…','Перевожу…')} ${done}/${needsTranslation.length}` : `${t('Translate EN all','Перевести EN все')} (${needsTranslation.length})`}
       </button>
     </Tip>
   );
 }
 
 function GenerateAllTitlesButton({ outfits, onMutate }) {
+  const t = useT();
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
   const untitled = (outfits || []).filter((o) => !o.title);
@@ -1867,20 +1885,21 @@ function GenerateAllTitlesButton({ outfits, onMutate }) {
 
   if (!untitled.length) return null;
   return (
-    <Tip text={`Generate titles for ${untitled.length} untitled outfits`} width="w-52">
+    <Tip text={t(`Generate titles for ${untitled.length} untitled outfits`,`Сгенерировать названия для ${untitled.length} образов без названия`)} width="w-52">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-        {running ? `Titling… ${done}/${untitled.length}` : `Title all (${untitled.length})`}
+        {running ? `${t('Titling…','Называю…')} ${done}/${untitled.length}` : `${t('Title all','Назвать все')} (${untitled.length})`}
       </button>
     </Tip>
   );
 }
 
 function TranslateAllButton({ outfits, onMutate }) {
+  const t = useT();
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
 
@@ -1913,20 +1932,21 @@ function TranslateAllButton({ outfits, onMutate }) {
 
   if (!needsTranslation.length) return null;
   return (
-    <Tip text={`Translate SVG labels, explanations and titles to EN for ${needsTranslation.length} outfits`} width="w-64">
+    <Tip text={t(`Translate SVG labels, explanations and titles to EN for ${needsTranslation.length} outfits`,`Перевести SVG-метки, пояснения и заголовки на EN для ${needsTranslation.length} образов`)} width="w-64">
       <button
         onClick={handleRun}
         disabled={running}
         className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
       >
         {running ? <Loader2 size={11} className="animate-spin" /> : <span className="text-[10px] font-semibold">EN</span>}
-        {running ? `Translating… ${done}/${needsTranslation.length}` : `Translate all (${needsTranslation.length})`}
+        {running ? `${t('Translating…','Перевожу…')} ${done}/${needsTranslation.length}` : `${t('Translate all','Перевести все')} (${needsTranslation.length})`}
       </button>
     </Tip>
   );
 }
 
 function CopyPinDescButton({ outfit }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -1952,14 +1972,15 @@ function CopyPinDescButton({ outfit }) {
     <button
       onClick={handleCopy}
       className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
-      title="Copy Pinterest description"
+      title={t('Copy Pinterest description','Скопировать описание для Pinterest')}
     >
-      {copied ? '✓ copied' : '📋 pin'}
+      {copied ? t('✓ copied','✓ скопировано') : '📋 pin'}
     </button>
   );
 }
 
 function SketchPinField({ outfitId, initialPinId }) {
+  const t = useT();
   const [pinId, setPinId] = useState(initialPinId || '');
   const [input, setInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1983,7 +2004,7 @@ function SketchPinField({ outfitId, initialPinId }) {
 
   if (pinId) return (
     <span className="flex items-center gap-1">
-      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">sketch↗</a>
+      <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">{t('sketch↗','эскиз↗')}</a>
       <button onClick={() => setPinId('')} className="text-[10px] text-zinc-700 hover:text-zinc-400">×</button>
     </span>
   );
@@ -1994,7 +2015,7 @@ function SketchPinField({ outfitId, initialPinId }) {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-        placeholder="sketch pin…"
+        placeholder={t('sketch pin…','пин эскиза…')}
         className="bg-transparent text-[10px] text-zinc-600 placeholder-zinc-800 outline-none w-20"
       />
       {input && <button onClick={handleSave} disabled={saving} className="text-[10px] text-rose-500">{saving ? '…' : '✓'}</button>}
@@ -2003,6 +2024,7 @@ function SketchPinField({ outfitId, initialPinId }) {
 }
 
 function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [editingLang, setEditingLang] = useState(null);
   const [sketchUrl, setSketchUrl] = useState(null);
@@ -2092,7 +2114,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           <button
             onClick={() => sketchFileRef.current?.click()}
             disabled={sketchUploading}
-            title="Replace sketch"
+            title={t('Replace sketch','Заменить эскиз')}
             className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
           >
             {sketchUploading
@@ -2116,13 +2138,13 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               <button
                 onClick={() => setEditingTitle(true)}
                 className="text-sm font-medium text-zinc-200 truncate hover:text-white transition-colors text-left"
-                title="Click to edit title"
+                title={t('Click to edit title','Нажми чтобы изменить название')}
               >
                 {title || <span className="text-zinc-600 font-normal">{outfit.id.slice(0, 8)}</span>}
               </button>
             )}
             {!editingTitle && (
-              <Tip text={title ? 'Generate new title with AI' : 'Generate title with AI'} width="w-44">
+              <Tip text={title ? t('Generate new title with AI','Сгенерировать новое название через ИИ') : t('Generate title with AI','Придумать название через ИИ')} width="w-44">
                 <button
                   onClick={handleGenerateTitle}
                   disabled={generatingTitle}
@@ -2154,7 +2176,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               </button>
             )}
             {!editingTitleEn && (
-              <Tip text="Generate EN title with AI" width="w-44">
+              <Tip text={t('Generate EN title with AI','Сгенерировать EN название через ИИ')} width="w-44">
                 <button
                   onClick={handleGenerateTitleEn}
                   disabled={generatingTitleEn}
@@ -2166,7 +2188,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             )}
           </div>
           <div className="flex items-center gap-1 mt-0.5 mb-0.5 flex-wrap">
-            <span className="text-[10px] text-zinc-600 font-mono select-all" title="outfit system ID">{outfit.id.slice(0, 8)}</span>
+            <span className="text-[10px] text-zinc-600 font-mono select-all" title={t('outfit system ID','системный ID образа')}>{outfit.id.slice(0, 8)}</span>
             <CopyPinDescButton outfit={outfit} />
             <SketchPinField outfitId={outfit.id} initialPinId={outfit.sketch_pin_id} />
             {outfit.sketch_pin_analytics && (
@@ -2193,7 +2215,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
               );
             })}
             {outfit.renders?.length > 0 && (
-              <span className="flex items-center gap-1 text-xs text-zinc-500" title="AI renders">
+              <span className="flex items-center gap-1 text-xs text-zinc-500" title={t('AI renders','ИИ рендеры')}>
                 <ImagePlus size={11} className="text-zinc-600" />
                 {outfit.renders.length}
               </span>
@@ -2205,8 +2227,8 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                   key={l}
                   onClick={() => onPinterestMark(outfit.id, l, !date)}
                   title={date
-                    ? `In Pinterest ${l.toUpperCase()} since ${new Date(date).toLocaleDateString('en')} — click to remove mark`
-                    : `Mark as uploaded to Pinterest ${l.toUpperCase()}`}
+                    ? `In Pinterest ${l.toUpperCase()} ${t('since','с')} ${new Date(date).toLocaleDateString(uiLang === 'ru' ? 'ru' : 'en')} — ${t('click to remove mark','нажми чтобы снять метку')}`
+                    : `${t('Mark as uploaded to Pinterest','Отметить как загружено в Pinterest')} ${l.toUpperCase()}`}
                   className={`text-[10px] border rounded px-1 py-0.5 leading-none transition-colors ${
                     date
                       ? 'text-rose-400 border-rose-800 hover:bg-rose-950'
@@ -2222,7 +2244,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             <button
               onClick={() => setExpanded((v) => !v)}
               className="p-2 text-zinc-400 hover:text-white transition-colors"
-              title={expanded ? 'Collapse' : 'Expand'}
+              title={expanded ? t('Collapse','Скрыть ряды') : t('Expand','Показать ряды')}
             >
               {expanded ? <ChevronUp size={16} /> : <Eye size={16} />}
             </button>
@@ -2232,7 +2254,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             target="_blank"
             rel="noreferrer"
             className="p-2 text-zinc-400 hover:text-white transition-colors"
-            title="Open"
+            title={t('Open','Открыть')}
           >
             <Edit3 size={16} />
           </a>
@@ -2240,7 +2262,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
             <button
               onClick={() => onRetry(outfit.id)}
               className="p-2 text-zinc-400 hover:text-yellow-400 transition-colors"
-              title="Retry analysis"
+              title={t('Retry analysis','Повторить анализ')}
             >
               <RefreshCw size={16} />
             </button>
@@ -2248,7 +2270,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           <button
             onClick={() => onDelete(outfit.id)}
             className="p-2 text-zinc-400 hover:text-rose-400 transition-colors"
-            title="Delete"
+            title={t('Delete','Удалить')}
           >
             <Trash2 size={16} />
           </button>
@@ -2279,7 +2301,7 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                         onClick={() => setEditingLang(editingLang === lang ? null : lang)}
                         className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                       >
-                        {editingLang === lang ? 'Cancel' : 'Edit JSON'}
+                        {editingLang === lang ? t('Cancel','Отмена') : t('Edit JSON','Редактировать JSON')}
                       </button>
                     </div>
                     {editingLang === lang ? (
@@ -2299,6 +2321,9 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
 }
 
 export default function AdminPage() {
+  const [uiLang, setUiLang] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('ffe_admin_ui_lang') || 'en') : 'en');
+  const toggleUiLang = () => setUiLang(l => { const n = l === 'en' ? 'ru' : 'en'; localStorage.setItem('ffe_admin_ui_lang', n); return n; });
+  const t = (en, ru) => uiLang === 'ru' ? ru : en;
   const [isDragging, setIsDragging] = useState(false);
   const [uploadItems, setUploadItems] = useState([]);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -2380,6 +2405,7 @@ export default function AdminPage() {
   };
 
   return (
+    <UiLangCtx.Provider value={uiLang}>
     <>
       <Head>
         <title>Admin | FFE</title>
@@ -2394,13 +2420,13 @@ export default function AdminPage() {
               onClick={() => setView('outfits')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'outfits' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <Upload size={13} /> Outfits
+              <Upload size={13} /> {t('Outfits','Образы')}
             </button>
             <button
               onClick={() => setView('renders')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'renders' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <ImagePlus size={13} /> Renders
+              <ImagePlus size={13} /> {t('Renders','Рендеры')}
             </button>
             <button
               onClick={() => setView('coverage')}
@@ -2412,17 +2438,17 @@ export default function AdminPage() {
               onClick={() => setView('mechanics')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${view === 'mechanics' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
             >
-              <Sparkles size={13} /> Mechanics
+              <Sparkles size={13} /> {t('Mechanics','Механики')}
             </button>
           </div>
-          <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Stats</a>
+          <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">{t('Stats','Статистика')}</a>
           <div className="flex items-center gap-1 flex-wrap">
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: true, rendersOnly: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs rounded-lg transition-colors"
-              title="New outfits (sketches) — EN"
+              title={t('New outfits (sketches) — EN','Новые образы (эскизы) — EN')}
             >
-              <Upload size={12} /> New EN
+              <Upload size={12} /> {t('New EN','Новые EN')}
             </button>
             <button
               onClick={() => setExportModal({ lang: 'ru', onlyNew: true, rendersOnly: false })}
@@ -2434,7 +2460,7 @@ export default function AdminPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
               title="AI renders not uploaded to Pinterest — EN"
             >
-              <ImagePlus size={12} /> Renders EN
+              <ImagePlus size={12} /> {t('Renders EN','Рендеры EN')}
             </button>
             <button
               onClick={() => setExportModal({ lang: 'ru', rendersOnly: true, onlyNew: false })}
@@ -2447,7 +2473,8 @@ export default function AdminPage() {
               title="All ready — EN"
             >All</button>
           </div>
-          <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Gallery</a>
+          <button onClick={toggleUiLang} className="text-xs px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors font-mono">{uiLang === 'en' ? 'RU' : 'EN'}</button>
+          <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">{t('← Gallery','← Галерея')}</a>
         </div>
       </header>
 
@@ -2471,14 +2498,14 @@ export default function AdminPage() {
           }}
         >
           <Upload size={32} className="mx-auto mb-3 text-zinc-500" />
-          <p className="text-zinc-300 mb-1">Drop images here or</p>
-          <p className="text-zinc-600 text-xs mb-3">Multiple files can be uploaded at once</p>
+          <p className="text-zinc-300 mb-1">{t('Drop images here or','Перетащите изображения или')}</p>
+          <p className="text-zinc-600 text-xs mb-3">{t('Multiple files can be uploaded at once','Можно загрузить несколько файлов сразу')}</p>
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploadItems.some((i) => i.status === 'uploading')}
             className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors border border-zinc-700 text-sm disabled:opacity-50"
           >
-            {uploadItems.some((i) => i.status === 'uploading') ? 'Uploading…' : 'Select files'}
+            {uploadItems.some((i) => i.status === 'uploading') ? t('Uploading…','Загружаю…') : t('Select files','Выбрать файлы')}
           </button>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleUpload(e.target.files)} />
         </div>
@@ -2493,10 +2520,10 @@ export default function AdminPage() {
                 {item.status === 'error' && <XCircle size={14} className="text-rose-400 shrink-0" />}
                 <span className="text-zinc-300 truncate flex-1">{item.name}</span>
                 <span className="text-xs shrink-0 text-zinc-500">
-                  {item.status === 'uploading' && 'Uploading…'}
-                  {item.status === 'done' && 'Uploaded'}
-                  {item.status === 'duplicate' && 'Duplicate'}
-                  {item.status === 'error' && 'Error'}
+                  {item.status === 'uploading' && t('Uploading…','Загружаю…')}
+                  {item.status === 'done' && t('Uploaded','Загружено')}
+                  {item.status === 'duplicate' && t('Duplicate','Дубликат')}
+                  {item.status === 'error' && t('Error','Ошибка')}
                 </span>
               </div>
             ))}
@@ -2517,12 +2544,12 @@ export default function AdminPage() {
           return (
             <div className="flex flex-col gap-2 mb-4">
               <div className="flex items-center gap-4 flex-wrap">
-                <h2 className="text-lg font-medium text-zinc-300">Outfits</h2>
+                <h2 className="text-lg font-medium text-zinc-300">{t('Outfits','Образы')}</h2>
                 <div className="flex items-center gap-3 text-sm flex-wrap">
-                  <span className="text-zinc-400">{total} total</span>
-                  <span className="text-emerald-400">{ready} ready</span>
-                  {pending > 0 && <span className="text-zinc-400">{pending} processing</span>}
-                  {error > 0 && <span className="text-rose-400">{error} with error</span>}
+                  <span className="text-zinc-400">{total} {t('total','всего')}</span>
+                  <span className="text-emerald-400">{ready} {t('ready','готово')}</span>
+                  {pending > 0 && <span className="text-zinc-400">{pending} {t('processing','в обработке')}</span>}
+                  {error > 0 && <span className="text-rose-400">{error} {t('with error','с ошибкой')}</span>}
                   <GenerateAllTitlesButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   <TranslateAllButton outfits={data.outfits} onMutate={() => mutate('/api/admin/outfits')} />
                   {dupCount > 0 && (
@@ -2530,7 +2557,7 @@ export default function AdminPage() {
                       onClick={() => setShowDuplicates((v) => !v)}
                       className={`px-2 py-0.5 rounded text-xs border transition-colors ${showDuplicates ? 'border-yellow-500 text-yellow-400 bg-yellow-950' : 'border-zinc-600 text-yellow-500 hover:border-yellow-500'}`}
                     >
-                      {dupCount} duplicates
+                      {dupCount} {t('duplicates','дубликатов')}
                     </button>
                   )}
                 </div>
@@ -2541,38 +2568,38 @@ export default function AdminPage() {
                 <button
                   onClick={() => setPinterestFilter('all')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'all' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >all</button>
+                >{t('all','все')}</button>
                 <button
                   onClick={() => setPinterestFilter('new-en')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-en' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >new EN ({newEnCount})</button>
+                >{t('new EN','новые EN')} ({newEnCount})</button>
                 <button
                   onClick={() => setPinterestFilter('new-ru')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'new-ru' ? 'border-emerald-600 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >new RU ({newRuCount})</button>
+                >{t('new RU','новые RU')} ({newRuCount})</button>
                 <button
                   onClick={() => setPinterestFilter('exported')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${pinterestFilter === 'exported' ? 'border-rose-700 text-rose-300 bg-rose-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >uploaded ({exportedCount})</button>
+                >{t('uploaded','загружено')} ({exportedCount})</button>
                 {/* Sort */}
-                <span className="text-xs text-zinc-600 ml-2">Sort:</span>
+                <span className="text-xs text-zinc-600 ml-2">{t('Sort:','Сортировка:')}</span>
                 <button
                   onClick={() => setSort('date')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'date' ? 'border-zinc-500 text-zinc-200 bg-zinc-800' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >by date</button>
+                >{t('by date','по дате')}</button>
                 <button
                   onClick={() => setSort('renders')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'renders' ? 'border-violet-500 text-violet-300 bg-violet-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >with renders</button>
+                >{t('with renders','с рендерами')}</button>
                 <button
                   onClick={() => setSort(sort === 'svg' ? 'date' : 'svg')}
                   className={`px-2 py-0.5 rounded text-xs border transition-colors ${sort === 'svg' ? 'border-emerald-500 text-emerald-300 bg-emerald-950' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
-                >with SVG</button>
+                >{t('with SVG','с SVG')}</button>
               </div>
             </div>
           );
         })()}
-        {!data?.outfits && <h2 className="text-lg font-medium mb-4 text-zinc-300">Outfits</h2>}
+        {!data?.outfits && <h2 className="text-lg font-medium mb-4 text-zinc-300">{t('Outfits','Образы')}</h2>}
 
         {isLoading && (
           <div className="space-y-3">
@@ -2643,6 +2670,7 @@ export default function AdminPage() {
       />
     )}
     </>
+    </UiLangCtx.Provider>
   );
 }
 
