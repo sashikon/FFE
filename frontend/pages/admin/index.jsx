@@ -2503,11 +2503,11 @@ function SeoAnalyticsBoard() {
                     <span className="text-xs font-medium text-zinc-300 truncate">{r.file_name}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 shrink-0">{reportTypeLabel(r.report_type)}</span>
                     {(r.date_from || r.date_to) && (
-                      <span className="text-[10px] text-zinc-600 shrink-0">{r.date_from} – {r.date_to}</span>
+                      <span className="text-[10px] text-zinc-600 shrink-0">{String(r.date_from).slice(0, 10)} – {String(r.date_to).slice(0, 10)}</span>
                     )}
                   </div>
                   {r.summary && (
-                    <p className="text-[11px] text-zinc-500 leading-relaxed">{typeof r.summary === 'string' ? r.summary : JSON.stringify(r.summary)}</p>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">{typeof r.summary === 'string' ? r.summary : String(r.summary)}</p>
                   )}
                   {r.recommended_keywords && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
