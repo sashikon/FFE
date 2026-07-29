@@ -1328,8 +1328,8 @@ const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 
 // Analyse CSV text with Claude and return structured insights
 async function analyseCsvWithClaude(csvText, fileName) {
-  // Truncate to ~6 KB for the prompt (keep headers + first meaningful rows)
-  const preview = csvText.length > 6000 ? csvText.slice(0, 6000) + '\n... (truncated)' : csvText;
+  // Truncate to ~3 KB — keeps headers + first rows, avoids unescaped quote issues in large CSVs
+  const preview = csvText.length > 3000 ? csvText.slice(0, 3000) + '\n... (truncated)' : csvText;
 
   const prompt = `You are a Pinterest SEO and analytics strategist for a fashion AI game (FFE — Fashion Experience Education). Analyse this Pinterest Analytics CSV export and extract actionable SEO insights.
 
@@ -1339,7 +1339,7 @@ CSV content:
 ${preview}
 \`\`\`
 
-Return ONLY valid JSON with this exact shape:
+CRITICAL: Return ONLY valid JSON. All string values must have internal quotes escaped as \". No unescaped newlines inside strings. No trailing commas. Exact shape:
 {
   "report_type": "audience_insights" | "top_pins" | "overview" | "search_terms" | "unknown",
   "date_from": "YYYY-MM-DD or null",
@@ -1368,7 +1368,18 @@ Guidelines:
   const raw = msg.content[0].text.trim();
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Claude returned no JSON: ' + raw.slice(0, 200));
-  return JSON.parse(match[0]);
+
+  // Try direct parse first; if it fails, sanitise common Claude output issues
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    // Remove control characters and unescaped newlines inside string values
+    const cleaned = match[0]
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')   // control chars
+      .replace(/(?<=":[\s]*"[^"\\]*?)(\r?\n)(?=[^"]*?")/g, ' ') // bare newlines inside strings
+      .replace(/([^\\])"(\s*[:,\]}])/g, '$1"$2');             // stray unescaped quotes before delimiters
+    return JSON.parse(cleaned);
+  }
 }
 
 // Synthesise a combined strategy from all stored report insights
