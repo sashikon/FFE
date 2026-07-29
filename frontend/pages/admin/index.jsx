@@ -2351,6 +2351,7 @@ function SeoAnalyticsBoard() {
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || `HTTP ${res.status}`); }
       const json = await res.json();
       setImportResult(json);
+      if (json.synthesis_error) setImportError(`${t('Report saved, but strategy update failed:','Отчёт сохранён, но стратегия не обновилась:')} ${json.synthesis_error}`);
       mutateData();
     } catch (err) {
       setImportError(err.message);

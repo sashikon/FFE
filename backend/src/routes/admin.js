@@ -1335,27 +1335,28 @@ async function analyseCsvWithClaude(csvText, fileName, lang = 'en') {
     .replace(/\r?\n/g, ' | ') // newlines → pipe separator
     .slice(0, 2500);           // cap at ~2.5 KB
 
-  const langInstruction = lang === 'ru'
-    ? 'summary, strategy_notes, strategy_contribution — на русском, макс 80 символов каждое. Keywords always English.'
-    : 'All text in English, keep values under 80 chars.';
+  const systemPrompt = lang === 'ru'
+    ? 'You output ONLY valid compact JSON. All descriptive fields (summary, strategy_notes, strategy_contribution, opportunities.reason) must be in Russian. Keywords always in English. Every string value max 80 characters. No line breaks inside strings.'
+    : 'You output ONLY valid compact JSON. All text in English. Every string value max 80 characters. No line breaks inside strings.';
 
-  const prompt = `Pinterest SEO analyst for FFE fashion AI game. Analyse CSV. ${langInstruction}
+  const prompt = `Pinterest SEO analyst for FFE fashion AI game. Analyse this CSV export.
 
 File: ${fileName}
 CSV: ${safeCsv}
 
-Return ONLY compact JSON, no line breaks, no quotes inside strings, all text fields max 80 chars:
-{"report_type":"overview","date_from":"2026-01-01","date_to":"2026-01-31","summary":"SHORT summary max 80 chars","audience":[{"interest":"Art","affinity":"high"}],"top_keywords":[{"keyword":"outfit ideas","score":9}],"opportunities":[{"topic":"Topic","reason":"short reason"}],"recommended_keywords":[{"keyword":"phrase","score":8,"reason":"why"}],"strategy_contribution":"SHORT max 80 chars","strategy_notes":"point 1. point 2. point 3."}
+Return ONLY one line of compact JSON matching this shape exactly:
+{"report_type":"overview","date_from":"2026-01-01","date_to":"2026-01-31","summary":"SHORT","audience":[{"interest":"Art","affinity":"high"}],"top_keywords":[{"keyword":"outfit ideas","score":9}],"opportunities":[{"topic":"Topic","reason":"short"}],"recommended_keywords":[{"keyword":"phrase","score":8,"reason":"why"}],"strategy_contribution":"SHORT","strategy_notes":"point 1. point 2."}
 
 Rules:
 - recommended_keywords: 8-12 Pinterest SEO phrases
-- search_terms CSV: extract the actual search terms as keywords score 9-10
-- top_pins CSV: extract title patterns as keywords
-- CRITICAL: every string value must be under 80 characters`;
+- search_terms CSV: the terms ARE the keywords, score 9-10
+- top_pins CSV: extract best title patterns as keywords
+- Every string value under 80 characters, no quotes inside strings`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
+    system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -1394,22 +1395,23 @@ async function synthesiseSeoStrategy(pool, lang = 'en') {
     return `[${i + 1}/${r.report_type}/${r.imported_at?.toISOString?.()?.slice(0, 10)}] ${contrib || summary}`;
   }).join(' || ');
 
-  const langInstruction = lang === 'ru'
-    ? 'Write strategy_notes and opportunities reasons in Russian. Keywords stay in English.'
-    : 'Write all text in English.';
+  const synthesisSystem = lang === 'ru'
+    ? 'You output ONLY valid compact JSON one line. strategy_notes, opportunities.reason — in Russian, max 80 chars each. Keywords in English. prompt_injection in English max 200 chars. No line breaks inside strings, no quotes inside string values.'
+    : 'You output ONLY valid compact JSON one line. All text in English, max 80 chars per string. No line breaks inside strings, no quotes inside string values.';
 
-  const prompt = `Pinterest SEO strategist for FFE (fashion AI game). Synthesise strategy from ${rows.length} analytics reports. ${langInstruction}
+  const prompt = `Pinterest SEO strategist for FFE fashion AI game. Synthesise strategy from ${rows.length} reports.
 
 Reports: ${digests.slice(0, 2000)}
 
-Return ONLY JSON, no quotes inside string values:
-{"top_keywords":[{"keyword":"phrase","score":9,"sources":["type"]}],"audience_affinities":[{"interest":"topic","affinity":"high"}],"opportunities":[{"topic":"topic","reason":"reason"}],"strategy_notes":"bullet 1. bullet 2. bullet 3.","prompt_injection":"Audience: Art lovers, Home Decor fans. Keywords: fashion game, outfit ideas, style quiz. Trending: aesthetic outfits."}
+Return ONLY one line of JSON:
+{"top_keywords":[{"keyword":"phrase","score":9,"sources":["type"]}],"audience_affinities":[{"interest":"topic","affinity":"high"}],"opportunities":[{"topic":"topic","reason":"short reason"}],"strategy_notes":"point 1. point 2. point 3.","prompt_injection":"Audience: Art lovers. Keywords: fashion game, outfit ideas. Trending: aesthetic outfits."}
 
-Rules: top_keywords 15-25 entries sorted by score desc. prompt_injection max 200 chars, no quotes.`;
+top_keywords: 15-25 entries sorted by score desc. prompt_injection max 200 chars.`;
 
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
+    max_tokens: 1500,
+    system: synthesisSystem,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -1476,6 +1478,7 @@ router.post('/pinterest-audience/import', uploadCsv.single('csv'), async (req, r
       }
     } catch (synthErr) {
       console.error('[pinterest-audience] strategy synthesis failed:', synthErr.message);
+      return res.json({ ok: true, id, imported_at, analysis, strategy: null, synthesis_error: synthErr.message });
     }
 
     res.json({ ok: true, id, imported_at, analysis, strategy });
