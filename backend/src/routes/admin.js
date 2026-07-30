@@ -1001,7 +1001,7 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
       'SELECT prompt_injection, top_keywords FROM pinterest_seo_strategy WHERE id = 1'
     );
     const strategyInjection = stratRows[0]?.prompt_injection || null;
-    const topKw = stratRows[0]?.top_keywords ? JSON.parse(stratRows[0].top_keywords) : null;
+    const topKw = stratRows[0]?.top_keywords || null; // JSONB — already parsed by pg driver
     const stratKeywords = topKw ? topKw.slice(0, 8).map(k => k.keyword).join(', ') : null;
 
     const isRu = lang === 'ru';
