@@ -1007,7 +1007,7 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
     const isRu = lang === 'ru';
 
     const prompt = isRu
-      ? `Ты Pinterest SEO-специалист для русской аудитории. Создай title и description для пина.
+      ? `Ты Pinterest SEO-специалист для русской аудитории. Создай два варианта title и description для пина.
 
 Данные об образе:
 - Название: ${outfitTitle || '—'}
@@ -1016,13 +1016,14 @@ router.post('/render/:id/generate-seo', async (req, res, next) => {
 - Ключевые слова образа: ${gameKeywords || '—'}
 
 Правила:
-- Title: 2-6 слов, максимум 100 символов. Пример: «Романтичный образ с буфами»
-- Description: 1-3 предложения, 80-150 символов. Начни с эмоции или визуального образа, заверши призывом или вопросом. Упомяни конкретные элементы.
-- Оба поля — на русском, без хэштегов
+- title: 2-6 слов, максимум 100 символов. Описательный, редакционный стиль. Пример: «Романтичный образ с буфами»
+- title_alt: вопрос или провокационный хук, максимум 100 символов. Пример: «Надели бы это в офис?» или «Когда строгость встречает игривость»
+- description: 1-3 предложения, 80-150 символов. Начни с эмоции или визуального образа, заверши вопросом. Упомяни конкретные элементы.
+- Все поля — на русском, без хэштегов
 - Ориентируйся на запросы: «идеи образов», «что одеть», «стиль», «эстетика одежды»
 
-Верни строго JSON: {"title": "...", "description": "..."}`
-      : `You are a Pinterest SEO specialist. Generate a pin title and description optimized for 2025 Pinterest search.
+Верни строго JSON: {"title": "...", "title_alt": "...", "description": "..."}`
+      : `You are a Pinterest SEO specialist. Generate two pin title options and a description optimized for 2025 Pinterest search.
 
 Outfit data:
 - Outfit title: ${outfitTitle || '—'}
@@ -1031,14 +1032,15 @@ Outfit data:
 - Keywords from outfit: ${gameKeywords || '—'}
 
 Rules:
-- Title: 3-7 words, max 100 chars. Include a trending aesthetic if applicable. Examples: "Vamp Romantic Outfit Ideas", "Cocktail Party Dress Inspo"
-- Description: 2-3 sentences, 100-200 chars. Lead with a visual or emotional hook, name specific garment details, end with a call to action or question.
+- title: 3-7 words, max 100 chars. Descriptive editorial style. Examples: "Vamp Romantic Outfit Ideas", "Cocktail Party Dress Inspo"
+- title_alt: question or provocative hook, max 100 chars. Examples: "Would you wear this to the office?", "When austerity meets playfulness"
+- description: 2-3 sentences, 100-200 chars. Lead with a visual or emotional hook, name specific garment details, end with a question.
 - No hashtags in either field
 - Target keywords: outfit ideas, dress to impress, aesthetic clothes, style inspo, fashion
 ${strategyInjection ? `\nAudience analytics insights (use these to refine keyword selection):\n${strategyInjection}` : ''}
 ${stratKeywords ? `- High-value keywords from your audience data: ${stratKeywords}` : ''}
 
-Return strict JSON only: {"title": "...", "description": "..."}`;
+Return strict JSON only: {"title": "...", "title_alt": "...", "description": "..."}`;
 
     // Build message content — attach render image if available so Claude sees actual colors
     const userContent = renderUrl
@@ -1057,14 +1059,14 @@ Return strict JSON only: {"title": "...", "description": "..."}`;
     const raw = msg.content[0].text.trim();
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return res.status(500).json({ error: 'Parse error', raw });
-    const { title, description } = JSON.parse(match[0]);
+    const { title, title_alt, description } = JSON.parse(match[0]);
 
     await pool.query(
       'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
       [title || null, description || null, id]
     );
 
-    res.json({ ok: true, pin_title: title, pin_description: description });
+    res.json({ ok: true, pin_title: title, pin_title_alt: title_alt || null, pin_description: description });
   } catch (err) {
     next(err);
   }

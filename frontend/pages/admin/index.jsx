@@ -1538,6 +1538,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
   const [model, setModel] = useState(render.model_appearance || null);
   const [pinTitle, setPinTitle] = useState(render.pin_title || '');
   const [pinDesc, setPinDesc] = useState(render.pin_description || '');
+  const [pinTitleAlt, setPinTitleAlt] = useState(null);
   const [generatingSeo, setGeneratingSeo] = useState(false);
   const [seoLang, setSeoLang] = useState('en');
   const [editingSeo, setEditingSeo] = useState(false);
@@ -1567,6 +1568,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
       const data = await apiPost(`/api/admin/render/${render.id}/generate-seo`, { lang });
       setPinTitle(data.pin_title || '');
       setPinDesc(data.pin_description || '');
+      setPinTitleAlt(data.pin_title_alt || null);
     } catch (err) {
       alert('SEO error: ' + err.message);
     } finally {
@@ -1801,6 +1803,19 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
                 className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
               >{t('edit','ред.')}</button>
             </div>
+            {pinTitleAlt && (
+              <button
+                onClick={async () => {
+                  await apiPatch(`/api/admin/render/${render.id}/seo`, { pin_title: pinTitleAlt, pin_description: pinDesc });
+                  setPinTitle(pinTitleAlt);
+                  setPinTitleAlt(null);
+                }}
+                className="block w-full text-left text-[10px] text-zinc-500 hover:text-violet-300 leading-tight border border-dashed border-zinc-700 hover:border-violet-600 rounded px-1.5 py-1 transition-colors"
+                title={t('Click to use this title instead','Нажми, чтобы использовать этот заголовок')}
+              >
+                ↕ {pinTitleAlt}
+              </button>
+            )}
             {pinDesc && <p className="text-[9px] text-zinc-500 leading-snug">{pinDesc}</p>}
             <div className="flex gap-2 pt-0.5">
               {['en', 'ru'].map(l => (
@@ -2291,8 +2306,8 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
           {(ruReady || enReady) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800/60">
               {(['ru', 'en']).map((lang) => {
-                const t = outfit.translations?.[lang];
-                if (!t || t.status !== 'ready') return null;
+                const tr = outfit.translations?.[lang];
+                if (!tr || tr.status !== 'ready') return null;
                 return (
                   <div key={lang}>
                     <div className="flex items-center justify-between mb-2">
@@ -2305,9 +2320,9 @@ function OutfitCard({ outfit, onDelete, onRetry, onPinterestMark, onTitleChange 
                       </button>
                     </div>
                     {editingLang === lang ? (
-                      <RowsEditor outfitId={outfit.id} lang={lang} initialRows={t.game_rows} />
+                      <RowsEditor outfitId={outfit.id} lang={lang} initialRows={tr.game_rows} />
                     ) : (
-                      <RowsTable rows={t.game_rows} />
+                      <RowsTable rows={tr.game_rows} />
                     )}
                   </div>
                 );
