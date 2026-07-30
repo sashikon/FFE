@@ -1056,10 +1056,25 @@ Return strict JSON only: {"title": "...", "title_alt": "...", "description": "..
       messages: [{ role: 'user', content: userContent }],
     });
 
-    const raw = msg.content[0].text.trim();
+    const rawText = msg.content?.[0]?.text;
+    if (!rawText) {
+      console.error('[generate-seo] empty content from Claude, stop_reason:', msg.stop_reason, msg.content);
+      return res.status(500).json({ error: 'Empty response from Claude', stop_reason: msg.stop_reason });
+    }
+    const raw = rawText.trim();
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return res.status(500).json({ error: 'Parse error', raw });
-    const { title, title_alt, description } = JSON.parse(match[0]);
+    if (!match) {
+      console.error('[generate-seo] no JSON found, raw:', raw.slice(0, 300));
+      return res.status(500).json({ error: 'No JSON in response', raw: raw.slice(0, 300) });
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch (parseErr) {
+      console.error('[generate-seo] JSON.parse failed:', parseErr.message, '\nraw match:', match[0].slice(0, 300));
+      return res.status(500).json({ error: 'JSON parse failed: ' + parseErr.message, raw: match[0].slice(0, 300) });
+    }
+    const { title, title_alt, description } = parsed;
 
     await pool.query(
       'UPDATE outfit_renders SET pin_title = $1, pin_description = $2 WHERE id = $3',
