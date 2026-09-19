@@ -1,5 +1,6 @@
 const { pool } = require('./db');
 const { formatByKey } = require('./formats');
+const { findSlop } = require('./slop');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER = process.env.TELEGRAM_OWNER_CHAT_ID;
@@ -86,7 +87,11 @@ async function sendReview(postId) {
     [postId]
   );
   const formatTitle = formatByKey(p.format)?.title ?? '—';
-  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}</i>`;
+  const slop = findSlop(p.text);
+  const slopLine = slop.length
+    ? `\n⚠️ шаблоны: ${slop.slice(0, 5).map((h) => `«${escapeHtml(h.match)}»`).join(', ')}${slop.length > 5 ? ` и ещё ${slop.length - 5}` : ''}`
+    : '';
+  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}${slopLine}</i>`;
   const msg = await sendHtml(OWNER, withSignature(p.text) + meta, {
     reply_markup: reviewKeyboard(postId, Boolean(p.image_url)),
     ...previewFor(p.image_url),

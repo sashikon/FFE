@@ -19,7 +19,9 @@ const NOISE = [
   /\bhoroscope/i,
   /\s-\s[\w .]+,\s[A-Z]{2}\b/, // «Manager - Oak Brook, IL»
 ];
-const isNoise = (title) => title.split(/\s+/).length < 4 || NOISE.some((re) => re.test(title));
+const isNoise = (title) => title.split(/\s+/).length < 4
+  || NOISE.some((re) => re.test(title))
+  || title.split(' - ').length >= 3; // подписи фотогалерей: «Бренд - Недели моды - Подиум - Womenswear - …»
 
 function clean(text = '') {
   return text
@@ -58,8 +60,10 @@ async function collectRss(src) {
     let source = src.name;
     if (isGoogle) {
       const publisher = typeof entry.source === 'string' ? entry.source : entry.source?._;
-      if (publisher) source = publisher.trim();
-      const suffix = ` - ${source}`;
+      // Лента одного сайта (site:…) — берём наше название издания, а не домен из <source>
+      const singleSite = decodeURIComponent(src.url).includes('site:');
+      if (publisher && !singleSite) source = publisher.trim();
+      const suffix = ` - ${publisher ? publisher.trim() : source}`;
       if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
       else {
         const m = title.match(/^(.*) - ([^-]+)$/);
@@ -138,7 +142,47 @@ async function collectSitemap(src) {
   return added;
 }
 
-const collectSource = (src) => (src.type === 'sitemap' ? collectSitemap(src) : collectRss(src));
+// Публичные Telegram-каналы: веб-версия t.me/s/<канал> отдаёт последние ~20 постов без API и ключей.
+// Заголовок — первая строка поста, лид — остальной текст
+const decodeEntities = (s) => decode(s).replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
+
+function telegramPosts(html, channel) {
+  return html.split('class="tgme_widget_message_wrap').slice(1).map((block) => {
+    const post = block.match(/data-post="([^"]+)"/)?.[1];
+    const datetime = block.match(/datetime="([^"]+)"/)?.[1];
+    const body = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1];
+    if (!post || !body) return null;
+    const text = decodeEntities(body.replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, ''))
+      .split('\n').map((l) => l.trim()).filter(Boolean);
+    return {
+      url: `https://t.me/${post}`,
+      published: datetime ? new Date(datetime) : null,
+      title: (text[0] || '').slice(0, 160),
+      summary: text.slice(1).join(' ').slice(0, 800),
+      channel,
+    };
+  }).filter(Boolean);
+}
+
+async function collectTelegram(src) {
+  const html = await fetchText(`https://t.me/s/${src.channel}`);
+  let added = 0;
+  for (const p of telegramPosts(html, src.channel)) {
+    if (p.published && Date.now() - p.published.getTime() > maxAge(src)) continue;
+    // Короткие подписи к фото и рекламные посты без текста — не новости
+    if (p.title.length + p.summary.length < 80 || isNoise(p.title)) continue;
+    const { rowCount } = await pool.query(
+      `INSERT INTO items (source, layer, url, title, summary, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
+      [src.name, src.layer, p.url, p.title, p.summary || null, p.published]
+    );
+    added += rowCount;
+  }
+  return added;
+}
+
+const COLLECTORS = { sitemap: collectSitemap, telegram: collectTelegram };
+const collectSource = (src) => (COLLECTORS[src.type] || collectRss)(src);
 
 async function collectAll() {
   const results = await Promise.allSettled(sources.map(collectSource));

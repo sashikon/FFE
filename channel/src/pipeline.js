@@ -6,6 +6,7 @@ const P = require('./prompts');
 const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
 const { refreshLibrary, pickImage } = require('./library');
 const { activeRules } = require('./learn');
+const { cleanInvisible, findSlop, describeSlop } = require('./slop');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
@@ -119,7 +120,17 @@ async function draftPost(insightId, previous = null) {
     cache: true,
   });
   // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
-  const text = await call({ model: MODELS.smart, system: P.editSystem(rules), user: draft });
+  let text = cleanInvisible(await call({ model: MODELS.smart, system: P.editSystem(rules), user: draft }));
+  // Детектор слопа: если после литредактора остались шаблоны — точечная правка именно этих мест
+  const hits = findSlop(text);
+  if (hits.length) {
+    console.log(`[slop] ${hits.length} hit(s), fixing`);
+    text = cleanInvisible(await call({
+      model: MODELS.smart,
+      system: P.editSystem(rules),
+      user: `${P.slopFixInstruction(describeSlop(hits))}\n\n${text}`,
+    }));
+  }
   const items = await clusterItems(ins.cluster_id);
   // Картинка из игры — только если подходит по смыслу; ошибка подбора не мешает посту
   const image = await pickImage(text, ins.data.thesis).catch((e) => {
@@ -187,4 +198,4 @@ async function runPipeline() {
   }
 }
 
-module.exports = { runPipeline, redraft, scoreNew };
+module.exports = { runPipeline, redraft, scoreNew, __draftPost: draftPost };

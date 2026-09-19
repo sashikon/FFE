@@ -11,6 +11,8 @@ const STOP = new Set(`
   its just launch launches like more most new news not now off only other our out over
   says season should since some than that the their them then there these they this
   those through under until week what when where which while who why will with would year your
+  как что это для или все при его она они над под без про тем чем где когда если уже еще ещё
+  только также этот эта эти того тоже было были будет может новый новая новые года году мода моды
 `.split(/\s+/).filter(Boolean));
 
 // Сезоны и годы склеивают разные показы в один «сюжет»
