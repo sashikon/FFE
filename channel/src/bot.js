@@ -25,6 +25,7 @@ async function cmdStatus(chatId) {
            COUNT(*) FILTER (WHERE status = 'deferred')::int AS deferred,
            COUNT(*) FILTER (WHERE status = 'published' AND published_at > NOW() - INTERVAL '7 days')::int AS week_published
     FROM posts`);
+  const channel = await tg.checkChannel().catch((e) => ({ ok: false, problem: e.message }));
   const last = await getState('last_pipeline_at');
   const lastRun = last
     ? new Date(last).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
@@ -40,6 +41,9 @@ async function cmdStatus(chatId) {
     `📣 Опубликовано за 7 дней: ${c.week_published}`,
     '',
     `Последний прогон: ${lastRun}`,
+    channel.ok
+      ? `Канал: ✅ «${tg.escapeHtml(channel.title)}» — публиковать можно`
+      : `Канал: ❌ ${tg.escapeHtml(channel.problem)}`,
   ].join('\n'));
 }
 
