@@ -50,6 +50,25 @@ async function cmdRun(chatId) {
     .catch((e) => tg.sendHtml(chatId, `Прогон упал: ${tg.escapeHtml(e.message)}`).catch(() => {}));
 }
 
+// Ответ на сообщение черновика: в Telegram над ответом видна цитата, по нажатию — переход к посту
+async function draftRef(postId) {
+  const { rows: [p] } = await pool.query('SELECT text, review_message_id FROM posts WHERE id = $1', [postId]);
+  if (!p) return { head: `#${postId}`, extra: {} };
+  const head = stripTags(p.text).split('\n')[0].slice(0, 80);
+  const extra = p.review_message_id
+    ? { reply_parameters: { message_id: Number(p.review_message_id), allow_sending_without_reply: true } }
+    : {};
+  return { head, extra };
+}
+
+async function startRedraft(chatId, postId, feedback) {
+  await setState('awaiting_feedback', null);
+  const { extra } = await draftRef(postId);
+  await tg.markReviewed(postId, '✏️ Переписывается');
+  await tg.sendHtml(chatId, 'Переписываю — новая версия придёт следующим сообщением…', extra);
+  await redraft(postId, feedback);
+}
+
 const hoursAgo = (date) => {
   const h = Math.floor((Date.now() - new Date(date).getTime()) / 3600e3);
   return h < 1 ? 'меньше часа' : `${h} ч`;
@@ -117,6 +136,7 @@ async function cmdCancel(chatId) {
 const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
+Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить.
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
 async function menuKeyboard() {
@@ -172,7 +192,8 @@ async function onCallback(q) {
   if (action === 'open') {
     const { rows: [p] } = await pool.query('SELECT status FROM posts WHERE id = $1', [Number(arg)]);
     if (p && ['draft', 'deferred'].includes(p.status)) return resendDraft(Number(arg));
-    return tg.sendHtml(tg.OWNER, `#${arg} уже разобран.`);
+    const { head, extra } = await draftRef(Number(arg));
+    return tg.sendHtml(tg.OWNER, `«${tg.escapeHtml(head)}» уже разобран.`, extra);
   }
 
   const postId = Number(arg);
@@ -201,10 +222,16 @@ async function onCallback(q) {
       await pool.query('UPDATE posts SET review_message_id = NULL WHERE id = $1', [postId]);
       await tg.sendReview(postId);
       break;
-    case 'edit':
+    case 'edit': {
       await setState('awaiting_feedback', postId);
-      await tg.sendHtml(tg.OWNER, `Что поправить в #${postId}? Напишите одним сообщением.`);
+      const { head, extra } = await draftRef(postId);
+      await tg.sendHtml(
+        tg.OWNER,
+        `✏️ Что поправить в посте «${tg.escapeHtml(head)}»?\nНапишите одним сообщением. Отменить — /cancel.`,
+        extra
+      );
       break;
+    }
   }
 }
 
@@ -228,14 +255,24 @@ async function onMessage(msg) {
   if (command === 'start' || command === 'help') return cmdMenu(chatId);
   if (command && COMMANDS[command]) return COMMANDS[command][1](chatId);
 
-  const awaiting = await getState('awaiting_feedback');
-  if (awaiting && text && !text.startsWith('/')) {
-    await setState('awaiting_feedback', null);
-    await tg.markReviewed(awaiting, '✏️ Переписывается');
-    await tg.sendHtml(chatId, 'Переписываю…');
-    await redraft(awaiting, text);
-    return;
+  // «Ответить» на черновик = правка этого черновика, без кнопки «✏️ Править»
+  const replyTo = msg.reply_to_message?.message_id;
+  if (replyTo && text && !text.startsWith('/')) {
+    const { rows: [p] } = await pool.query('SELECT id, status FROM posts WHERE review_message_id = $1', [replyTo]);
+    const replyExtra = { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } };
+    if (p && ['draft', 'deferred', 'approved'].includes(p.status)) {
+      if (p.status === 'approved') {
+        await tg.sendHtml(chatId, 'Пост снят из очереди — новая версия придёт на утверждение.', replyExtra);
+      }
+      return startRedraft(chatId, p.id, text);
+    }
+    if (p) {
+      return tg.sendHtml(chatId, 'Этот пост уже опубликован или удалён — править можно черновики и посты в очереди.', replyExtra);
+    }
   }
+
+  const awaiting = await getState('awaiting_feedback');
+  if (awaiting && text && !text.startsWith('/')) return startRedraft(chatId, awaiting, text);
 
   if (text) return cmdMenu(chatId);
 }
