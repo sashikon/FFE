@@ -40,7 +40,12 @@ async function sendHtml(chatId, text, extra = {}) {
   }
 }
 
-function reviewKeyboard(postId) {
+// Картинка — крупным превью над текстом: подпись к фото ограничена 1024 знаками, посты длиннее
+const previewFor = (imageUrl) => (imageUrl
+  ? { link_preview_options: { url: imageUrl, prefer_large_media: true, show_above_text: true } }
+  : {});
+
+function reviewKeyboard(postId, hasImage) {
   return {
     inline_keyboard: [
       [
@@ -52,20 +57,24 @@ function reviewKeyboard(postId) {
         { text: '⏸ Отложить', callback_data: `defer:${postId}` },
         { text: '✖️ Удалить', callback_data: `reject:${postId}` },
       ],
+      ...(hasImage ? [[{ text: '🖼 Убрать картинку', callback_data: `noimg:${postId}` }]] : []),
     ],
   };
 }
 
 async function sendReview(postId) {
   const { rows: [p] } = await pool.query(
-    `SELECT p.text, p.format, i.lens, i.thesis, c.score
+    `SELECT p.text, p.format, p.image_url, i.lens, i.thesis, c.score
      FROM posts p JOIN insights i ON i.id = p.insight_id JOIN clusters c ON c.id = i.cluster_id
      WHERE p.id = $1`,
     [postId]
   );
   const formatTitle = formatByKey(p.format)?.title ?? '—';
   const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}</i>`;
-  const msg = await sendHtml(OWNER, p.text + meta, { reply_markup: reviewKeyboard(postId) });
+  const msg = await sendHtml(OWNER, p.text + meta, {
+    reply_markup: reviewKeyboard(postId, Boolean(p.image_url)),
+    ...previewFor(p.image_url),
+  });
   await pool.query('UPDATE posts SET review_message_id = $1 WHERE id = $2', [msg.message_id, postId]);
 }
 
@@ -81,9 +90,9 @@ async function markReviewed(postId, label) {
 }
 
 async function publish(postId) {
-  const { rows: [p] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
+  const { rows: [p] } = await pool.query('SELECT text, image_url FROM posts WHERE id = $1', [postId]);
   const msg = await api('sendMessage', {
-    chat_id: CHANNEL, text: p.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true },
+    chat_id: CHANNEL, text: p.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...previewFor(p.image_url),
   });
   await pool.query(
     `UPDATE posts SET status = 'published', published_at = NOW(), channel_message_id = $1 WHERE id = $2`,
