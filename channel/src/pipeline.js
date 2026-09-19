@@ -107,12 +107,14 @@ function sourcesFooter(items) {
 async function draftPost(insightId, previous = null) {
   const { rows: [ins] } = await pool.query('SELECT cluster_id, data, format FROM insights WHERE id = $1', [insightId]);
   const format = formatByKey(ins.format) || FORMATS[0];
-  const text = await call({
+  const draft = await call({
     model: MODELS.smart,
     system: P.writeSystem(format),
     user: P.writeUser(ins.data, previous),
     cache: true,
   });
+  // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
+  const text = await call({ model: MODELS.smart, system: P.EDIT_SYSTEM, user: draft });
   const items = await clusterItems(ins.cluster_id);
   const { rows: [post] } = await pool.query(
     `INSERT INTO posts (insight_id, text, format) VALUES ($1, $2, $3) RETURNING id`,
