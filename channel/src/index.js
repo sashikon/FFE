@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { pool, runMigrations, getState, setState } = require('./db');
 const { runPipeline } = require('./pipeline');
-const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, OWNER } = require('./telegram');
+const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, checkChannel, OWNER } = require('./telegram');
 const { poll, setupMenu } = require('./bot');
 const { startApi } = require('./api');
 
@@ -28,7 +28,9 @@ async function publishDue() {
     console.log(`[publish] post ${next.id}`);
   } catch (e) {
     console.error('[publish] failed', e);
-    await sendHtml(OWNER, `Не удалось опубликовать #${next.id}: ${escapeHtml(e.message)}`).catch(() => {});
+    const channel = await checkChannel().catch(() => ({ ok: true }));
+    const hint = channel.ok ? '' : `\n\nПричина: ${escapeHtml(channel.problem)}`;
+    await sendHtml(OWNER, `Не удалось опубликовать #${next.id}: ${escapeHtml(e.message)}${hint}\nПост остался в очереди.`).catch(() => {});
   }
 }
 
@@ -108,6 +110,12 @@ async function start() {
   poll();
   if (!OWNER) return;
   await setupMenu().catch((e) => console.error('[telegram] menu setup failed', e.message));
+  const channel = await checkChannel().catch((e) => ({ ok: false, problem: e.message }));
+  if (channel.ok) console.log(`[telegram] channel ok: ${channel.title}`);
+  else {
+    console.error(`[telegram] channel problem: ${channel.problem}`);
+    await sendHtml(OWNER, `⚠️ Публиковать в канал сейчас не получится: ${escapeHtml(channel.problem)}\n\nПосле исправления переменных в Railway нажмите Deploy.`).catch(() => {});
+  }
 
   setInterval(safely('publish', publishDue), 5 * 60 * 1000);
   setInterval(safely('remind', remindIfDue), 10 * 60 * 1000);

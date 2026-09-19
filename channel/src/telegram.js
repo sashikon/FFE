@@ -146,6 +146,33 @@ async function checkTelegram() {
   return null;
 }
 
+// Самопроверка канала публикации: находится ли он и может ли бот в нём публиковать.
+// Возвращает { ok, title, problem } — problem человекочитаемо, с подсказкой, как исправить
+async function checkChannel() {
+  if (!CHANNEL) return { ok: false, problem: 'TELEGRAM_CHANNEL_ID не задан' };
+  let chat;
+  try {
+    chat = await api('getChat', { chat_id: CHANNEL });
+  } catch (e) {
+    const hint = String(CHANNEL).startsWith('@')
+      ? 'Проверьте, что это имя из ссылки t.me/имя публичного канала (не название). Если канал приватный — нужен числовой id вида -100…: перешлите пост из канала боту @userinfobot.'
+      : 'Проверьте id канала (вида -100…) и что бот добавлен в канал администратором.';
+    return { ok: false, problem: `канал ${CHANNEL} не найден (${e.message.replace(/^Telegram \w+: /, '')}). ${hint}` };
+  }
+  const title = chat.title || String(CHANNEL);
+  try {
+    const me = await api('getMe');
+    const member = await api('getChatMember', { chat_id: CHANNEL, user_id: me.id });
+    const canPost = member.status === 'creator' || (member.status === 'administrator' && member.can_post_messages !== false);
+    if (!canPost) {
+      return { ok: false, title, problem: `бот не может публиковать в «${title}»: он не администратор или у него выключено право «Публикация сообщений». Канал → Управление каналом → Администраторы → бот → включите право.` };
+    }
+  } catch (e) {
+    return { ok: false, title, problem: `не удалось проверить права бота в «${title}»: ${e.message}. Добавьте бота в администраторы канала.` };
+  }
+  return { ok: true, title };
+}
+
 module.exports = {
-  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, TelegramError, OWNER,
+  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, TelegramError, OWNER,
 };

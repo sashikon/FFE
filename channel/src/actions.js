@@ -48,7 +48,12 @@ async function approve(postId, via = 'bot') {
 
 async function publishNow(postId) {
   await checkStatus(postId, 'now');
-  await tg.publish(postId);
+  try {
+    await tg.publish(postId);
+  } catch (e) {
+    const channel = await tg.checkChannel().catch(() => ({ ok: true }));
+    throw new ActionError(channel.ok ? `Telegram не принял публикацию: ${e.message}` : `Не опубликовано: ${channel.problem}`);
+  }
 }
 
 async function defer(postId, via = 'bot') {
