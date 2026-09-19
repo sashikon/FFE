@@ -1,5 +1,5 @@
 // Слои: industry — бизнес моды, production — производство и материал, culture — культура и потребление.
-// Все адреса проверены 2026-09-19. Издания, которые закрывают RSS (BoF, Vogue Business…),
+// Все адреса проверены 2026-09-19. type: 'sitemap' — для изданий без RSS (см. collect.js). Издания, которые закрывают RSS (BoF, Vogue Business…),
 // берём через Google News с фильтром по домену: приходят заголовок и лид — для смысла достаточно.
 
 const gnews = (query) =>
@@ -16,6 +16,8 @@ module.exports = [
   { name: 'Fashion Dive', layer: 'industry', url: 'https://www.fashiondive.com/feeds/news/' },
   { name: 'Retail Dive', layer: 'industry', url: 'https://www.retaildive.com/feeds/news/' },
   { name: 'Glossy', layer: 'industry', url: 'https://www.glossy.co/feed/' },
+  // Jing Daily — люкс и потребитель Китая; RSS нет, берём из карты сайта
+  { name: 'Jing Daily', layer: 'industry', type: 'sitemap', url: 'https://jingdaily.com/posts/sitemap.xml', titleSuffix: / \| Jing Daily$/ },
 
   // production — самый ценный слой: здесь меньше всего чужих интерпретаций
   { name: 'Just Style', layer: 'production', url: 'https://www.just-style.com/feed/' },
@@ -33,6 +35,7 @@ module.exports = [
   { name: 'i-D', layer: 'culture', url: 'https://i-d.co/feed/' },
   { name: 'Highsnobiety', layer: 'culture', url: 'https://www.highsnobiety.com/feed/' },
   { name: 'Hypebeast', layer: 'culture', url: 'https://hypebeast.com/feed' },
+  { name: 'Who What Wear', layer: 'culture', url: 'https://www.whowhatwear.com/rss' },
   { name: 'The Guardian Fashion', layer: 'culture', url: 'https://www.theguardian.com/fashion/rss' },
   { name: 'NYT Fashion', layer: 'culture', url: 'https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/fashion/rss.xml' },
   { name: 'The Cut', layer: 'culture', url: gnews('site:thecut.com fashion') },
