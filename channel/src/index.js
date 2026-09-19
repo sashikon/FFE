@@ -57,10 +57,14 @@ async function start() {
   for (const key of ['DATABASE_URL', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHANNEL_ID']) {
     if (!process.env[key]) throw new Error(`${key} is not set`);
   }
+  const dbHost = new URL(process.env.DATABASE_URL).host;
+  console.log(`[start] connecting to database ${dbHost}`);
   await runMigrations();
+  console.log('[start] database ok, checking Telegram');
 
   const problem = await checkTelegram();
   if (problem) console.error(`[telegram] ${problem}`);
+  else console.log(`[telegram] ok, owner ${OWNER}`);
 
   poll();
   if (!OWNER) return;
