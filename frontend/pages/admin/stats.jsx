@@ -29,6 +29,7 @@ export default function StatsPage() {
         <h1 className="text-xl font-serif tracking-wide">FFE Stats</h1>
         <div className="flex items-center gap-4">
           <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
+          <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
         </div>
       </header>
