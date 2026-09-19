@@ -4,7 +4,8 @@ const sources = require('./sources');
 
 const parser = new Parser({
   timeout: 20_000,
-  headers: { 'User-Agent': 'Mozilla/5.0 (fashion-meaning-channel)' },
+  // Fibre2Fashion отвечает 406 на нестандартный User-Agent
+  headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
   customFields: { item: ['source'] },
 });
 
