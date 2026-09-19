@@ -2,7 +2,8 @@ const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
 const { runPipeline, redraft, cleanSlop } = require('./pipeline');
 const { findSlop } = require('./slop');
-const { activeRules, learnFromFeedback, addRule, removeRule } = require('./learn');
+const { activeRules, addRule, removeRule } = require('./learn');
+const actions = require('./actions');
 const { FORMATS, PUBLISH_HOURS, localParts, formatToday, formatForNextSlot, formatByKey } = require('./formats');
 
 const DAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -66,16 +67,8 @@ async function draftRef(postId) {
 async function startRedraft(chatId, postId, feedback) {
   await setState('awaiting_feedback', null);
   const { extra } = await draftRef(postId);
-  const { rows: [before] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
-  await tg.markReviewed(postId, '✏️ Переписывается');
   await tg.sendHtml(chatId, 'Переписываю — новая версия придёт следующим сообщением…', extra);
-  await redraft(postId, feedback);
-  // Память правок — в фоне, чтобы не задерживать бота
-  learnFromFeedback(postId, before.text, feedback)
-    .then((learned) => learned && tg.sendHtml(chatId, `🧠 Запомнено на будущее: <i>${tg.escapeHtml(learned.rule)}</i>`, learned.id ? {
-      reply_markup: { inline_keyboard: [[{ text: '✖️ Не запоминать', callback_data: `delrule:${learned.id}` }]] },
-    } : {}))
-    .catch((e) => console.warn(`[learn] failed: ${e.message}`));
+  await actions.redraftWithFeedback(postId, feedback, 'bot');
 }
 
 const hoursAgo = (date) => {
@@ -317,27 +310,11 @@ async function onCallback(q) {
   if (!post || !['draft', 'deferred'].includes(post.status)) return;
 
   switch (action) {
-    case 'approve':
-      await pool.query(`UPDATE posts SET status = 'approved', approved_at = NOW() WHERE id = $1`, [postId]);
-      await tg.markReviewed(postId, '✅ В очереди');
-      break;
-    case 'now':
-      await tg.publish(postId);
-      break;
-    case 'defer':
-      await pool.query(`UPDATE posts SET status = 'deferred' WHERE id = $1`, [postId]);
-      await tg.markReviewed(postId, '⏸ Отложен');
-      break;
-    case 'reject':
-      await pool.query(`UPDATE posts SET status = 'rejected' WHERE id = $1`, [postId]);
-      await tg.markReviewed(postId, '✖️ Удалён');
-      break;
-    case 'noimg':
-      await pool.query('UPDATE posts SET image_url = NULL, image_ref = NULL WHERE id = $1', [postId]);
-      await tg.markReviewed(postId, '🖼 Без картинки — см. ниже');
-      await pool.query('UPDATE posts SET review_message_id = NULL WHERE id = $1', [postId]);
-      await tg.sendReview(postId);
-      break;
+    case 'approve': return actions.approve(postId);
+    case 'now': return actions.publishNow(postId);
+    case 'defer': return actions.defer(postId);
+    case 'reject': return actions.reject(postId);
+    case 'noimg': return actions.removeImage(postId);
     case 'edit': {
       await setState('awaiting_feedback', postId);
       const { head, extra } = await draftRef(postId);

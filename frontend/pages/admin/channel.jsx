@@ -45,17 +45,76 @@ const plain = (text) => text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').repl
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null);
 
-function PostCard({ post }) {
+// Какие кнопки показывать в каком статусе
+const ACTIONS_BY_STATUS = {
+  draft: ['approve', 'now', 'defer', 'reject'],
+  deferred: ['approve', 'now', 'reject'],
+  approved: ['now', 'defer', 'reject'],
+  published: [],
+};
+const ACTION_LABEL = {
+  approve: '✅ В очередь',
+  now: '🚀 Опубликовать сейчас',
+  defer: '⏸ Отложить',
+  reject: '✖️ Удалить',
+};
+const CONFIRM = {
+  now: 'Опубликовать этот пост в канал прямо сейчас?',
+  reject: 'Удалить пост? Вернуть его будет нельзя.',
+};
+
+async function postAction(id, op, body) {
+  const r = await fetch(`/api/channel-posts/${id}/${op}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+const btn = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40';
+const btnPrimary = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-40';
+
+function PostCard({ post, onChanged }) {
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState(null); // null | 'edit' | 'redraft'
+  const [text, setText] = useState(post.text);
+  const [feedback, setFeedback] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null); // { kind: 'ok' | 'error', text }
+
   const status = STATUS[post.status] || { label: post.status, cls: 'bg-zinc-800 text-zinc-300' };
   const when = post.status === 'published' ? `вышел ${fmtDate(post.published_at)}`
     : post.status === 'approved' ? `одобрен ${fmtDate(post.approved_at)}`
     : `создан ${fmtDate(post.created_at)}`;
+  const editable = post.status !== 'published';
 
   const copy = async () => {
     await navigator.clipboard.writeText(plain(post.text));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const run = async (fn, okText) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await fn();
+      setMessage({ kind: 'ok', text: okText });
+      setMode(null);
+      onChanged();
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doAction = (action) => {
+    if (CONFIRM[action] && !window.confirm(CONFIRM[action])) return;
+    run(() => postAction(post.id, 'action', { action }), 'Готово');
   };
 
   return (
@@ -74,10 +133,25 @@ function PostCard({ post }) {
         {post.image_url && (
           <img src={post.image_url} alt="" className="w-28 h-36 object-cover rounded-lg bg-zinc-800 shrink-0" />
         )}
-        <div
-          className="text-sm leading-relaxed text-zinc-200 min-w-0 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-600 [&_blockquote]:pl-3"
-          dangerouslySetInnerHTML={{ __html: safeTelegramHtml(post.text) }}
-        />
+        {mode === 'edit' ? (
+          <div className="flex-1 min-w-0">
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={Math.min(24, Math.max(10, text.split('\n').length + 2))}
+              className="w-full bg-black border border-zinc-700 rounded-lg p-3 text-sm font-mono text-zinc-200 focus:outline-none focus:border-zinc-500"
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              Разметка Telegram: &lt;b&gt;жирный&lt;/b&gt;, &lt;i&gt;курсив&lt;/i&gt;, &lt;a href="…"&gt;ссылка&lt;/a&gt;. Слоган канала добавится сам.
+              <span className={`ml-2 ${text.length > 3800 ? 'text-rose-400' : ''}`}>{text.length} / 3800</span>
+            </p>
+          </div>
+        ) : (
+          <div
+            className="text-sm leading-relaxed text-zinc-200 min-w-0 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-600 [&_blockquote]:pl-3"
+            dangerouslySetInnerHTML={{ __html: safeTelegramHtml(post.text) }}
+          />
+        )}
       </div>
 
       {(post.thesis || post.slop?.length > 0) && (
@@ -88,13 +162,76 @@ function PostCard({ post }) {
           )}
         </div>
       )}
+
+      {mode === 'redraft' && (
+        <div className="mt-4">
+          <textarea
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            rows={3}
+            placeholder="Что поправить? Например: короче, без Бодрийяра, вопрос читателю — одной фразой"
+            className="w-full bg-black border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+          />
+          <p className="text-xs text-zinc-500 mt-1">
+            Модель перепишет пост по комментарию, новая версия появится во вкладке «Не утверждено» и в боте через 1–2 минуты.
+            {post.status === 'approved' && ' Пост будет снят из очереди до утверждения новой версии.'}
+            {' '}Общие замечания попадут в «уроки редактора».
+          </p>
+        </div>
+      )}
+
+      {editable && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {mode === 'edit' ? (
+            <>
+              <button
+                disabled={busy || !text.trim() || text.length > 3800}
+                onClick={() => run(() => postAction(post.id, 'text', { text }), 'Текст сохранён')}
+                className={btnPrimary}
+              >Сохранить</button>
+              <button disabled={busy} onClick={() => { setMode(null); setText(post.text); }} className={btn}>Отмена</button>
+            </>
+          ) : mode === 'redraft' ? (
+            <>
+              <button
+                disabled={busy || !feedback.trim()}
+                onClick={() => run(
+                  () => postAction(post.id, 'redraft', { feedback }),
+                  'Отправлено: модель переписывает пост, новая версия появится через 1–2 минуты'
+                ).then(() => setFeedback(''))}
+                className={btnPrimary}
+              >Отправить</button>
+              <button disabled={busy} onClick={() => setMode(null)} className={btn}>Отмена</button>
+            </>
+          ) : (
+            <>
+              {ACTIONS_BY_STATUS[post.status]?.map((a) => (
+                <button key={a} disabled={busy} onClick={() => doAction(a)} className={a === 'approve' ? btnPrimary : btn}>
+                  {post.status === 'approved' && a === 'defer' ? '⏸ Снять из очереди' : ACTION_LABEL[a]}
+                </button>
+              ))}
+              {post.image_url && (
+                <button disabled={busy} onClick={() => run(() => postAction(post.id, 'action', { action: 'noimg' }), 'Картинка убрана')} className={btn}>
+                  🖼 Убрать картинку
+                </button>
+              )}
+              <button disabled={busy} onClick={() => { setText(post.text); setMode('edit'); }} className={btn}>✏️ Редактировать</button>
+              <button disabled={busy} onClick={() => setMode('redraft')} className={btn}>🤖 Поправить через модель</button>
+            </>
+          )}
+          {busy && <span className="text-xs text-zinc-500">…</span>}
+          {message && (
+            <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{message.text}</span>
+          )}
+        </div>
+      )}
     </article>
   );
 }
 
 export default function ChannelPage() {
   const [tab, setTab] = useState('draft');
-  const { data, error, isLoading } = useSWR(`/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 60000 });
+  const { data, error, isLoading, mutate } = useSWR(`/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 30000 });
   const counts = data?.counts || {};
 
   return (
@@ -113,7 +250,7 @@ export default function ChannelPage() {
         </header>
 
         <main className="max-w-4xl mx-auto px-6 py-8">
-          <p className="text-sm text-zinc-500 mb-6">Только просмотр. Утверждать, править и публиковать — в Telegram-боте.</p>
+          <p className="text-sm text-zinc-500 mb-6">Изменения отсюда видны и в боте: черновик в Telegram помечается «изменён в админке», а новая версия приходит туда же.</p>
 
           <nav className="flex flex-wrap gap-2 mb-8">
             {TABS.map((t) => {
@@ -141,7 +278,7 @@ export default function ChannelPage() {
           {data?.posts?.length === 0 && <p className="text-zinc-500 text-center py-20">Здесь пока пусто</p>}
           {data?.posts?.length > 0 && (
             <div className="space-y-4">
-              {data.posts.map((p) => <PostCard key={p.id} post={p} />)}
+              {data.posts.map((p) => <PostCard key={`${p.id}-${p.status}`} post={p} onChanged={() => mutate()} />)}
             </div>
           )}
         </main>
