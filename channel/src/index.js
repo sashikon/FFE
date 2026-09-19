@@ -47,6 +47,45 @@ async function pipelineIfDue() {
   await runPipeline();
 }
 
+// Напоминания о черновиках без решения: раз в REMIND_EVERY_HOURS, срочно — за час до слота при пустой очереди.
+// Ночью (QUIET_HOURS, по умолчанию 22–9) бот молчит; отложенные (⏸) не считаются
+const REMIND_EVERY_HOURS = Number(process.env.REMIND_EVERY_HOURS || 4);
+const [QUIET_FROM, QUIET_TO] = (process.env.QUIET_HOURS || '22-9').split('-').map(Number);
+
+async function remindIfDue() {
+  const { hour } = localParts(new Date());
+  if (hour >= QUIET_FROM || hour < QUIET_TO) return;
+
+  const { rows: pending } = await pool.query(
+    `SELECT id, review_message_id FROM posts
+     WHERE status = 'draft' AND review_message_id IS NOT NULL AND created_at < NOW() - INTERVAL '2 hours'
+     ORDER BY created_at`
+  );
+  if (!pending.length) return;
+
+  const { rows: [queue] } = await pool.query(`SELECT COUNT(*)::int AS n FROM posts WHERE status = 'approved'`);
+  const urgent = PUBLISH_HOURS.includes(hour + 1) && queue.n === 0;
+
+  const last = await getState('last_reminder_at');
+  const gapHours = urgent ? 1 : REMIND_EVERY_HOURS;
+  if (last && Date.now() - new Date(last).getTime() < gapHours * HOUR) return;
+  await setState('last_reminder_at', new Date().toISOString());
+
+  const n = pending.length;
+  const n10 = n % 10;
+  const n100 = n % 100;
+  const word = n10 === 1 && n100 !== 11 ? 'черновик'
+    : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? 'черновика' : 'черновиков';
+  const drafts = `${n} ${word}`;
+  const text = urgent
+    ? `⏰ Через час публикация в канал, а в очереди пусто. Ждут решения: ${drafts}.`
+    : `🔔 Ждут решения: ${drafts}. Самый старый — выше.`;
+  await sendHtml(OWNER, text, {
+    reply_parameters: { message_id: Number(pending[0].review_message_id), allow_sending_without_reply: true },
+  });
+  console.log(`[remind] ${n} pending${urgent ? ' (urgent)' : ''}`);
+}
+
 function safely(name, fn) {
   return () => fn().catch((e) => console.error(`[${name}]`, e));
 }
@@ -68,9 +107,12 @@ async function start() {
   if (!OWNER) return;
 
   setInterval(safely('publish', publishDue), 5 * 60 * 1000);
+  setInterval(safely('remind', remindIfDue), 10 * 60 * 1000);
   setInterval(safely('pipeline', pipelineIfDue), 10 * 60 * 1000);
   safely('pipeline', pipelineIfDue)();
   console.log(`channel bot started: pipeline every ${INTERVAL_HOURS}h, publish at ${PUBLISH_HOURS.join(', ')} (${TZ})`);
 }
 
-start().catch((err) => { console.error(err); process.exit(1); });
+if (require.main === module) start().catch((err) => { console.error(err); process.exit(1); });
+
+module.exports = { remindIfDue };
