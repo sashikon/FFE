@@ -75,7 +75,7 @@ const INSIGHT_SYSTEM = `Ты исследователь моды как знак
 7. thesis — главный тезис одной фразой (по нему канал помнит, о чём уже говорил).
 8. lens — основная линза.
 9. is_repeat — true, если thesis по сути повторяет один из недавних тезисов канала.
-10. weak — true, если честного смысла здесь нет и пост получился бы натянутым. Это нормальный ответ.
+10. weak — true, если честного смысла здесь нет, или сюжет не подходит под формат поста, и пост получился бы натянутым. Это нормальный ответ.
 
 Линзы:
 ${lensList}
@@ -100,38 +100,39 @@ const INSIGHT_SCHEMA = {
   additionalProperties: false,
 };
 
-function insightUser(items, recentTheses) {
+function formatBlock(format) {
+  return `Формат поста: «${format.title}»
+Суть: ${format.idea}
+Структура: ${format.structure}${format.note ? `\n${format.note}` : ''}`;
+}
+
+function insightUser(items, recentTheses, format) {
   const notes = items.map((it, i) =>
     `[${i + 1}] ${it.source} (${it.layer})\n${it.title}${it.summary ? `\n${it.summary}` : ''}`
   ).join('\n\n');
   const memory = recentTheses.length
     ? recentTheses.map((t) => `- ${t}`).join('\n')
     : '(пока ничего)';
-  return `Заметки сюжета:\n\n${notes}\n\nНедавние тезисы канала:\n${memory}`;
+  return `${formatBlock(format)}\n\nРазбери сюжет так, чтобы из него вышел пост именно этого формата.\n\nЗаметки сюжета:\n\n${notes}\n\nНедавние тезисы канала:\n${memory}`;
 }
 
 // ─── Шаг 5: текст поста ──────────────────────────────────────────────────────
 
 const STYLE_DIR = path.join(__dirname, '..', 'style');
 
-function loadStyle() {
-  const guide = fs.readFileSync(path.join(STYLE_DIR, 'guide.md'), 'utf8');
-  const exDir = path.join(STYLE_DIR, 'examples');
-  const examples = fs.readdirSync(exDir)
-    .filter((f) => f.endsWith('.md') && f !== 'README.md')
-    .sort()
-    .map((f) => fs.readFileSync(path.join(exDir, f), 'utf8').trim());
-  return { guide, examples };
-}
+const readExample = (f) => fs.readFileSync(path.join(STYLE_DIR, 'examples', f), 'utf8').trim();
 
-function writeSystem() {
-  const { guide, examples } = loadStyle();
+function writeSystem(format) {
+  const guide = fs.readFileSync(path.join(STYLE_DIR, 'guide.md'), 'utf8');
+  const examples = format.examples.filter((f) => fs.existsSync(path.join(STYLE_DIR, 'examples', f))).map(readExample);
   const exBlock = examples.length
-    ? `\n\nОбразцы постов канала — ориентир по голосу, ритму и длине (не по темам):\n\n${examples.map((e, i) => `<example ${i + 1}>\n${e}\n</example>`).join('\n\n')}`
+    ? `\n\nОбразцы постов этого формата — ориентир по голосу, ритму, длине и построению (не по темам):\n\n${examples.map((e, i) => `<example ${i + 1}>\n${e}\n</example>`).join('\n\n')}`
     : '';
   return `Ты пишешь посты для авторского Telegram-канала о смыслах в моде.
 
-${guide}${exBlock}
+${guide}
+
+${formatBlock(format)}${exBlock}
 
 Технические требования:
 - Разметка Telegram HTML: только <b>, <i>, <blockquote>. Никаких других тегов, никакого Markdown.
@@ -140,16 +141,37 @@ ${guide}${exBlock}
 }
 
 function writeUser(insight, previous) {
-  let msg = `Разбор сюжета:\n${JSON.stringify(insight, null, 2)}`;
+  let msg = `Разбор сюжета — это материал, а не план. Не раскладывай его поля по абзацам в том же порядке; строй пост по формату дня и образцам.\n\n${JSON.stringify(insight, null, 2)}`;
   if (previous) {
     msg += `\n\nПредыдущая версия поста:\n${previous.text}\n\nПравка автора канала: ${previous.feedback}\n\nПерепиши пост с учётом правки.`;
   }
   return msg;
 }
 
+// ─── Шаг 6: литредактура ─────────────────────────────────────────────────────
+
+const EDIT_SYSTEM = `Ты литературный редактор русскоязычного авторского Telegram-канала о моде. Тебе дают черновик поста. Твоя задача — чтобы текст читался как написанный живым образованным человеком по-русски, а не переведённый с английского и не сгенерированный.
+
+Исправь:
+- грамматику: согласование, управление, падежи, видо-временные формы;
+- пунктуацию: запятые в причастных и деепричастных оборотах, сложных предложениях, при вводных словах; тире и дефисы; кавычки «ёлочки»;
+- кальки с английского и канцелярит («играет ключевую роль», «является», «в мире моды», «это про…», «важно отметить», «делает заявление») — замени естественными русскими оборотами;
+- приметы машинного текста:
+  · антитезы «не X, а Y», «не просто X, а Y», «это не X — это Y» — оставь не больше одной, остальные перепиши прямым утверждением;
+  · связки «Странность в том, что», «Парадокс в том, что», «Получается парадокс», «В этом вся механика», «Отсюда (неудобный) вывод», «В итоге», «Таким образом» — убери или замени обычным переходом;
+  · пересказ, вложенный в уста теоретика («Бодрийяр говорил об этом просто: …») — перепиши как «у Бодрийяра это называется …» или своими словами;
+  · фраза-афоризм после финального вопроса читателю — удали, вопрос должен быть последним;
+  · перечисления ровно по три ради ритма, цепочки риторических вопросов, одинаковые начала соседних предложений, пустые усилители («невероятный», «уникальный», «ключевой»), вычурные метафоры;
+- тяжёлые отглагольные существительные и страдательный залог — на глаголы и действительный залог.
+
+Не меняй: смысл, тезисы, факты, имена, цифры, цитаты в кавычках, структуру и порядок частей, эмодзи, заголовок по смыслу, разметку <b>, <i>, <blockquote>. Не добавляй ничего нового и не сокращай содержание — только правь язык. Длина должна остаться примерно той же.
+
+Выведи только исправленный текст поста, без комментариев.`;
+
 module.exports = {
   LENSES,
   SCORE_SYSTEM, SCORE_SCHEMA, scoreUser,
   INSIGHT_SYSTEM, INSIGHT_SCHEMA, insightUser,
   writeSystem, writeUser,
+  EDIT_SYSTEM,
 };

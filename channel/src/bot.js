@@ -1,11 +1,13 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
 const { runPipeline, redraft } = require('./pipeline');
+const { FORMATS, formatToday } = require('./formats');
 
 const HELP = `Команды:
 /run — собрать ленту и подготовить черновики сейчас
 /queue — что в очереди на публикацию
 /deferred — вернуть отложенные черновики
+/formats — расписание форматов
 /cancel — отменить ожидание правки`;
 
 async function onCallback(q) {
@@ -66,7 +68,14 @@ async function onMessage(msg) {
   if (text === '/run') {
     await tg.sendHtml(chatId, 'Собираю ленту…');
     const r = await runPipeline();
-    return tg.sendHtml(chatId, r.skipped ? 'Прогон уже идёт.' : `Готово: черновиков ${r.drafted} из ${r.candidates} кандидатов.`);
+    return tg.sendHtml(chatId, r.skipped ? 'Прогон уже идёт.' : `Готово: формат «${r.format}», черновиков ${r.drafted} из ${r.candidates} кандидатов.`);
+  }
+
+  if (text === '/formats') {
+    const days = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const today = formatToday().key;
+    const list = FORMATS.map((f) => `${f.key === today ? '▶︎' : '  '} ${days[f.day]} — ${f.title}`).join('\n');
+    return tg.sendHtml(chatId, list);
   }
 
   if (text === '/queue') {

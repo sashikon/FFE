@@ -3,6 +3,7 @@ const { collectAll } = require('./collect');
 const { clusterNewItems, clusterItems } = require('./cluster');
 const { call, MODELS } = require('./llm');
 const P = require('./prompts');
+const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
@@ -59,7 +60,7 @@ async function selectCandidates(limit) {
 
 // ─── Шаг 4: смысл ────────────────────────────────────────────────────────────
 
-async function makeInsight(clusterId) {
+async function makeInsight(clusterId, format) {
   const items = await clusterItems(clusterId);
   const { rows: memory } = await pool.query(
     `SELECT thesis FROM insights ORDER BY created_at DESC LIMIT 40`
@@ -67,7 +68,7 @@ async function makeInsight(clusterId) {
   const insight = await call({
     model: MODELS.smart,
     system: P.INSIGHT_SYSTEM,
-    user: P.insightUser(items, memory.map((m) => m.thesis)),
+    user: P.insightUser(items, memory.map((m) => m.thesis), format),
     schema: P.INSIGHT_SCHEMA,
   });
 
@@ -82,8 +83,8 @@ async function makeInsight(clusterId) {
   }
 
   const { rows: [row] } = await pool.query(
-    `INSERT INTO insights (cluster_id, data, thesis, lens) VALUES ($1, $2, $3, $4) RETURNING id`,
-    [clusterId, JSON.stringify(insight), insight.thesis, insight.lens]
+    `INSERT INTO insights (cluster_id, data, thesis, lens, format) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [clusterId, JSON.stringify(insight), insight.thesis, insight.lens, format.key]
   );
   await pool.query(`UPDATE clusters SET status = 'insight' WHERE id = $1`, [clusterId]);
   return row.id;
@@ -95,8 +96,10 @@ function sourcesFooter(items) {
   const seen = new Set();
   const links = [];
   for (const it of items) {
-    if (seen.has(it.source)) continue;
-    seen.add(it.source);
+    // «The Guardian» и «The Guardian Fashion» — одно издание
+    const base = it.source.toLowerCase().replace(/\s+(fashion|style|news)$/, '');
+    if (seen.has(base) || it.source.startsWith('GN:')) continue;
+    seen.add(base);
     links.push(`<a href="${escapeHtml(it.url)}">${escapeHtml(it.source)}</a>`);
     if (links.length === 3) break;
   }
@@ -104,16 +107,20 @@ function sourcesFooter(items) {
 }
 
 async function draftPost(insightId, previous = null) {
-  const { rows: [ins] } = await pool.query('SELECT cluster_id, data FROM insights WHERE id = $1', [insightId]);
-  const text = await call({
+  const { rows: [ins] } = await pool.query('SELECT cluster_id, data, format FROM insights WHERE id = $1', [insightId]);
+  const format = formatByKey(ins.format) || FORMATS[0];
+  const draft = await call({
     model: MODELS.smart,
-    system: P.writeSystem(),
+    system: P.writeSystem(format),
     user: P.writeUser(ins.data, previous),
+    cache: true,
   });
+  // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
+  const text = await call({ model: MODELS.smart, system: P.EDIT_SYSTEM, user: draft });
   const items = await clusterItems(ins.cluster_id);
   const { rows: [post] } = await pool.query(
-    `INSERT INTO posts (insight_id, text) VALUES ($1, $2) RETURNING id`,
-    [insightId, text + sourcesFooter(items)]
+    `INSERT INTO posts (insight_id, text, format) VALUES ($1, $2, $3) RETURNING id`,
+    [insightId, text + sourcesFooter(items), format.key]
   );
   await pool.query(`UPDATE clusters SET status = 'drafted' WHERE id = $1`, [ins.cluster_id]);
   await sendReview(post.id);
@@ -142,12 +149,15 @@ async function runPipeline() {
     await clusterNewItems();
     await scoreNew();
 
-    const candidates = await selectCandidates(DRAFTS_PER_RUN * 2);
+    const format = formatForNextSlot();
+    console.log(`[pipeline] format: ${format.title}`);
+    // Под конкретный формат подходит не каждый сюжет — берём кандидатов с запасом
+    const candidates = await selectCandidates(DRAFTS_PER_RUN * 3);
     let drafted = 0;
     for (const c of candidates) {
       if (drafted >= DRAFTS_PER_RUN) break;
       try {
-        const insightId = await makeInsight(c.id);
+        const insightId = await makeInsight(c.id, format);
         if (!insightId) continue;
         await draftPost(insightId);
         drafted++;
@@ -162,7 +172,7 @@ async function runPipeline() {
       }
     }
     console.log(`[pipeline] drafts sent: ${drafted}`);
-    return { drafted, candidates: candidates.length };
+    return { drafted, candidates: candidates.length, format: format.title };
   } finally {
     running = false;
   }

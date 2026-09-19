@@ -1,4 +1,5 @@
 const { pool } = require('./db');
+const { formatByKey } = require('./formats');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER = process.env.TELEGRAM_OWNER_CHAT_ID;
@@ -57,12 +58,13 @@ function reviewKeyboard(postId) {
 
 async function sendReview(postId) {
   const { rows: [p] } = await pool.query(
-    `SELECT p.text, i.lens, i.thesis, c.score
+    `SELECT p.text, p.format, i.lens, i.thesis, c.score
      FROM posts p JOIN insights i ON i.id = p.insight_id JOIN clusters c ON c.id = i.cluster_id
      WHERE p.id = $1`,
     [postId]
   );
-  const meta = `\n\n———\n<i>#${postId} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}</i>`;
+  const formatTitle = formatByKey(p.format)?.title ?? '—';
+  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}</i>`;
   const msg = await sendHtml(OWNER, p.text + meta, { reply_markup: reviewKeyboard(postId) });
   await pool.query('UPDATE posts SET review_message_id = $1 WHERE id = $2', [msg.message_id, postId]);
 }

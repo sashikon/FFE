@@ -37,4 +37,6 @@ module.exports = [
   { name: 'NYT Fashion', layer: 'culture', url: 'https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/fashion/rss.xml' },
   { name: 'The Cut', layer: 'culture', url: gnews('site:thecut.com fashion') },
   { name: 'GN: dress code', layer: 'culture', url: gnews('"dress code" OR uniform clothing') },
+  // для формата «Психология стиля»
+  { name: 'GN: clothing psychology', layer: 'culture', url: gnews('"enclothed cognition" OR "fashion psychology" OR (clothing study perception)') },
 ];

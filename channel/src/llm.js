@@ -21,11 +21,12 @@ function textOf(response) {
     .trim();
 }
 
-async function call({ model, system, user, schema, maxTokens = 16000 }) {
+async function call({ model, system, user, schema, maxTokens = 16000, cache = false }) {
   const params = {
     model,
     max_tokens: maxTokens,
-    system,
+    // Длинный неизменный system (стайлгайд + образцы) кэшируем: повторные черновики читают его в ~10 раз дешевле
+    system: cache ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system,
     messages: [{ role: 'user', content: user }],
   };
   if (schema) params.output_config = { format: { type: 'json_schema', schema } };

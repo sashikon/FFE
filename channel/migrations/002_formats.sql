@@ -1,0 +1,2 @@
+ALTER TABLE insights ADD COLUMN format TEXT;
+ALTER TABLE posts ADD COLUMN format TEXT;
