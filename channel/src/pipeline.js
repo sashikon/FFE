@@ -5,6 +5,7 @@ const { call, MODELS } = require('./llm');
 const P = require('./prompts');
 const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
 const { refreshLibrary, pickImage } = require('./library');
+const { activeRules } = require('./learn');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
@@ -110,14 +111,15 @@ function sourcesFooter(items) {
 async function draftPost(insightId, previous = null) {
   const { rows: [ins] } = await pool.query('SELECT cluster_id, data, format FROM insights WHERE id = $1', [insightId]);
   const format = formatByKey(ins.format) || FORMATS[0];
+  const rules = await activeRules();
   const draft = await call({
     model: MODELS.smart,
-    system: P.writeSystem(format),
+    system: P.writeSystem(format, rules),
     user: P.writeUser(ins.data, previous),
     cache: true,
   });
   // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
-  const text = await call({ model: MODELS.smart, system: P.EDIT_SYSTEM, user: draft });
+  const text = await call({ model: MODELS.smart, system: P.editSystem(rules), user: draft });
   const items = await clusterItems(ins.cluster_id);
   // Картинка из игры — только если подходит по смыслу; ошибка подбора не мешает посту
   const image = await pickImage(text, ins.data.thesis).catch((e) => {
