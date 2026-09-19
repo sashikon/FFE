@@ -1,5 +1,5 @@
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from './auth/[...nextauth]';
+import { authOptions } from '../auth/[...nextauth]';
 
 // Прокси к закрытому API сервиса канала: токен живёт только на сервере (не NEXT_PUBLIC_),
 // доступ — только после входа в админку через GitHub
@@ -7,7 +7,9 @@ export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
 
-  const base = process.env.CHANNEL_API_URL;
+  // адрес из Railway часто вставляют без https:// — дописываем
+  const raw = (process.env.CHANNEL_API_URL || '').trim();
+  const base = raw && !/^https?:\/\//.test(raw) ? `https://${raw}` : raw;
   const token = process.env.CHANNEL_API_TOKEN;
   if (!base || !token) {
     return res.status(503).json({ error: 'CHANNEL_API_URL / CHANNEL_API_TOKEN не заданы в переменных Vercel' });
