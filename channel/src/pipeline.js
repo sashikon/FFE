@@ -109,6 +109,7 @@ async function draftPost(insightId, previous = null) {
     model: MODELS.smart,
     system: P.writeSystem(),
     user: P.writeUser(ins.data, previous),
+    cache: true,
   });
   const items = await clusterItems(ins.cluster_id);
   const { rows: [post] } = await pool.query(
