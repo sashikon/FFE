@@ -1,9 +1,11 @@
 // Слои: industry — бизнес моды, production — производство и материал, culture — культура и потребление.
-// Все адреса проверены 2026-09-19. type: 'sitemap' — для изданий без RSS (см. collect.js). Издания, которые закрывают RSS (BoF, Vogue Business…),
+// Все адреса проверены 2026-09-19. type: 'sitemap' — для изданий без RSS, type: 'telegram' — публичные каналы (см. collect.js). Издания, которые закрывают RSS (BoF, Vogue Business…),
 // берём через Google News с фильтром по домену: приходят заголовок и лид — для смысла достаточно.
 
 const gnews = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=en-US&gl=US&ceid=US:en`;
+const gnewsRu = (query) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=ru&gl=RU&ceid=RU:ru`;
 
 module.exports = [
   // industry
@@ -51,6 +53,16 @@ module.exports = [
   { name: 'The Guardian Fashion', layer: 'culture', url: 'https://www.theguardian.com/fashion/rss' },
   { name: 'NYT Fashion', layer: 'culture', url: 'https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/fashion/rss.xml' },
   { name: 'The Cut', layer: 'culture', url: gnews('site:thecut.com fashion') },
+  // ── Русскоязычные ──
+  // Многие закрывают сайт от зарубежных запросов, поэтому берём их Telegram-каналы (type: 'telegram')
+  { name: 'BeInOpen', layer: 'industry', type: 'telegram', channel: 'beinopen' },
+  { name: 'FashionNetwork RU', layer: 'industry', url: gnewsRu('site:ru.fashionnetwork.com') },
+  { name: 'The Blueprint', layer: 'culture', type: 'telegram', channel: 'theblueprintru' },
+  { name: 'РБК Стиль', layer: 'culture', type: 'telegram', channel: 'rbcstyle' },
+  { name: 'The Symbol', layer: 'culture', type: 'telegram', channel: 'thesymbolru' },
+  // RSS Buro (buro247.ru/rss) отстаёт на неделю — свежее через Google News
+  { name: 'Buro 24/7', layer: 'culture', url: gnewsRu('site:buro247.ru') },
+
   { name: 'GN: dress code', layer: 'culture', url: gnews('"dress code" OR uniform clothing') },
   // для формата «Психология стиля»
   { name: 'GN: clothing psychology', layer: 'culture', url: gnews('"enclothed cognition" OR "fashion psychology" OR (clothing study perception)') },
