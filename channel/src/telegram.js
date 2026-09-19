@@ -23,6 +23,22 @@ async function api(method, body = {}) {
   return data.result;
 }
 
+// Слоган канала ставится кодом при показе и публикации (а не хранится в тексте),
+// поэтому смена style/signature.txt сразу действует и на посты в очереди
+const fs = require('fs');
+const path = require('path');
+const SIGNATURE_FILE = path.join(__dirname, '..', 'style', 'signature.txt');
+const FOOTER_MARK = '\n\n<i>По материалам:';
+
+function withSignature(text) {
+  let signature = '';
+  try { signature = fs.readFileSync(SIGNATURE_FILE, 'utf8').trim(); } catch { /* файла нет — без слогана */ }
+  if (!signature) return text;
+  const line = `\n\n<i>${escapeHtml(signature)}</i>`;
+  const i = text.indexOf(FOOTER_MARK);
+  return i === -1 ? text + line : text.slice(0, i) + line + text.slice(i);
+}
+
 const isParseError = (e) => e instanceof TelegramError && /parse entities/i.test(e.message);
 const stripTags = (html) => html.replace(/<[^>]+>/g, '');
 
@@ -71,7 +87,7 @@ async function sendReview(postId) {
   );
   const formatTitle = formatByKey(p.format)?.title ?? '—';
   const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}</i>`;
-  const msg = await sendHtml(OWNER, p.text + meta, {
+  const msg = await sendHtml(OWNER, withSignature(p.text) + meta, {
     reply_markup: reviewKeyboard(postId, Boolean(p.image_url)),
     ...previewFor(p.image_url),
   });
@@ -92,7 +108,7 @@ async function markReviewed(postId, label) {
 async function publish(postId) {
   const { rows: [p] } = await pool.query('SELECT text, image_url FROM posts WHERE id = $1', [postId]);
   const msg = await api('sendMessage', {
-    chat_id: CHANNEL, text: p.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...previewFor(p.image_url),
+    chat_id: CHANNEL, text: withSignature(p.text), parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...previewFor(p.image_url),
   });
   await pool.query(
     `UPDATE posts SET status = 'published', published_at = NOW(), channel_message_id = $1 WHERE id = $2`,
