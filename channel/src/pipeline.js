@@ -4,6 +4,7 @@ const { clusterNewItems, clusterItems } = require('./cluster');
 const { call, MODELS } = require('./llm');
 const P = require('./prompts');
 const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
+const { refreshLibrary, pickImage } = require('./library');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
@@ -118,9 +119,14 @@ async function draftPost(insightId, previous = null) {
   // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
   const text = await call({ model: MODELS.smart, system: P.EDIT_SYSTEM, user: draft });
   const items = await clusterItems(ins.cluster_id);
+  // Картинка из игры — только если подходит по смыслу; ошибка подбора не мешает посту
+  const image = await pickImage(text, ins.data.thesis).catch((e) => {
+    console.warn(`[library] pick failed: ${e.message}`);
+    return null;
+  });
   const { rows: [post] } = await pool.query(
-    `INSERT INTO posts (insight_id, text, format) VALUES ($1, $2, $3) RETURNING id`,
-    [insightId, text + sourcesFooter(items), format.key]
+    `INSERT INTO posts (insight_id, text, format, image_url, image_ref) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [insightId, text + sourcesFooter(items), format.key, image?.url ?? null, image?.ref ?? null]
   );
   await pool.query(`UPDATE clusters SET status = 'drafted' WHERE id = $1`, [ins.cluster_id]);
   await sendReview(post.id);
@@ -146,6 +152,7 @@ async function runPipeline() {
   running = true;
   try {
     await collectAll();
+    await refreshLibrary().catch((e) => console.warn(`[library] refresh failed: ${e.message}`));
     await clusterNewItems();
     await scoreNew();
 

@@ -10,6 +10,8 @@ const parser = new Parser({
 });
 
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000;
+// Трендовые агентства публикуются раз в несколько недель — им окно шире
+const maxAge = (src) => (src.maxAgeDays ? src.maxAgeDays * 24 * 3600 * 1000 : MAX_AGE_MS);
 
 // Вакансии, гороскопы, пустые заголовки — не новости
 const NOISE = [
@@ -41,7 +43,7 @@ function normalizeUrl(url) {
   }
 }
 
-async function collectSource(src) {
+async function collectRss(src) {
   const feed = await parser.parseURL(src.url);
   const isGoogle = src.url.includes('news.google.com');
   let added = 0;
@@ -49,7 +51,7 @@ async function collectSource(src) {
   for (const entry of feed.items || []) {
     if (!entry.link || !entry.title) continue;
     const published = entry.isoDate ? new Date(entry.isoDate) : null;
-    if (published && Date.now() - published.getTime() > MAX_AGE_MS) continue;
+    if (published && Date.now() - published.getTime() > maxAge(src)) continue;
 
     // Google News дописывает « - Издание» к заголовку, а в описании дублирует заголовок
     let title = clean(entry.title);
@@ -77,6 +79,66 @@ async function collectSource(src) {
   }
   return added;
 }
+
+const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' };
+const SITEMAP_LIMIT = 20;
+
+async function fetchText(url) {
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Status code ${res.status}`);
+  return res.text();
+}
+
+const decode = (s) => s
+  .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+// Издания без RSS: берём свежие адреса из карты сайта, заголовок — со страницы статьи
+// или из адреса (titleFrom: 'slug'), если страница собирается скриптом и заголовка в HTML нет
+function titleFromSlug(url) {
+  const slug = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+  const words = slug.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+async function titleFromPage(url, src) {
+  const html = await fetchText(url);
+  const raw = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1] || html.match(/<title>([^<]+)/)?.[1];
+  return raw ? clean(decode(raw)).replace(src.titleSuffix || /$^/, '').trim() : null;
+}
+
+async function collectSitemap(src) {
+  const xmls = await Promise.all([].concat(src.url).map(fetchText));
+  const fresh = xmls
+    .flatMap((xml) => [...xml.matchAll(/<loc>([^<]+)<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/g)])
+    .map(([, url, lastmod]) => ({ url: decode(url.trim()), published: new Date(lastmod) }))
+    .filter((e) => Date.now() - e.published.getTime() <= maxAge(src))
+    .filter((e) => !src.urlFilter || src.urlFilter.test(e.url))
+    .sort((a, b) => b.published - a.published)
+    .slice(0, SITEMAP_LIMIT);
+  if (!fresh.length) return 0;
+
+  const { rows } = await pool.query('SELECT url FROM items WHERE url = ANY($1)', [fresh.map((e) => e.url)]);
+  const known = new Set(rows.map((r) => r.url));
+  let added = 0;
+
+  for (const e of fresh.filter((f) => !known.has(f.url))) {
+    let title;
+    try {
+      title = src.titleFrom === 'slug' ? titleFromSlug(e.url) : await titleFromPage(e.url, src);
+    } catch { continue; }
+    if (!title || isNoise(title)) continue;
+    const { rowCount } = await pool.query(
+      `INSERT INTO items (source, layer, url, title, published_at)
+       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
+      [src.name, src.layer, e.url, title, e.published]
+    );
+    added += rowCount;
+  }
+  return added;
+}
+
+const collectSource = (src) => (src.type === 'sitemap' ? collectSitemap(src) : collectRss(src));
 
 async function collectAll() {
   const results = await Promise.allSettled(sources.map(collectSource));

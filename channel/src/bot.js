@@ -35,6 +35,12 @@ async function onCallback(q) {
       await pool.query(`UPDATE posts SET status = 'rejected' WHERE id = $1`, [postId]);
       await tg.markReviewed(postId, '✖️ Удалён');
       break;
+    case 'noimg':
+      await pool.query('UPDATE posts SET image_url = NULL, image_ref = NULL WHERE id = $1', [postId]);
+      await tg.markReviewed(postId, '🖼 Без картинки — см. ниже');
+      await pool.query('UPDATE posts SET review_message_id = NULL WHERE id = $1', [postId]);
+      await tg.sendReview(postId);
+      break;
     case 'edit':
       await setState('awaiting_feedback', postId);
       await tg.sendHtml(tg.OWNER, `Что поправить в #${postId}? Напишите одним сообщением.`);
@@ -74,7 +80,8 @@ async function onMessage(msg) {
   if (text === '/formats') {
     const days = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     const today = formatToday().key;
-    const list = FORMATS.map((f) => `${f.key === today ? '▶︎' : '  '} ${days[f.day]} — ${f.title}`).join('\n');
+    const list = [1, 2].map((w) => `<b>Неделя ${w}</b>\n` + FORMATS.filter((f) => f.week === w)
+      .map((f) => `${f.key === today ? '▶︎' : '  '} ${days[f.day]} — ${f.title}`).join('\n')).join('\n\n');
     return tg.sendHtml(chatId, list);
   }
 
