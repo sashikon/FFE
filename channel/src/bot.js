@@ -1,6 +1,7 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
 const { runPipeline, redraft } = require('./pipeline');
+const { activeRules, learnFromFeedback, addRule, removeRule } = require('./learn');
 const { FORMATS, PUBLISH_HOURS, localParts, formatToday, formatForNextSlot, formatByKey } = require('./formats');
 
 const DAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -64,9 +65,16 @@ async function draftRef(postId) {
 async function startRedraft(chatId, postId, feedback) {
   await setState('awaiting_feedback', null);
   const { extra } = await draftRef(postId);
+  const { rows: [before] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
   await tg.markReviewed(postId, '✏️ Переписывается');
   await tg.sendHtml(chatId, 'Переписываю — новая версия придёт следующим сообщением…', extra);
   await redraft(postId, feedback);
+  // Память правок — в фоне, чтобы не задерживать бота
+  learnFromFeedback(postId, before.text, feedback)
+    .then((learned) => learned && tg.sendHtml(chatId, `🧠 Запомнено на будущее: <i>${tg.escapeHtml(learned.rule)}</i>`, learned.id ? {
+      reply_markup: { inline_keyboard: [[{ text: '✖️ Не запоминать', callback_data: `delrule:${learned.id}` }]] },
+    } : {}))
+    .catch((e) => console.warn(`[learn] failed: ${e.message}`));
 }
 
 const hoursAgo = (date) => {
@@ -128,6 +136,22 @@ async function cmdFormats(chatId) {
   return tg.sendHtml(chatId, list);
 }
 
+async function cmdRules(chatId) {
+  const rules = await activeRules();
+  if (!rules.length) {
+    return tg.sendHtml(chatId, 'Уроков редактора пока нет. Они появляются из ваших комментариев к правкам. Добавить вручную: /rule текст правила');
+  }
+  const list = rules.map((r, i) => `${i + 1}. ${tg.escapeHtml(r.rule)}`).join('\n');
+  const buttons = rules.map((r, i) => ({ text: `✖️ ${i + 1}`, callback_data: `delrule:${r.id}` }));
+  const keyboard = [];
+  for (let i = 0; i < buttons.length; i += 5) keyboard.push(buttons.slice(i, i + 5));
+  return tg.sendHtml(
+    chatId,
+    `<b>🧠 Уроки редактора: ${rules.length}</b>\nЭти правила учитываются в каждом новом черновике.\n\n${list}\n\nУбрать правило — кнопка с его номером. Добавить — /rule текст.`,
+    { reply_markup: { inline_keyboard: keyboard } }
+  );
+}
+
 async function cmdCancel(chatId) {
   await setState('awaiting_feedback', null);
   return tg.sendHtml(chatId, 'Ок, правка отменена.');
@@ -136,7 +160,7 @@ async function cmdCancel(chatId) {
 const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
-Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить.
+Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
 async function menuKeyboard() {
@@ -145,12 +169,13 @@ async function menuKeyboard() {
            COUNT(*) FILTER (WHERE status = 'approved')::int AS queue,
            COUNT(*) FILTER (WHERE status = 'deferred')::int AS deferred
     FROM posts`);
+  const rules = (await activeRules()).length;
   return {
     inline_keyboard: [
       [{ text: `📝 Не утверждено (${c.pending})`, callback_data: 'menu:pending' }],
       [{ text: `✅ Очередь (${c.queue})`, callback_data: 'menu:queue' }, { text: `⏸ Отложенные (${c.deferred})`, callback_data: 'menu:deferred' }],
       [{ text: '📊 Статус', callback_data: 'menu:status' }, { text: '🗓 Форматы', callback_data: 'menu:formats' }],
-      [{ text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
+      [{ text: `🧠 Уроки редактора (${rules})`, callback_data: 'menu:rules' }, { text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
     ],
   };
 }
@@ -167,6 +192,7 @@ const COMMANDS = {
   queue: ['Что в очереди на публикацию', cmdQueue],
   deferred: ['Вернуть отложенные черновики', cmdDeferred],
   formats: ['Расписание форматов на две недели', cmdFormats],
+  rules: ['Уроки редактора: что запомнено из ваших правок', cmdRules],
   cancel: ['Отменить ожидание правки', cmdCancel],
 };
 
@@ -189,6 +215,10 @@ async function onCallback(q) {
   const [action, arg] = q.data.split(':');
   if (action === 'noop') return;
   if (action === 'menu') return COMMANDS[arg]?.[1](tg.OWNER);
+  if (action === 'delrule') {
+    const removed = await removeRule(Number(arg));
+    return tg.sendHtml(tg.OWNER, removed ? 'Правило убрано.' : 'Это правило уже убрано или объединено с другими — см. /rules.');
+  }
   if (action === 'open') {
     const { rows: [p] } = await pool.query('SELECT status FROM posts WHERE id = $1', [Number(arg)]);
     if (p && ['draft', 'deferred'].includes(p.status)) return resendDraft(Number(arg));
@@ -252,6 +282,12 @@ async function onMessage(msg) {
   }
 
   const command = text.match(/^\/(\w+)/)?.[1];
+  if (command === 'rule') {
+    const rule = text.replace(/^\/rule(@\w+)?\s*/, '').trim();
+    if (!rule) return tg.sendHtml(chatId, 'Напишите правило после команды: /rule Не начинай пост с цифры');
+    await addRule(rule);
+    return tg.sendHtml(chatId, `🧠 Добавлено: <i>${tg.escapeHtml(rule)}</i>`);
+  }
   if (command === 'start' || command === 'help') return cmdMenu(chatId);
   if (command && COMMANDS[command]) return COMMANDS[command][1](chatId);
 

@@ -122,7 +122,13 @@ const STYLE_DIR = path.join(__dirname, '..', 'style');
 
 const readExample = (f) => fs.readFileSync(path.join(STYLE_DIR, 'examples', f), 'utf8').trim();
 
-function writeSystem(format) {
+function rulesBlock(rules) {
+  return rules.length
+    ? `\n\nУроки редактора — правила, выведенные из правок автора канала. Они важнее стайлгайда, если противоречат ему:\n${rules.map((r) => `- ${r.rule}`).join('\n')}`
+    : '';
+}
+
+function writeSystem(format, rules = []) {
   const readStyle = (f) => fs.readFileSync(path.join(STYLE_DIR, f), 'utf8').replace(/<!--[\s\S]*?-->/g, '').trim();
   const guide = readStyle('guide.md');
   const examples = format.examples.filter((f) => fs.existsSync(path.join(STYLE_DIR, 'examples', f))).map(readExample);
@@ -132,7 +138,7 @@ function writeSystem(format) {
   const theorists = readStyle('theorists.md');
   return `Ты пишешь посты для авторского Telegram-канала о смыслах в моде.
 
-${guide}
+${guide}${rulesBlock(rules)}
 
 Справка о теоретиках (для вводных при первом упоминании):
 ${theorists}
@@ -155,7 +161,7 @@ function writeUser(insight, previous) {
 
 // ─── Шаг 6: литредактура ─────────────────────────────────────────────────────
 
-const EDIT_SYSTEM = `Ты литературный редактор русскоязычного авторского Telegram-канала о моде. Тебе дают черновик поста. Твоя задача — чтобы текст читался как написанный живым образованным человеком по-русски, а не переведённый с английского и не сгенерированный.
+const EDIT_SYSTEM_BASE = `Ты литературный редактор русскоязычного авторского Telegram-канала о моде. Тебе дают черновик поста. Твоя задача — чтобы текст читался как написанный живым образованным человеком по-русски, а не переведённый с английского и не сгенерированный.
 
 Исправь:
 - грамматику: согласование, управление, падежи, видо-временные формы;
@@ -173,10 +179,13 @@ const EDIT_SYSTEM = `Ты литературный редактор русско
 
 Выведи только исправленный текст поста, без комментариев.`;
 
+// Литредактор тоже соблюдает уроки редактора — чтобы не «выправить» обратно то, что автор просила
+const editSystem = (rules = []) => EDIT_SYSTEM_BASE + rulesBlock(rules);
+
 module.exports = {
   LENSES,
   SCORE_SYSTEM, SCORE_SCHEMA, scoreUser,
   INSIGHT_SYSTEM, INSIGHT_SCHEMA, insightUser,
   writeSystem, writeUser,
-  EDIT_SYSTEM,
+  editSystem,
 };
