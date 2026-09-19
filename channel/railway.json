@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "watchPatterns": ["/channel/**"]
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "numReplicas": 1,
+    "restartPolicyType": "ALWAYS"
+  }
+}
