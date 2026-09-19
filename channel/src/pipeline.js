@@ -156,6 +156,33 @@ async function redraft(postId, feedback) {
   return newId;
 }
 
+// Вычистить слоп в уже готовом посте: точечная правка найденных мест, без переписывания поста.
+// Новая версия приходит на утверждение, старая (в т. ч. из очереди) помечается superseded
+async function cleanSlop(postId) {
+  const { rows: [old] } = await pool.query(
+    'SELECT insight_id, text, format, image_url, image_ref FROM posts WHERE id = $1', [postId]
+  );
+  const cut = old.text.indexOf('\n\n<i>По материалам:');
+  const body = cut === -1 ? old.text : old.text.slice(0, cut);
+  const footer = cut === -1 ? '' : old.text.slice(cut);
+  const hits = findSlop(body);
+  if (!hits.length) return null;
+
+  const rules = await activeRules();
+  const fixed = cleanInvisible(await call({
+    model: MODELS.smart,
+    system: P.editSystem(rules),
+    user: `${P.slopFixInstruction(describeSlop(hits))}\n\n${body}`,
+  }));
+  const { rows: [post] } = await pool.query(
+    `INSERT INTO posts (insight_id, text, format, image_url, image_ref) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [old.insight_id, fixed + footer, old.format, old.image_url, old.image_ref]
+  );
+  await pool.query(`UPDATE posts SET status = 'superseded', feedback = '[чистка слопа]' WHERE id = $1`, [postId]);
+  await sendReview(post.id);
+  return { newId: post.id, fixed: hits.length, left: findSlop(fixed).length };
+}
+
 // ─── Прогон целиком ──────────────────────────────────────────────────────────
 
 let running = false;
@@ -198,4 +225,4 @@ async function runPipeline() {
   }
 }
 
-module.exports = { runPipeline, redraft, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, scoreNew, __draftPost: draftPost };
