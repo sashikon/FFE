@@ -3,6 +3,7 @@ const { pool, runMigrations, getState, setState } = require('./db');
 const { runPipeline } = require('./pipeline');
 const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, OWNER } = require('./telegram');
 const { poll, setupMenu } = require('./bot');
+const { startApi } = require('./api');
 
 const HOUR = 3600 * 1000;
 const INTERVAL_HOURS = Number(process.env.PIPELINE_INTERVAL_HOURS || 6);
@@ -103,6 +104,7 @@ async function start() {
   if (problem) console.error(`[telegram] ${problem}`);
   else console.log(`[telegram] ok, owner ${OWNER}`);
 
+  startApi();
   poll();
   if (!OWNER) return;
   await setupMenu().catch((e) => console.error('[telegram] menu setup failed', e.message));
