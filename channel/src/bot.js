@@ -1,6 +1,7 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
-const { runPipeline, redraft } = require('./pipeline');
+const { runPipeline, redraft, cleanSlop } = require('./pipeline');
+const { findSlop } = require('./slop');
 const { activeRules, learnFromFeedback, addRule, removeRule } = require('./learn');
 const { FORMATS, PUBLISH_HOURS, localParts, formatToday, formatForNextSlot, formatByKey } = require('./formats');
 
@@ -152,6 +153,56 @@ async function cmdRules(chatId) {
   );
 }
 
+// Проверка очереди и неутверждённых на слоп: отчёт + кнопки «Вычистить»
+async function slopReport() {
+  const { rows } = await pool.query(
+    `SELECT id, text, status FROM posts WHERE status IN ('approved', 'draft') ORDER BY status, id`
+  );
+  return rows.map((r) => ({ ...r, hits: findSlop(r.text) }));
+}
+
+async function cmdCheck(chatId) {
+  const report = await slopReport();
+  if (!report.length) return tg.sendHtml(chatId, 'Проверять нечего: очередь пуста и неутверждённых черновиков нет.');
+  const dirty = report.filter((r) => r.hits.length);
+  const lines = report.map((r) => {
+    const head = tg.escapeHtml(stripTags(r.text).split('\n')[0].slice(0, 60));
+    const where = r.status === 'approved' ? '✅' : '📝';
+    if (!r.hits.length) return `${where} <b>#${r.id}</b> ${head}\n    чисто`;
+    const found = r.hits.slice(0, 6).map((h) => `«${tg.escapeHtml(h.match)}»`).join(', ');
+    return `${where} <b>#${r.id}</b> ${head}\n    ⚠️ ${r.hits.length}: ${found}${r.hits.length > 6 ? '…' : ''}`;
+  }).join('\n\n');
+  const buttons = dirty.slice(0, 12).map((r) => ({ text: `🧹 Вычистить #${r.id}`, callback_data: `clean:${r.id}` }));
+  const keyboard = [];
+  for (let i = 0; i < buttons.length; i += 2) keyboard.push(buttons.slice(i, i + 2));
+  if (dirty.length > 1) keyboard.push([{ text: `🧹 Вычистить все (${dirty.length})`, callback_data: 'menu:cleanall' }]);
+  const summary = dirty.length
+    ? `Шаблоны найдены в ${dirty.length} из ${report.length}. «Вычистить» переписывает только найденные места; новая версия придёт на утверждение, пост из очереди до этого снимается.`
+    : `Все ${report.length} чистые 👌`;
+  return tg.sendHtml(chatId, `<b>🧹 Проверка на слоп</b>\n✅ — в очереди, 📝 — не утверждено\n\n${lines}\n\n${summary}`,
+    keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
+}
+
+async function cleanOne(chatId, postId) {
+  const { rows: [p] } = await pool.query('SELECT status FROM posts WHERE id = $1', [postId]);
+  if (!p || !['approved', 'draft'].includes(p.status)) return tg.sendHtml(chatId, `#${postId} уже не в очереди и не черновик.`);
+  if (p.status === 'draft') await tg.markReviewed(postId, '🧹 Вычищается — новая версия ниже');
+  const r = await cleanSlop(postId);
+  if (!r) return tg.sendHtml(chatId, `#${postId}: шаблонов не нашлось.`);
+  return tg.sendHtml(chatId, `🧹 #${postId} → #${r.newId}: исправлено мест: ${r.fixed}${r.left ? `, осталось: ${r.left}` : ''}. Новая версия выше — утвердите её.`);
+}
+
+async function cmdCleanAll(chatId) {
+  const dirty = (await slopReport()).filter((r) => r.hits.length);
+  if (!dirty.length) return tg.sendHtml(chatId, 'Чистить нечего 👌');
+  await tg.sendHtml(chatId, `Вычищаю ${dirty.length} — это займёт пару минут. Бот тем временем отвечает на кнопки.`);
+  (async () => {
+    for (const r of dirty) {
+      await cleanOne(chatId, r.id).catch((e) => tg.sendHtml(chatId, `#${r.id}: ошибка — ${tg.escapeHtml(e.message)}`).catch(() => {}));
+    }
+  })();
+}
+
 async function cmdCancel(chatId) {
   await setState('awaiting_feedback', null);
   return tg.sendHtml(chatId, 'Ок, правка отменена.');
@@ -175,7 +226,8 @@ async function menuKeyboard() {
       [{ text: `📝 Не утверждено (${c.pending})`, callback_data: 'menu:pending' }],
       [{ text: `✅ Очередь (${c.queue})`, callback_data: 'menu:queue' }, { text: `⏸ Отложенные (${c.deferred})`, callback_data: 'menu:deferred' }],
       [{ text: '📊 Статус', callback_data: 'menu:status' }, { text: '🗓 Форматы', callback_data: 'menu:formats' }],
-      [{ text: `🧠 Уроки редактора (${rules})`, callback_data: 'menu:rules' }, { text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
+      [{ text: `🧠 Уроки редактора (${rules})`, callback_data: 'menu:rules' }, { text: '🧹 Проверить на слоп', callback_data: 'menu:check' }],
+      [{ text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
     ],
   };
 }
@@ -193,6 +245,8 @@ const COMMANDS = {
   deferred: ['Вернуть отложенные черновики', cmdDeferred],
   formats: ['Расписание форматов на две недели', cmdFormats],
   rules: ['Уроки редактора: что запомнено из ваших правок', cmdRules],
+  check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
+  cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
   cancel: ['Отменить ожидание правки', cmdCancel],
 };
 
@@ -242,6 +296,11 @@ async function onCallback(q) {
   const [action, arg] = q.data.split(':');
   if (action === 'noop') return;
   if (action === 'menu') return COMMANDS[arg]?.[1](tg.OWNER);
+  if (action === 'clean') {
+    // чистка идёт минуту — не держим бота
+    cleanOne(tg.OWNER, Number(arg)).catch((e) => tg.sendHtml(tg.OWNER, `Ошибка: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+    return;
+  }
   if (action === 'delrule') {
     const removed = await removeRule(Number(arg));
     return tg.sendHtml(tg.OWNER, removed ? 'Правило убрано.' : 'Это правило уже убрано или объединено с другими — см. /rules.');
