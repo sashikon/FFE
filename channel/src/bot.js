@@ -44,11 +44,17 @@ async function onMessage(msg) {
   const chatId = String(msg.chat.id);
   const text = (msg.text || '').trim();
 
-  if (!tg.OWNER) {
-    if (text === '/start') await tg.api('sendMessage', { chat_id: chatId, text: `Ваш chat id: ${chatId}\nВпишите его в TELEGRAM_OWNER_CHAT_ID и перезапустите.` });
+  // Не-владельцу на /start отвечаем его id — так проще всего найти ошибку в TELEGRAM_OWNER_CHAT_ID
+  if (!tg.OWNER || chatId !== String(tg.OWNER)) {
+    console.log(`[bot] message from ${chatId} (owner: ${tg.OWNER || 'not set'})`);
+    if (text.startsWith('/start')) {
+      await tg.api('sendMessage', {
+        chat_id: chatId,
+        text: `Ваш chat id: ${chatId}\nВпишите его в TELEGRAM_OWNER_CHAT_ID и перезапустите сервис.`,
+      });
+    }
     return;
   }
-  if (chatId !== String(tg.OWNER)) return;
 
   if (text === '/start' || text === '/help') return tg.sendHtml(chatId, HELP);
 
@@ -107,7 +113,8 @@ async function poll() {
       }
     } catch (e) {
       console.error('[bot] poll error', e.message);
-      await new Promise((r) => setTimeout(r, 5000));
+      // при webhook ошибка не пройдёт сама — не засоряем лог каждые 5 секунд
+      await new Promise((r) => setTimeout(r, /webhook/.test(e.message) ? 60_000 : 5000));
     }
   }
 }

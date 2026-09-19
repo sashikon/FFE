@@ -90,4 +90,30 @@ async function publish(postId) {
   await markReviewed(postId, '📣 Опубликован');
 }
 
-module.exports = { api, sendHtml, sendReview, markReviewed, publish, escapeHtml, OWNER };
+// Черновики, которые не удалось доставить (владелец был недоступен) — дослать
+async function resendUndelivered() {
+  const { rows } = await pool.query(
+    `SELECT id FROM posts WHERE status = 'draft' AND review_message_id IS NULL ORDER BY id`
+  );
+  for (const r of rows) await sendReview(r.id);
+  return rows.length;
+}
+
+// Проверка связи перед тратой на модель: webhook перехватывает сообщения, а неверный OWNER — черновики
+async function checkTelegram() {
+  const hook = await api('getWebhookInfo');
+  if (hook.url) {
+    return `у бота включён webhook (${new URL(hook.url).host}) — сообщения уходят туда. Удалите его или возьмите новый бот`;
+  }
+  if (!OWNER) return 'TELEGRAM_OWNER_CHAT_ID пуст: напишите боту /start, чтобы узнать свой id';
+  try {
+    await api('sendChatAction', { chat_id: OWNER, action: 'typing' });
+  } catch (e) {
+    return `не могу написать владельцу ${OWNER}: ${e.message}. Проверьте TELEGRAM_OWNER_CHAT_ID и что вы нажали Start в чате с ботом`;
+  }
+  return null;
+}
+
+module.exports = {
+  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, TelegramError, OWNER,
+};

@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Без таймаута pg ждёт недоступную базу вечно и молча
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
 
 pool.on('error', (err) => console.error('pg pool error', err));
 
