@@ -19,6 +19,18 @@ module.exports = [
   // Jing Daily — люкс и потребитель Китая; RSS нет, берём из карты сайта
   { name: 'Jing Daily', layer: 'industry', type: 'sitemap', url: 'https://jingdaily.com/posts/sitemap.xml', titleSuffix: / \| Jing Daily$/ },
 
+  // трендовые агентства — публикуются редко, окно 30 дней
+  { name: 'Heuritech', layer: 'industry', url: 'https://www.heuritech.com/feed/', maxAgeDays: 30 },
+  {
+    name: 'Peclers Paris',
+    layer: 'industry',
+    type: 'sitemap',
+    url: ['https://www.peclersparis.com/trendbook-sitemap.xml', 'https://www.peclersparis.com/article-sitemap.xml'],
+    urlFilter: /lang=en/, // у каждой страницы есть французский дубль
+    titleFrom: 'slug', // сайт собирается скриптом, в HTML заголовка нет
+    maxAgeDays: 30,
+  },
+
   // production — самый ценный слой: здесь меньше всего чужих интерпретаций
   { name: 'Just Style', layer: 'production', url: 'https://www.just-style.com/feed/' },
   { name: 'Fibre2Fashion', layer: 'production', url: 'https://www.fibre2fashion.com/news/rss/news.xml' },

@@ -10,6 +10,8 @@ const parser = new Parser({
 });
 
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000;
+// Трендовые агентства публикуются раз в несколько недель — им окно шире
+const maxAge = (src) => (src.maxAgeDays ? src.maxAgeDays * 24 * 3600 * 1000 : MAX_AGE_MS);
 
 // Вакансии, гороскопы, пустые заголовки — не новости
 const NOISE = [
@@ -49,7 +51,7 @@ async function collectRss(src) {
   for (const entry of feed.items || []) {
     if (!entry.link || !entry.title) continue;
     const published = entry.isoDate ? new Date(entry.isoDate) : null;
-    if (published && Date.now() - published.getTime() > MAX_AGE_MS) continue;
+    if (published && Date.now() - published.getTime() > maxAge(src)) continue;
 
     // Google News дописывает « - Издание» к заголовку, а в описании дублирует заголовок
     let title = clean(entry.title);
@@ -92,11 +94,27 @@ const decode = (s) => s
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 
 // Издания без RSS: берём свежие адреса из карты сайта, заголовок — со страницы статьи
+// или из адреса (titleFrom: 'slug'), если страница собирается скриптом и заголовка в HTML нет
+function titleFromSlug(url) {
+  const slug = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+  const words = slug.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+async function titleFromPage(url, src) {
+  const html = await fetchText(url);
+  const raw = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1] || html.match(/<title>([^<]+)/)?.[1];
+  return raw ? clean(decode(raw)).replace(src.titleSuffix || /$^/, '').trim() : null;
+}
+
 async function collectSitemap(src) {
-  const xml = await fetchText(src.url);
-  const fresh = [...xml.matchAll(/<loc>([^<]+)<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/g)]
-    .map(([, url, lastmod]) => ({ url: url.trim(), published: new Date(lastmod) }))
-    .filter((e) => Date.now() - e.published.getTime() <= MAX_AGE_MS)
+  const xmls = await Promise.all([].concat(src.url).map(fetchText));
+  const fresh = xmls
+    .flatMap((xml) => [...xml.matchAll(/<loc>([^<]+)<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/g)])
+    .map(([, url, lastmod]) => ({ url: decode(url.trim()), published: new Date(lastmod) }))
+    .filter((e) => Date.now() - e.published.getTime() <= maxAge(src))
+    .filter((e) => !src.urlFilter || src.urlFilter.test(e.url))
+    .sort((a, b) => b.published - a.published)
     .slice(0, SITEMAP_LIMIT);
   if (!fresh.length) return 0;
 
@@ -105,12 +123,11 @@ async function collectSitemap(src) {
   let added = 0;
 
   for (const e of fresh.filter((f) => !known.has(f.url))) {
-    let html;
-    try { html = await fetchText(e.url); } catch { continue; }
-    const raw = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1] || html.match(/<title>([^<]+)/)?.[1];
-    if (!raw) continue;
-    const title = clean(decode(raw)).replace(src.titleSuffix || /$^/, '').trim();
-    if (isNoise(title)) continue;
+    let title;
+    try {
+      title = src.titleFrom === 'slug' ? titleFromSlug(e.url) : await titleFromPage(e.url, src);
+    } catch { continue; }
+    if (!title || isNoise(title)) continue;
     const { rowCount } = await pool.query(
       `INSERT INTO items (source, layer, url, title, published_at)
        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,

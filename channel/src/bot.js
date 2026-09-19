@@ -74,7 +74,8 @@ async function onMessage(msg) {
   if (text === '/formats') {
     const days = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     const today = formatToday().key;
-    const list = FORMATS.map((f) => `${f.key === today ? '▶︎' : '  '} ${days[f.day]} — ${f.title}`).join('\n');
+    const list = [1, 2].map((w) => `<b>Неделя ${w}</b>\n` + FORMATS.filter((f) => f.week === w)
+      .map((f) => `${f.key === today ? '▶︎' : '  '} ${days[f.day]} — ${f.title}`).join('\n')).join('\n\n');
     return tg.sendHtml(chatId, list);
   }
 
