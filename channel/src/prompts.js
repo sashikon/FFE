@@ -1,0 +1,155 @@
+const fs = require('fs');
+const path = require('path');
+
+// Линзы — через них новость превращается в смысл. Ключи хранятся в БД.
+const LENSES = {
+  sign: 'Знак — что эта вещь или жест теперь означает; как сдвигается значение',
+  status: 'Статус и различение — кто от кого отделяется, как строится вкус и принадлежность к классу',
+  body: 'Тело и норма — какое тело предполагается, что считается «правильным»',
+  labor: 'Труд и материал — что спрятано за вещью: руки, фабрики, сырьё, отходы',
+  time: 'Время — ностальгия, ускорение, износ, повтор, винтаж',
+  identity: 'Идентичность — как одеждой говорят «я», «мы» и «не они»',
+};
+
+const lensList = Object.entries(LENSES).map(([k, v]) => `- ${k}: ${v}`).join('\n');
+
+// ─── Шаг 3: отбор ────────────────────────────────────────────────────────────
+
+const SCORE_SYSTEM = `Ты редактор авторского канала о смыслах в моде: семиотика одежды, психология стиля, мода как социальный язык.
+Тебе дают список сюжетов из мировой модной ленты (индустрия, производство, культура). Оцени каждый: есть ли в нём материал для поста о СМЫСЛЕ, а не о событии.
+
+Линзы:
+${lensList}
+
+Шкала:
+5 — частный факт открывает общий сдвиг в том, что одежда значит или как люди через неё живут
+4 — ясный смысловой потенциал через одну из линз
+3 — есть зацепка, но пост вышел бы натянутым
+0–2 — чистая хроника: назначения, финансовые отчёты, релизы, коллаборации ради коллабораций, светская хроника
+
+Производственные новости часто недооценены: фабрика, сырьё, логистика, ресейл иногда говорят о смысле вещей больше, чем подиум.
+reason — одна фраза по-русски: в чём смысловая зацепка (или почему её нет).`;
+
+const SCORE_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          cluster_id: { type: 'integer' },
+          score: { type: 'integer' },
+          lens: { type: 'string', enum: Object.keys(LENSES) },
+          reason: { type: 'string' },
+        },
+        required: ['cluster_id', 'score', 'lens', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+};
+
+function scoreUser(clusters) {
+  return clusters.map((c) => {
+    const head = c.items[0];
+    const extra = c.items.length > 1 ? ` (+${c.items.length - 1} источн.)` : '';
+    const summary = head.summary ? ` — ${head.summary.slice(0, 250)}` : '';
+    return `#${c.id} [${head.layer}] ${head.title}${summary}${extra}`;
+  }).join('\n');
+}
+
+// ─── Шаг 4: извлечение смысла ────────────────────────────────────────────────
+
+const INSIGHT_SYSTEM = `Ты исследователь моды как знаковой системы и социальной практики. Твоя опора — семиотика (Барт, Эко, Лотман), социология (Зиммель, Веблен, Бурдьё, Бодрийяр), психология одежды и антропология вещей. Используй рамку, только если она действительно объясняет случай; не подгоняй.
+
+Тебе дают сюжет — одну или несколько заметок об одном событии. Проделай движение от частного к общему:
+1. fact — что произошло, одной фразой. Только то, что есть в заметках; ничего не додумывай.
+2. detail — конкретная частность, за которую цепляется взгляд (цифра, жест, вещь, формулировка).
+3. shift — что сдвигается в значении: было → становится.
+4. frame — через какую идею это читается, и кому она принадлежит. Одно-два предложения.
+5. general — что этот случай говорит о людях и одежде вообще. Это ядро будущего поста.
+6. reader_turn — как это касается самого читателя: его гардероба, выбора, взгляда на других.
+7. thesis — главный тезис одной фразой (по нему канал помнит, о чём уже говорил).
+8. lens — основная линза.
+9. is_repeat — true, если thesis по сути повторяет один из недавних тезисов канала.
+10. weak — true, если честного смысла здесь нет и пост получился бы натянутым. Это нормальный ответ.
+
+Линзы:
+${lensList}
+
+Пиши по-русски. Мысль важнее эрудиции: лучше одна точная рамка, чем три имени.`;
+
+const INSIGHT_SCHEMA = {
+  type: 'object',
+  properties: {
+    fact: { type: 'string' },
+    detail: { type: 'string' },
+    shift: { type: 'string' },
+    frame: { type: 'string' },
+    general: { type: 'string' },
+    reader_turn: { type: 'string' },
+    thesis: { type: 'string' },
+    lens: { type: 'string', enum: Object.keys(LENSES) },
+    is_repeat: { type: 'boolean' },
+    weak: { type: 'boolean' },
+  },
+  required: ['fact', 'detail', 'shift', 'frame', 'general', 'reader_turn', 'thesis', 'lens', 'is_repeat', 'weak'],
+  additionalProperties: false,
+};
+
+function insightUser(items, recentTheses) {
+  const notes = items.map((it, i) =>
+    `[${i + 1}] ${it.source} (${it.layer})\n${it.title}${it.summary ? `\n${it.summary}` : ''}`
+  ).join('\n\n');
+  const memory = recentTheses.length
+    ? recentTheses.map((t) => `- ${t}`).join('\n')
+    : '(пока ничего)';
+  return `Заметки сюжета:\n\n${notes}\n\nНедавние тезисы канала:\n${memory}`;
+}
+
+// ─── Шаг 5: текст поста ──────────────────────────────────────────────────────
+
+const STYLE_DIR = path.join(__dirname, '..', 'style');
+
+function loadStyle() {
+  const guide = fs.readFileSync(path.join(STYLE_DIR, 'guide.md'), 'utf8');
+  const exDir = path.join(STYLE_DIR, 'examples');
+  const examples = fs.readdirSync(exDir)
+    .filter((f) => f.endsWith('.md') && f !== 'README.md')
+    .sort()
+    .map((f) => fs.readFileSync(path.join(exDir, f), 'utf8').trim());
+  return { guide, examples };
+}
+
+function writeSystem() {
+  const { guide, examples } = loadStyle();
+  const exBlock = examples.length
+    ? `\n\nОбразцы постов канала — ориентир по голосу, ритму и длине (не по темам):\n\n${examples.map((e, i) => `<example ${i + 1}>\n${e}\n</example>`).join('\n\n')}`
+    : '';
+  return `Ты пишешь посты для авторского Telegram-канала о смыслах в моде.
+
+${guide}${exBlock}
+
+Технические требования:
+- Разметка Telegram HTML: только <b>, <i>, <blockquote>. Никаких других тегов, никакого Markdown.
+- Не вставляй ссылки и не упоминай «источник» — ссылки добавятся автоматически.
+- Выведи только текст поста, без пояснений до или после.`;
+}
+
+function writeUser(insight, previous) {
+  let msg = `Разбор сюжета:\n${JSON.stringify(insight, null, 2)}`;
+  if (previous) {
+    msg += `\n\nПредыдущая версия поста:\n${previous.text}\n\nПравка автора канала: ${previous.feedback}\n\nПерепиши пост с учётом правки.`;
+  }
+  return msg;
+}
+
+module.exports = {
+  LENSES,
+  SCORE_SYSTEM, SCORE_SCHEMA, scoreUser,
+  INSIGHT_SYSTEM, INSIGHT_SCHEMA, insightUser,
+  writeSystem, writeUser,
+};

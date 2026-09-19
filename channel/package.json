@@ -1,0 +1,21 @@
+{
+  "name": "fashion-meaning-channel",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "run-once": "node src/cli.js run",
+    "collect": "node src/cli.js collect"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.5",
+    "rss-parser": "^3.13.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
