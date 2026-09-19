@@ -6,22 +6,20 @@ const { poll } = require('./bot');
 
 const HOUR = 3600 * 1000;
 const INTERVAL_HOURS = Number(process.env.PIPELINE_INTERVAL_HOURS || 6);
-const PUBLISH_HOURS = (process.env.PUBLISH_HOURS || '10,19').split(',').map(Number);
-const TZ = process.env.TZ || 'Europe/Moscow';
+const { PUBLISH_HOURS, TZ, localParts, formatToday } = require('./formats');
 
-function currentHour() {
-  return Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: TZ }).format(new Date()));
-}
-
-// Раз в 5 минут: если сейчас слот публикации и в этот слот ещё ничего не выходило — публикуем старейший одобренный
+// Раз в 5 минут: если сейчас слот публикации и в этот слот ещё ничего не выходило —
+// публикуем одобренный пост формата дня, а если такого нет — старейший одобренный
 async function publishDue() {
-  if (!PUBLISH_HOURS.includes(currentHour())) return;
+  if (!PUBLISH_HOURS.includes(localParts(new Date()).hour)) return;
   const { rows: recent } = await pool.query(
     `SELECT 1 FROM posts WHERE published_at > NOW() - INTERVAL '90 minutes' LIMIT 1`
   );
   if (recent.length) return;
   const { rows: [next] } = await pool.query(
-    `SELECT id FROM posts WHERE status = 'approved' ORDER BY approved_at LIMIT 1`
+    `SELECT id FROM posts WHERE status = 'approved'
+     ORDER BY (format = $1) DESC NULLS LAST, approved_at LIMIT 1`,
+    [formatToday().key]
   );
   if (!next) return;
   try {

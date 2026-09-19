@@ -75,7 +75,7 @@ const INSIGHT_SYSTEM = `Ты исследователь моды как знак
 7. thesis — главный тезис одной фразой (по нему канал помнит, о чём уже говорил).
 8. lens — основная линза.
 9. is_repeat — true, если thesis по сути повторяет один из недавних тезисов канала.
-10. weak — true, если честного смысла здесь нет и пост получился бы натянутым. Это нормальный ответ.
+10. weak — true, если честного смысла здесь нет, или сюжет не подходит под формат поста, и пост получился бы натянутым. Это нормальный ответ.
 
 Линзы:
 ${lensList}
@@ -100,38 +100,39 @@ const INSIGHT_SCHEMA = {
   additionalProperties: false,
 };
 
-function insightUser(items, recentTheses) {
+function formatBlock(format) {
+  return `Формат поста: «${format.title}»
+Суть: ${format.idea}
+Структура: ${format.structure}${format.note ? `\n${format.note}` : ''}`;
+}
+
+function insightUser(items, recentTheses, format) {
   const notes = items.map((it, i) =>
     `[${i + 1}] ${it.source} (${it.layer})\n${it.title}${it.summary ? `\n${it.summary}` : ''}`
   ).join('\n\n');
   const memory = recentTheses.length
     ? recentTheses.map((t) => `- ${t}`).join('\n')
     : '(пока ничего)';
-  return `Заметки сюжета:\n\n${notes}\n\nНедавние тезисы канала:\n${memory}`;
+  return `${formatBlock(format)}\n\nРазбери сюжет так, чтобы из него вышел пост именно этого формата.\n\nЗаметки сюжета:\n\n${notes}\n\nНедавние тезисы канала:\n${memory}`;
 }
 
 // ─── Шаг 5: текст поста ──────────────────────────────────────────────────────
 
 const STYLE_DIR = path.join(__dirname, '..', 'style');
 
-function loadStyle() {
-  const guide = fs.readFileSync(path.join(STYLE_DIR, 'guide.md'), 'utf8');
-  const exDir = path.join(STYLE_DIR, 'examples');
-  const examples = fs.readdirSync(exDir)
-    .filter((f) => f.endsWith('.md') && f !== 'README.md')
-    .sort()
-    .map((f) => fs.readFileSync(path.join(exDir, f), 'utf8').trim());
-  return { guide, examples };
-}
+const readExample = (f) => fs.readFileSync(path.join(STYLE_DIR, 'examples', f), 'utf8').trim();
 
-function writeSystem() {
-  const { guide, examples } = loadStyle();
+function writeSystem(format) {
+  const guide = fs.readFileSync(path.join(STYLE_DIR, 'guide.md'), 'utf8');
+  const examples = format.examples.filter((f) => fs.existsSync(path.join(STYLE_DIR, 'examples', f))).map(readExample);
   const exBlock = examples.length
-    ? `\n\nОбразцы постов канала — ориентир по голосу, ритму и длине (не по темам):\n\n${examples.map((e, i) => `<example ${i + 1}>\n${e}\n</example>`).join('\n\n')}`
+    ? `\n\nОбразцы постов этого формата — ориентир по голосу, ритму, длине и построению (не по темам):\n\n${examples.map((e, i) => `<example ${i + 1}>\n${e}\n</example>`).join('\n\n')}`
     : '';
   return `Ты пишешь посты для авторского Telegram-канала о смыслах в моде.
 
-${guide}${exBlock}
+${guide}
+
+${formatBlock(format)}${exBlock}
 
 Технические требования:
 - Разметка Telegram HTML: только <b>, <i>, <blockquote>. Никаких других тегов, никакого Markdown.
