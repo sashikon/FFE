@@ -5,6 +5,7 @@ const sources = require('./sources');
 const parser = new Parser({
   timeout: 20_000,
   headers: { 'User-Agent': 'Mozilla/5.0 (fashion-meaning-channel)' },
+  customFields: { item: ['source'] },
 });
 
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000;
@@ -53,8 +54,14 @@ async function collectSource(src) {
     let title = clean(entry.title);
     let source = src.name;
     if (isGoogle) {
-      const m = title.match(/^(.*) - ([^-]+)$/);
-      if (m) { title = m[1].trim(); source = m[2].trim(); }
+      const publisher = typeof entry.source === 'string' ? entry.source : entry.source?._;
+      if (publisher) source = publisher.trim();
+      const suffix = ` - ${source}`;
+      if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
+      else {
+        const m = title.match(/^(.*) - ([^-]+)$/);
+        if (m) { title = m[1].trim(); if (!publisher) source = m[2].trim(); }
+      }
     }
     if (isNoise(title)) continue;
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);

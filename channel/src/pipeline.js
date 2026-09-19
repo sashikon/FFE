@@ -96,8 +96,10 @@ function sourcesFooter(items) {
   const seen = new Set();
   const links = [];
   for (const it of items) {
-    if (seen.has(it.source)) continue;
-    seen.add(it.source);
+    // «The Guardian» и «The Guardian Fashion» — одно издание
+    const base = it.source.toLowerCase().replace(/\s+(fashion|style|news)$/, '');
+    if (seen.has(base) || it.source.startsWith('GN:')) continue;
+    seen.add(base);
     links.push(`<a href="${escapeHtml(it.url)}">${escapeHtml(it.source)}</a>`);
     if (links.length === 3) break;
   }
