@@ -2,7 +2,7 @@ require('dotenv').config();
 const { pool, runMigrations, getState, setState } = require('./db');
 const { runPipeline } = require('./pipeline');
 const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, OWNER } = require('./telegram');
-const { poll } = require('./bot');
+const { poll, setupMenu } = require('./bot');
 
 const HOUR = 3600 * 1000;
 const INTERVAL_HOURS = Number(process.env.PIPELINE_INTERVAL_HOURS || 6);
@@ -105,6 +105,7 @@ async function start() {
 
   poll();
   if (!OWNER) return;
+  await setupMenu().catch((e) => console.error('[telegram] menu setup failed', e.message));
 
   setInterval(safely('publish', publishDue), 5 * 60 * 1000);
   setInterval(safely('remind', remindIfDue), 10 * 60 * 1000);
