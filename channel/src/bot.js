@@ -208,6 +208,33 @@ async function setupMenu() {
 
 // ─── Обработчики ─────────────────────────────────────────────────────────────
 
+// ─── Закрытость: бот работает только для владельца ───────────────────────────
+
+// Посторонним не отвечаем; из групп и каналов выходим; владельцу — уведомление раз в сутки на человека
+async function onStranger(msg) {
+  const chat = msg.chat;
+  const who = msg.from?.username ? `@${msg.from.username}` : [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || 'без имени';
+  console.log(`[bot] ignored ${chat.type} ${chat.id} (${who})`);
+  if (chat.type !== 'private') {
+    await tg.api('leaveChat', { chat_id: chat.id }).catch(() => {});
+  }
+  const seen = (await getState('strangers')) || {};
+  const key = String(msg.from?.id ?? chat.id);
+  if (seen[key] && Date.now() - new Date(seen[key]).getTime() < 24 * 3600e3) return;
+  seen[key] = new Date().toISOString();
+  await setState('strangers', seen);
+  const where = chat.type === 'private' ? 'написал(а) боту' : `добавил(а) бота в «${tg.escapeHtml(chat.title || chat.type)}» — бот вышел оттуда`;
+  await tg.sendHtml(tg.OWNER, `🔒 Посторонний ${tg.escapeHtml(who)} ${where}. Посторонним бот не отвечает.`).catch(() => {});
+}
+
+// Бота добавили в группу или канал — выходим, если это сделал не владелец
+async function onMembership(u) {
+  const { chat, from, new_chat_member: member } = u;
+  if (chat.type === 'private' || String(from?.id) === String(tg.OWNER)) return;
+  if (!['member', 'administrator'].includes(member?.status)) return;
+  await onStranger({ chat, from });
+}
+
 async function onCallback(q) {
   await tg.api('answerCallbackQuery', { callback_query_id: q.id }).catch(() => {});
   if (String(q.from?.id) !== String(tg.OWNER)) return;
@@ -269,9 +296,8 @@ async function onMessage(msg) {
   const chatId = String(msg.chat.id);
   const text = (msg.text || '').trim();
 
-  // Не-владельцу на /start отвечаем его id — так проще всего найти ошибку в TELEGRAM_OWNER_CHAT_ID
-  if (!tg.OWNER || chatId !== String(tg.OWNER)) {
-    console.log(`[bot] message from ${chatId} (owner: ${tg.OWNER || 'not set'})`);
+  if (!tg.OWNER) {
+    // Режим настройки: владелец ещё не задан — на /start отвечаем chat id, чтобы его узнать
     if (text.startsWith('/start')) {
       await tg.api('sendMessage', {
         chat_id: chatId,
@@ -280,6 +306,7 @@ async function onMessage(msg) {
     }
     return;
   }
+  if (chatId !== String(tg.OWNER)) return onStranger(msg);
 
   const command = text.match(/^\/(\w+)/)?.[1];
   if (command === 'rule') {
@@ -318,7 +345,7 @@ async function poll() {
   for (;;) {
     try {
       const updates = await tg.api('getUpdates', {
-        offset, timeout: 30, allowed_updates: ['message', 'callback_query'],
+        offset, timeout: 30, allowed_updates: ['message', 'callback_query', 'my_chat_member'],
       });
       for (const u of updates) {
         offset = u.update_id + 1;
@@ -326,6 +353,7 @@ async function poll() {
         try {
           if (u.callback_query) await onCallback(u.callback_query);
           else if (u.message) await onMessage(u.message);
+          else if (u.my_chat_member && tg.OWNER) await onMembership(u.my_chat_member);
         } catch (e) {
           console.error('[bot] handler error', e);
           await tg.sendHtml(tg.OWNER, `Ошибка: ${tg.escapeHtml(e.message)}`).catch(() => {});
@@ -339,4 +367,4 @@ async function poll() {
   }
 }
 
-module.exports = { poll, setupMenu, __test: { onMessage, onCallback } };
+module.exports = { poll, setupMenu, __test: { onMessage, onCallback, onMembership } };
