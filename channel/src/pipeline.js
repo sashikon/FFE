@@ -3,7 +3,7 @@ const { collectAll } = require('./collect');
 const { clusterNewItems, clusterItems } = require('./cluster');
 const { call, MODELS } = require('./llm');
 const P = require('./prompts');
-const { sendReview, escapeHtml } = require('./telegram');
+const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
 const DRAFTS_PER_RUN = Number(process.env.DRAFTS_PER_RUN || 3);
@@ -152,6 +152,11 @@ async function runPipeline() {
         await draftPost(insightId);
         drafted++;
       } catch (e) {
+        // Черновик уже сохранён — его дошлёт resendUndelivered; дальше не тратим модель впустую
+        if (e instanceof TelegramError) {
+          console.error(`[pipeline] Telegram недоступен, прогон остановлен: ${e.message}`);
+          break;
+        }
         console.error(`[pipeline] cluster ${c.id} failed`, e);
         await pool.query(`UPDATE clusters SET status = 'failed', error_msg = $1 WHERE id = $2`, [e.message, c.id]);
       }

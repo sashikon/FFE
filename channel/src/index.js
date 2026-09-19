@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { pool, runMigrations, getState, setState } = require('./db');
 const { runPipeline } = require('./pipeline');
-const { publish, sendHtml, escapeHtml, OWNER } = require('./telegram');
+const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, OWNER } = require('./telegram');
 const { poll } = require('./bot');
 
 const HOUR = 3600 * 1000;
@@ -35,6 +35,14 @@ async function publishDue() {
 
 // Прогон не чаще интервала — даже если сервис перезапускался (деплой, падение)
 async function pipelineIfDue() {
+  const problem = await checkTelegram();
+  if (problem) {
+    console.error(`[pipeline] пропущен: ${problem}`);
+    return;
+  }
+  const resent = await resendUndelivered();
+  if (resent) console.log(`[pipeline] дослано черновиков: ${resent}`);
+
   const last = await getState('last_pipeline_at');
   if (last && Date.now() - new Date(last).getTime() < INTERVAL_HOURS * HOUR * 0.95) return;
   await setState('last_pipeline_at', new Date().toISOString());
@@ -51,11 +59,11 @@ async function start() {
   }
   await runMigrations();
 
+  const problem = await checkTelegram();
+  if (problem) console.error(`[telegram] ${problem}`);
+
   poll();
-  if (!OWNER) {
-    console.log('TELEGRAM_OWNER_CHAT_ID пуст: напишите боту /start, чтобы узнать свой id. Конвейер не запущен.');
-    return;
-  }
+  if (!OWNER) return;
 
   setInterval(safely('publish', publishDue), 5 * 60 * 1000);
   setInterval(safely('pipeline', pipelineIfDue), 10 * 60 * 1000);

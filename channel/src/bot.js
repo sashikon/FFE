@@ -107,7 +107,8 @@ async function poll() {
       }
     } catch (e) {
       console.error('[bot] poll error', e.message);
-      await new Promise((r) => setTimeout(r, 5000));
+      // при webhook ошибка не пройдёт сама — не засоряем лог каждые 5 секунд
+      await new Promise((r) => setTimeout(r, /webhook/.test(e.message) ? 60_000 : 5000));
     }
   }
 }
