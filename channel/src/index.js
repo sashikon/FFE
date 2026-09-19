@@ -78,8 +78,8 @@ async function remindIfDue() {
     : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? 'черновика' : 'черновиков';
   const drafts = `${n} ${word}`;
   const text = urgent
-    ? `⏰ Через час публикация в канал, а в очереди пусто. Ждут решения: ${drafts}.`
-    : `🔔 Ждут решения: ${drafts}. Самый старый — выше.`;
+    ? `⏰ Через час публикация в канал, а в очереди пусто. Не утверждено: ${drafts} — /pending.`
+    : `🔔 Не утверждено: ${drafts}. Самый старый — выше, весь список — /pending.`;
   await sendHtml(OWNER, text, {
     reply_parameters: { message_id: Number(pending[0].review_message_id), allow_sending_without_reply: true },
   });

@@ -1,7 +1,7 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
 const { runPipeline, redraft } = require('./pipeline');
-const { FORMATS, PUBLISH_HOURS, localParts, formatToday, formatForNextSlot } = require('./formats');
+const { FORMATS, PUBLISH_HOURS, localParts, formatToday, formatForNextSlot, formatByKey } = require('./formats');
 
 const DAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -32,7 +32,7 @@ async function cmdStatus(chatId) {
     `<b>Ближайшая публикация</b>: ${slot}, формат черновиков — «${formatForNextSlot(now).title}»`,
     '',
     `✅ В очереди: ${c.queue}`,
-    `🕓 Ждут решения: ${c.pending}`,
+    `📝 Не утверждено: ${c.pending}`,
     `⏸ Отложено: ${c.deferred}`,
     `📣 Опубликовано за 7 дней: ${c.week_published}`,
     '',
@@ -50,14 +50,42 @@ async function cmdRun(chatId) {
     .catch((e) => tg.sendHtml(chatId, `Прогон упал: ${tg.escapeHtml(e.message)}`).catch(() => {}));
 }
 
+const hoursAgo = (date) => {
+  const h = Math.floor((Date.now() - new Date(date).getTime()) / 3600e3);
+  return h < 1 ? 'меньше часа' : `${h} ч`;
+};
+
+// Обзор неутверждённых черновиков: заголовок, формат, сколько ждёт + кнопки «Открыть»
 async function cmdPending(chatId) {
+  const { rows } = await pool.query(
+    `SELECT id, text, format, created_at FROM posts WHERE status = 'draft' ORDER BY created_at`
+  );
+  if (!rows.length) return tg.sendHtml(chatId, 'Все черновики разобраны 👌');
+
+  const list = rows.map((r) => {
+    const head = stripTags(r.text).split('\n')[0].slice(0, 70);
+    const format = formatByKey(r.format)?.title;
+    return `<b>#${r.id}</b> ${tg.escapeHtml(head)}\n    ${format ? `${format} · ` : ''}ждёт ${hoursAgo(r.created_at)}`;
+  }).join('\n\n');
+
+  const open = rows.slice(0, 12).map((r) => ({ text: `Открыть #${r.id}`, callback_data: `open:${r.id}` }));
+  const keyboard = [];
+  for (let i = 0; i < open.length; i += 3) keyboard.push(open.slice(i, i + 3));
+  keyboard.push([{ text: '📨 Прислать все', callback_data: 'menu:resend' }]);
+
+  return tg.sendHtml(chatId, `<b>Не утверждено: ${rows.length}</b>\n\n${list}`, { reply_markup: { inline_keyboard: keyboard } });
+}
+
+// Прислать черновик заново; старую копию помечаем, чтобы в чате не было двух живых копий с кнопками
+async function resendDraft(postId) {
+  await tg.markReviewed(postId, '↓ Прислан заново ниже');
+  await tg.sendReview(postId);
+}
+
+async function cmdResendAll(chatId) {
   const { rows } = await pool.query(`SELECT id FROM posts WHERE status = 'draft' ORDER BY created_at`);
   if (!rows.length) return tg.sendHtml(chatId, 'Все черновики разобраны 👌');
-  // старые сообщения помечаем, чтобы в чате не было двух живых копий с кнопками
-  for (const r of rows) {
-    await tg.markReviewed(r.id, '↓ Прислан заново ниже');
-    await tg.sendReview(r.id);
-  }
+  for (const r of rows) await resendDraft(r.id);
 }
 
 async function cmdQueue(chatId) {
@@ -91,22 +119,31 @@ const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
-const menuKeyboard = {
-  inline_keyboard: [
-    [{ text: '📊 Статус', callback_data: 'menu:status' }, { text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
-    [{ text: '🕓 Ждут решения', callback_data: 'menu:pending' }, { text: '✅ Очередь', callback_data: 'menu:queue' }],
-    [{ text: '⏸ Отложенные', callback_data: 'menu:deferred' }, { text: '🗓 Форматы', callback_data: 'menu:formats' }],
-  ],
-};
+async function menuKeyboard() {
+  const { rows: [c] } = await pool.query(`
+    SELECT COUNT(*) FILTER (WHERE status = 'draft')::int AS pending,
+           COUNT(*) FILTER (WHERE status = 'approved')::int AS queue,
+           COUNT(*) FILTER (WHERE status = 'deferred')::int AS deferred
+    FROM posts`);
+  return {
+    inline_keyboard: [
+      [{ text: `📝 Не утверждено (${c.pending})`, callback_data: 'menu:pending' }],
+      [{ text: `✅ Очередь (${c.queue})`, callback_data: 'menu:queue' }, { text: `⏸ Отложенные (${c.deferred})`, callback_data: 'menu:deferred' }],
+      [{ text: '📊 Статус', callback_data: 'menu:status' }, { text: '🗓 Форматы', callback_data: 'menu:formats' }],
+      [{ text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
+    ],
+  };
+}
 
-const cmdMenu = (chatId) => tg.sendHtml(chatId, MENU_TEXT, { reply_markup: menuKeyboard });
+const cmdMenu = async (chatId) => tg.sendHtml(chatId, MENU_TEXT, { reply_markup: await menuKeyboard() });
 
 // command → [описание для кнопки «Меню» в Telegram, обработчик]
 const COMMANDS = {
   menu: ['Меню с кнопками', cmdMenu],
   status: ['Сводка: формат дня, очередь, ждут решения', cmdStatus],
   run: ['Собрать ленту и подготовить черновики сейчас', cmdRun],
-  pending: ['Прислать заново черновики без решения', cmdPending],
+  pending: ['Не утверждено: список черновиков', cmdPending],
+  resend: ['Прислать заново все неутверждённые', cmdResendAll],
   queue: ['Что в очереди на публикацию', cmdQueue],
   deferred: ['Вернуть отложенные черновики', cmdDeferred],
   formats: ['Расписание форматов на две недели', cmdFormats],
@@ -132,6 +169,11 @@ async function onCallback(q) {
   const [action, arg] = q.data.split(':');
   if (action === 'noop') return;
   if (action === 'menu') return COMMANDS[arg]?.[1](tg.OWNER);
+  if (action === 'open') {
+    const { rows: [p] } = await pool.query('SELECT status FROM posts WHERE id = $1', [Number(arg)]);
+    if (p && ['draft', 'deferred'].includes(p.status)) return resendDraft(Number(arg));
+    return tg.sendHtml(tg.OWNER, `#${arg} уже разобран.`);
+  }
 
   const postId = Number(arg);
   const { rows: [post] } = await pool.query('SELECT status FROM posts WHERE id = $1', [postId]);
