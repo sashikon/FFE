@@ -2,6 +2,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import Head from 'next/head';
 import { withAuth } from '../../lib/withAuth';
+import { adminFetcher, apiPost } from '../../lib/api';
 
 const fetcher = (url) => fetch(url).then(async (r) => {
   const body = await r.json().catch(() => ({}));
@@ -76,6 +77,58 @@ async function postAction(id, op, body) {
 
 const btn = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40';
 const btnPrimary = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-40';
+
+// Фирменный логотип: он накладывается на картинку каждого поста автоматически
+function BrandLogo() {
+  const { data, mutate } = useSWR('/api/admin/brand/logo', adminFetcher);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const logo = data?.logo;
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      await apiPost('/api/admin/brand/logo', form);
+      setMessage({ kind: 'ok', text: 'Логотип обновлён' });
+      mutate();
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-8">
+      <h2 className="text-sm text-zinc-300 mb-1">Логотип на картинках</h2>
+      <p className="text-xs text-zinc-500 mb-4">
+        Накладывается автоматически на картинку каждого поста, слева внизу. Цвет подбирается по фону: тёмный на светлом, белый на тёмном. Годится PNG с прозрачностью или SVG.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-4">
+        {logo ? (
+          <>
+            <div className="bg-white rounded-lg px-4 py-3"><img src={logo.url.replace('/upload/', '/upload/w_180,e_colorize:100,co_rgb:393c3f/')} alt="" className="h-5" /></div>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3"><img src={logo.url.replace('/upload/', '/upload/w_180/')} alt="" className="h-5" /></div>
+            <span className="text-xs text-zinc-500">{logo.width}×{logo.height}</span>
+          </>
+        ) : (
+          <span className="text-xs text-amber-400">Логотип ещё не загружен — картинки выходят без него.</span>
+        )}
+
+        <label className={`${btn} cursor-pointer ml-auto`}>
+          {busy ? 'Загружаю…' : logo ? 'Заменить' : 'Загрузить логотип'}
+          <input type="file" accept="image/png,image/svg+xml" className="hidden" disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
+        </label>
+        {message && <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{message.text}</span>}
+      </div>
+    </section>
+  );
+}
 
 // Выбор картинки из библиотеки образов игры
 function ImagePicker({ post, onPick, onClose, busy }) {
@@ -307,6 +360,8 @@ export default function ChannelPage() {
 
         <main className="max-w-4xl mx-auto px-6 py-8">
           <p className="text-sm text-zinc-500 mb-6">Изменения отсюда видны и в боте: черновик в Telegram помечается «изменён в админке», а новая версия приходит туда же.</p>
+
+          <BrandLogo />
 
           <nav className="flex flex-wrap gap-2 mb-8">
             {TABS.map((t) => {

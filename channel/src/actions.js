@@ -2,6 +2,7 @@ const { pool } = require('./db');
 const tg = require('./telegram');
 const { redraft } = require('./pipeline');
 const { learnFromFeedback } = require('./learn');
+const { withBrandLogo } = require('./brand');
 
 // Действия с постом — общие для бота и админки игры. via: 'bot' | 'admin'.
 // Из админки черновик в Telegram помечается, чтобы по его старым кнопкам нельзя было выпустить устаревшую версию
@@ -83,7 +84,8 @@ async function setImage(postId, outfitId, via = 'admin') {
   } else {
     const { rows: [outfit] } = await pool.query('SELECT image_url FROM library WHERE outfit_id = $1', [outfitId]);
     if (!outfit) throw new ActionError('Образ не найден в библиотеке');
-    await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [outfit.image_url, outfitId, postId]);
+    const url = await withBrandLogo(outfit.image_url);
+    await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [url, outfitId, postId]);
   }
   if (status !== 'approved') await refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
 }
