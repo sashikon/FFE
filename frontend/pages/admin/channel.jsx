@@ -134,7 +134,19 @@ function BrandLogo() {
 const KIND_LABEL = { sketch: 'эскиз', render: 'рендер' };
 
 function ImagePicker({ post, onPick, onClose, busy }) {
-  const { data, error, isLoading } = useSWR('/api/channel-library', fetcher);
+  const { data, error, isLoading, mutate } = useSWR('/api/channel-library', fetcher);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // свежий рендер, добавленный в игре только что
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await mutate(fetcher('/api/channel-library?refresh=1'), { revalidate: false });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('all');
   const [sort, setSort] = useState('new');
@@ -158,6 +170,7 @@ function ImagePicker({ post, onPick, onClose, busy }) {
           placeholder="Поиск: чёрный, буфы, офис…"
           className="flex-1 min-w-[200px] bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
         />
+        <button disabled={busy || refreshing} onClick={refresh} className={btn}>{refreshing ? 'Обновляю…' : 'Обновить'}</button>
         <button disabled={busy} onClick={() => onPick(null)} className={btn}>Без картинки</button>
         <button disabled={busy} onClick={onClose} className={btn}>Закрыть</button>
       </div>

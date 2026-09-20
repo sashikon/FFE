@@ -5,7 +5,7 @@ const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
-const { refreshLibrary } = require('./library');
+const { refreshLibrary, STALE_MS } = require('./library');
 
 // Закрытый API для страницы «Канал» в админке игры: список постов и действия с ними.
 // Включается, только если задан CHANNEL_API_TOKEN; запрос должен нести его в заголовке x-channel-token
@@ -82,9 +82,9 @@ async function listSources() {
 }
 
 // Каталог картинок игры (эскизы и рендеры) для выбора в админке
-async function listLibrary() {
-  const { rows: [{ n }] } = await pool.query('SELECT COUNT(*)::int AS n FROM library');
-  if (!n) await refreshLibrary(true).catch((e) => console.warn(`[api] library refresh: ${e.message}`));
+async function listLibrary({ force = false } = {}) {
+  // свежие эскизы и рендеры из игры подтягиваем при открытии выбора картинки
+  await refreshLibrary(force ? 0 : STALE_MS).catch((e) => console.warn(`[api] library refresh: ${e.message}`));
   const { rows } = await pool.query(
     `SELECT image_id, outfit_id, kind, title, descriptor, thumb_url, created_at
      FROM library ORDER BY created_at DESC NULLS LAST, title`
@@ -169,7 +169,9 @@ function startApi() {
       if (req.method === 'GET' && url.pathname === '/api/posts') {
         return send(res, 200, await listPosts(url.searchParams.get('status') || 'all'));
       }
-      if (req.method === 'GET' && url.pathname === '/api/library') return send(res, 200, await listLibrary());
+      if (req.method === 'GET' && url.pathname === '/api/library') {
+        return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
+      }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
       const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image)$/);
       if (req.method === 'POST' && write) return await handleWrite(req, res, Number(write[1]), write[2]);
