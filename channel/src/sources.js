@@ -9,6 +9,10 @@ const gnewsRu = (query) =>
 // Индия: издания выходят реже, окно шире (см. maxAgeDays у источника)
 const gnewsIn = (query, days = 14) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:${days}d&hl=en-IN&gl=IN&ceid=IN:en`;
+const gnewsKr = (query) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=ko&gl=KR&ceid=KR:ko`;
+const gnewsCn = (query) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:7d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
 
 module.exports = [
   // industry
@@ -36,6 +40,10 @@ module.exports = [
     maxAgeDays: 30,
   },
 
+  // ── Азия: другой взгляд на моду, часто более авангардный ──
+  { name: 'WWD Japan', layer: 'industry', url: 'https://www.wwdjapan.com/feed' },
+  { name: 'Fashionbiz', layer: 'industry', url: gnewsKr('site:fashionbiz.co.kr') },
+
   // production — самый ценный слой: здесь меньше всего чужих интерпретаций
   { name: 'Just Style', layer: 'production', url: 'https://www.just-style.com/feed/' },
   { name: 'Fibre2Fashion', layer: 'production', url: 'https://www.fibre2fashion.com/news/rss/news.xml' },
@@ -53,6 +61,10 @@ module.exports = [
   { name: 'Highsnobiety', layer: 'culture', url: 'https://www.highsnobiety.com/feed/' },
   { name: 'Hypebeast', layer: 'culture', url: 'https://hypebeast.com/feed' },
   { name: 'Who What Wear', layer: 'culture', url: 'https://www.whowhatwear.com/rss' },
+  { name: 'Fashionsnap', layer: 'culture', url: 'https://www.fashionsnap.com/rss.xml' },
+  { name: 'Vogue Korea', layer: 'culture', url: gnewsKr('site:vogue.co.kr') },
+  { name: 'Vogue China', layer: 'culture', url: gnewsCn('site:vogue.com.cn'), maxAgeDays: 7 },
+
   // Индийское издание о моде, ремесле и текстиле; своей ленты нет, карта сайта не обновляется
   { name: 'The Voice of Fashion', layer: 'culture', url: gnewsIn('site:thevoiceoffashion.com'), maxAgeDays: 14 },
   { name: 'The Guardian Fashion', layer: 'culture', url: 'https://www.theguardian.com/fashion/rss' },

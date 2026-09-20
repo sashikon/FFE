@@ -19,7 +19,13 @@ const NOISE = [
   /\bhoroscope/i,
   /\s-\s[\w .]+,\s[A-Z]{2}\b/, // «Manager - Oak Brook, IL»
 ];
-const isNoise = (title) => title.split(/\s+/).length < 4
+// В японском, китайском и корейском письме пробелов мало — там считаем знаки, а не слова
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+const tooShort = (title) => (CJK.test(title)
+  ? title.replace(/\s+/g, '').length < 8
+  : title.split(/\s+/).length < 4);
+
+const isNoise = (title) => tooShort(title)
   || NOISE.some((re) => re.test(title))
   || title.split(' - ').length >= 3; // подписи фотогалерей: «Бренд - Недели моды - Подиум - Womenswear - …»
 
