@@ -43,12 +43,16 @@ module.exports = [
   // ── Азия: другой взгляд на моду, часто более авангардный ──
   { name: 'WWD Japan', layer: 'industry', url: 'https://www.wwdjapan.com/feed' },
   { name: 'Fashionbiz', layer: 'industry', url: gnewsKr('site:fashionbiz.co.kr') },
+  { name: 'Fashion Seoul', layer: 'industry', url: 'https://www.fashionseoul.com/rss' },
+  { name: 'Fashion Insight', layer: 'industry', url: gnewsKr('site:fi.co.kr') },
 
   // production — самый ценный слой: здесь меньше всего чужих интерпретаций
   { name: 'Just Style', layer: 'production', url: 'https://www.just-style.com/feed/' },
   { name: 'Fibre2Fashion', layer: 'production', url: 'https://www.fibre2fashion.com/news/rss/news.xml' },
   { name: 'Textile World', layer: 'production', url: 'https://www.textileworld.com/feed/' },
   { name: 'Innovation in Textiles', layer: 'production', url: 'https://www.innovationintextiles.com/rss/' },
+  // 한국섬유신문 — корейская текстильная газета
+  { name: 'Korea Textile News', layer: 'production', url: 'https://www.ktnews.com/rss/allArticle.xml' },
   { name: 'Ecotextile News', layer: 'production', url: gnews('site:ecotextile.com') },
   { name: 'GN: garment workers', layer: 'production', url: gnews('"garment workers" OR "garment factory"') },
   { name: 'GN: textile supply chain', layer: 'production', url: gnews('textile "supply chain" fashion') },
