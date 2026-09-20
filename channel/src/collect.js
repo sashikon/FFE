@@ -79,6 +79,8 @@ async function collectRss(src) {
     // Заголовок, совпадающий с названием издания, — это его главная страница, а не статья
     const sameAsSource = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === source.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
     if (sameAsSource || isNoise(title)) continue;
+    // У источника может быть свой фильтр по теме (например, только про одежду и стиль)
+    if (src.require && !src.require.test(title)) continue;
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);
 
     const { rowCount } = await pool.query(

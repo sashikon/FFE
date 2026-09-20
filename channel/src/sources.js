@@ -64,6 +64,16 @@ module.exports = [
   { name: 'Fashionsnap', layer: 'culture', url: 'https://www.fashionsnap.com/rss.xml' },
   { name: 'Vogue Korea', layer: 'culture', url: gnewsKr('site:vogue.co.kr') },
   { name: 'Vogue China', layer: 'culture', url: gnewsCn('site:vogue.com.cn'), maxAgeDays: 7 },
+  // Корейские знаменитости первыми выносят на публику локальные бренды; берём только про одежду и стиль
+  {
+    name: 'Dispatch',
+    layer: 'culture',
+    url: gnewsKr('site:dispatch.co.kr (패션 OR 스타일 OR 공항패션)'),
+    // Google News понимает запрос свободно, поэтому отбираем ещё раз по заголовку:
+    // мода, стиль, лук, надел, аэропорт, бренд, костюм, наряд
+    require: /패션|스타일|룩|착장|착용|공항|출국|입국|브랜드|수트|의상|화보|드레스|재킷|코트/,
+    maxAgeDays: 7,
+  },
 
   // Индийское издание о моде, ремесле и текстиле; своей ленты нет, карта сайта не обновляется
   { name: 'The Voice of Fashion', layer: 'culture', url: gnewsIn('site:thevoiceoffashion.com'), maxAgeDays: 14 },
