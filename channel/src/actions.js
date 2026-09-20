@@ -3,6 +3,9 @@ const tg = require('./telegram');
 const { redraft } = require('./pipeline');
 const { learnFromFeedback } = require('./learn');
 const { withBrandLogo } = require('./brand');
+const { FORMATS, formatByKey } = require('./formats');
+const { call, MODELS } = require('./llm');
+const P = require('./prompts');
 
 // Действия с постом — общие для бота и админки игры. via: 'bot' | 'admin'.
 // Из админки черновик в Telegram помечается, чтобы по его старым кнопкам нельзя было выпустить устаревшую версию
@@ -15,6 +18,7 @@ const ALLOWED = {
   reject: ['draft', 'deferred', 'approved'],
   noimg: ['draft', 'deferred', 'approved'],
   image: ['draft', 'deferred', 'approved'],
+  format: ['draft', 'deferred', 'approved'],
   edit: ['draft', 'deferred', 'approved'],
   redraft: ['draft', 'deferred', 'approved'],
 };
@@ -90,6 +94,38 @@ async function setImage(postId, imageId, via = 'admin') {
   if (status !== 'approved') await refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
 }
 
+// Формат поста: задаём вручную или определяем по тексту (для старых постов без формата)
+async function setFormat(postId, formatKey, via = 'admin') {
+  const status = await checkStatus(postId, 'format');
+  if (formatKey && !formatByKey(formatKey)) throw new ActionError('Неизвестный формат');
+  await pool.query('UPDATE posts SET format = $1 WHERE id = $2', [formatKey || null, postId]);
+  if (status !== 'approved') await refreshReview(postId, `🗓 Формат изменён${suffix(via)} — см. ниже`);
+  return formatKey;
+}
+
+async function detectFormat(postId) {
+  await checkStatus(postId, 'format');
+  const { rows: [post] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
+  const body = post.text.replace(/<[^>]+>/g, '').replace(/\n\nПо материалам:[\s\S]*$/, '').slice(0, 4000);
+  const res = await call({
+    model: MODELS.cheap,
+    system: P.formatClassifySystem(FORMATS),
+    user: body,
+    schema: {
+      type: 'object',
+      properties: {
+        format: { type: 'string', enum: FORMATS.map((f) => f.key) },
+        reason: { type: 'string' },
+      },
+      required: ['format', 'reason'],
+      additionalProperties: false,
+    },
+    maxTokens: 500,
+  });
+  await setFormat(postId, res.format);
+  return { format: res.format, title: formatByKey(res.format)?.title, reason: res.reason };
+}
+
 // Ручная правка текста (только из админки): статус не меняется, пост в очереди остаётся в очереди
 async function editText(postId, text) {
   const status = await checkStatus(postId, 'edit');
@@ -120,4 +156,4 @@ async function redraftWithFeedback(postId, feedback, via = 'bot') {
   return newId;
 }
 
-module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, setImage, editText, redraftWithFeedback };
+module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, setImage, setFormat, detectFormat, editText, redraftWithFeedback };

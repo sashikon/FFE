@@ -131,6 +131,11 @@ async function handleWrite(req, res, id, op) {
     await fn(id);
     return send(res, 200, { ok: true });
   }
+  if (op === 'format') {
+    if (body.auto) return send(res, 200, { ok: true, ...(await actions.detectFormat(id)) });
+    await actions.setFormat(id, body.format || null);
+    return send(res, 200, { ok: true });
+  }
   if (op === 'image') {
     await actions.setImage(id, body.image_id || null);
     return send(res, 200, { ok: true });
@@ -177,7 +182,10 @@ function startApi() {
       if (req.method === 'GET' && url.pathname === '/api/schedule') {
         return send(res, 200, await buildSchedule(Math.min(30, Number(url.searchParams.get('days')) || 14)));
       }
-      const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image)$/);
+      if (req.method === 'GET' && url.pathname === '/api/formats') {
+        return send(res, 200, { formats: require('./formats').FORMATS.map(({ key, title, week, day, idea }) => ({ key, title, week, day, idea })) });
+      }
+      const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image|format)$/);
       if (req.method === 'POST' && write) return await handleWrite(req, res, Number(write[1]), write[2]);
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
