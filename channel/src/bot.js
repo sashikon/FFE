@@ -1,6 +1,6 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
-const { runPipeline, redraft, cleanSlop } = require('./pipeline');
+const { runPipeline, redraft, cleanSlop, draftFromSource } = require('./pipeline');
 const { findSlop } = require('./slop');
 const { activeRules, addRule, removeRule } = require('./learn');
 const actions = require('./actions');
@@ -208,7 +208,8 @@ async function cmdCancel(chatId) {
 const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
-Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
+Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить.
+Перешлите сюда любой пост из Telegram — сделаю из него черновик в формате ближайшего дня. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
 async function menuKeyboard() {
@@ -255,6 +256,53 @@ async function setupMenu() {
     scope: { type: 'chat', chat_id: Number(tg.OWNER) },
   });
   await tg.api('setChatMenuButton', { chat_id: Number(tg.OWNER), menu_button: { type: 'commands' } });
+}
+
+// ─── Пересланные сообщения как источник ──────────────────────────────────────
+
+// Кто автор пересланного поста и есть ли ссылка на оригинал
+function forwardedOrigin(msg) {
+  const o = msg.forward_origin;
+  if (o?.type === 'channel') {
+    return {
+      source: o.chat?.title || 'Telegram-канал',
+      url: o.chat?.username ? `https://t.me/${o.chat.username}/${o.message_id}` : null,
+    };
+  }
+  if (o?.type === 'chat') return { source: o.sender_chat?.title || 'Telegram-чат', url: null };
+  if (o?.type === 'user') {
+    return { source: [o.sender_user?.first_name, o.sender_user?.last_name].filter(Boolean).join(' ') || 'Автор в Telegram', url: null };
+  }
+  if (o?.type === 'hidden_user') return { source: o.sender_user_name || 'Автор в Telegram', url: null };
+  // старый формат Bot API
+  if (msg.forward_from_chat) {
+    return {
+      source: msg.forward_from_chat.title || 'Telegram-канал',
+      url: msg.forward_from_chat.username ? `https://t.me/${msg.forward_from_chat.username}/${msg.forward_from_message_id}` : null,
+    };
+  }
+  return null;
+}
+
+async function onForwarded(chatId, msg) {
+  const origin = forwardedOrigin(msg);
+  const text = (msg.text || msg.caption || '').replace(/\s+\n/g, '\n').trim();
+  if (!text) {
+    return tg.sendHtml(chatId, 'В пересланном сообщении нет текста — беру в работу только текстовые посты.');
+  }
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const title = lines[0].slice(0, 200);
+  const summary = lines.slice(1).join(' ').slice(0, 1500);
+  // без ссылки на оригинал берём первую ссылку из текста, иначе — служебный адрес (в пост не попадёт)
+  const url = origin?.url || text.match(/https?:\/\/\S+/)?.[0] || `forward:${msg.chat.id}:${msg.message_id}`;
+
+  await tg.sendHtml(chatId, `Беру в работу: <i>${tg.escapeHtml(title.slice(0, 120))}</i>\nЧерновик придёт через 1–2 минуты.`, {
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
+  });
+
+  draftFromSource({ title, summary, url, source: origin?.source || 'Telegram' })
+    .then((r) => r.skipped && tg.sendHtml(chatId, 'Не получилось собрать пост из этого сюжета — модель не нашла в нём смысла для канала.'))
+    .catch((e) => tg.sendHtml(chatId, `Не получилось: ${tg.escapeHtml(e.message)}`).catch(() => {}));
 }
 
 // ─── Обработчики ─────────────────────────────────────────────────────────────
@@ -347,6 +395,9 @@ async function onMessage(msg) {
     return;
   }
   if (chatId !== String(tg.OWNER)) return onStranger(msg);
+
+  // Пересланный пост из Telegram — это источник для нового черновика
+  if (msg.forward_origin || msg.forward_from_chat || msg.forward_sender_name) return onForwarded(chatId, msg);
 
   const command = text.match(/^\/(\w+)/)?.[1];
   if (command === 'rule') {

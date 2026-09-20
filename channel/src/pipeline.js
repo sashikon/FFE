@@ -63,7 +63,8 @@ async function selectCandidates(limit) {
 
 // ─── Шаг 4: смысл ────────────────────────────────────────────────────────────
 
-async function makeInsight(clusterId, format) {
+// force — сюжет прислан автором вручную: слабый или повторяющийся разбор не отбрасываем
+async function makeInsight(clusterId, format, force = false) {
   const items = await clusterItems(clusterId);
   const { rows: memory } = await pool.query(
     `SELECT thesis FROM insights ORDER BY created_at DESC LIMIT 40`
@@ -75,7 +76,7 @@ async function makeInsight(clusterId, format) {
     schema: P.INSIGHT_SCHEMA,
   });
 
-  if (insight.weak || insight.is_repeat) {
+  if ((insight.weak || insight.is_repeat) && !force) {
     const why = insight.weak ? 'weak' : 'repeat';
     await pool.query(
       `UPDATE clusters SET status = 'rejected', score_reason = COALESCE(score_reason, '') || ' | insight: ' || $1 WHERE id = $2`,
@@ -101,12 +102,12 @@ function sourcesFooter(items) {
   for (const it of items) {
     // «The Guardian» и «The Guardian Fashion» — одно издание
     const base = it.source.toLowerCase().replace(/\s+(fashion|style|news)$/, '');
-    if (seen.has(base) || it.source.startsWith('GN:')) continue;
+    if (seen.has(base) || it.source.startsWith('GN:') || !it.url.startsWith('http')) continue;
     seen.add(base);
     links.push(`<a href="${escapeHtml(it.url)}">${escapeHtml(it.source)}</a>`);
     if (links.length === 3) break;
   }
-  return `\n\n<i>По материалам: ${links.join(', ')}</i>`;
+  return links.length ? `\n\n<i>По материалам: ${links.join(', ')}</i>` : '';
 }
 
 async function draftPost(insightId, previous = null) {
@@ -183,6 +184,25 @@ async function cleanSlop(postId) {
   return { newId: post.id, fixed: hits.length, left: findSlop(fixed).length };
 }
 
+// Сюжет, присланный автором вручную (пересланный пост из Telegram): сразу в разбор и в черновик
+async function draftFromSource({ title, summary, url, source, layer = 'culture' }) {
+  const { rows: [cluster] } = await pool.query(
+    `INSERT INTO clusters (status, score, lens, score_reason) VALUES ('scored', 5, 'sign', 'прислано вручную') RETURNING id`
+  );
+  await pool.query(
+    `INSERT INTO items (source, feed, layer, url, title, summary, published_at, cluster_id)
+     VALUES ($1, 'Переслано вручную', $2, $3, $4, $5, NOW(), $6)
+     ON CONFLICT (url) DO UPDATE SET cluster_id = EXCLUDED.cluster_id`,
+    [source, layer, url, title, summary || null, cluster.id]
+  );
+
+  const format = formatForNextSlot();
+  const insight = await makeInsight(cluster.id, format, true);
+  if (!insight) return { skipped: true, format: format.title };
+  const postId = await draftPost(insight);
+  return { postId, format: format.title };
+}
+
 // ─── Прогон целиком ──────────────────────────────────────────────────────────
 
 let running = false;
@@ -225,4 +245,4 @@ async function runPipeline() {
   }
 }
 
-module.exports = { runPipeline, redraft, cleanSlop, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, scoreNew, __draftPost: draftPost };
