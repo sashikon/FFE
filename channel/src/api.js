@@ -2,6 +2,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { pool } = require('./db');
 const { formatByKey } = require('./formats');
+const sources = require('./sources');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary } = require('./library');
@@ -42,6 +43,41 @@ async function listPosts(status) {
       slop: findSlop(p.text).map((h) => h.match),
     })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
+  };
+}
+
+// Источники с описанием, тегами и статистикой: сколько заметок дали и что из них вышло
+async function listSources() {
+  const { rows: stats } = await pool.query(`
+    SELECT feed,
+           COUNT(*) FILTER (WHERE fetched_at > NOW() - INTERVAL '7 days')::int AS week,
+           COUNT(*)::int AS total,
+           MAX(published_at) AS last_published
+    FROM items WHERE feed IS NOT NULL GROUP BY feed`);
+  const { rows: used } = await pool.query(`
+    SELECT i.feed, COUNT(DISTINCT p.id)::int AS posts
+    FROM items i
+    JOIN insights ins ON ins.cluster_id = i.cluster_id
+    JOIN posts p ON p.insight_id = ins.id AND p.status IN ('approved', 'published')
+    WHERE i.feed IS NOT NULL GROUP BY i.feed`);
+  const byFeed = Object.fromEntries(stats.map((r) => [r.feed, r]));
+  const postsByFeed = Object.fromEntries(used.map((r) => [r.feed, r.posts]));
+
+  return {
+    sources: sources.map((s) => ({
+      name: s.name,
+      description: s.description || null,
+      tags: s.tags || [],
+      layer: s.layer,
+      kind: s.type === 'telegram' ? 'telegram'
+        : s.type === 'sitemap' ? 'карта сайта'
+        : String(s.url).includes('news.google') ? 'поиск новостей' : 'RSS',
+      url: s.type === 'telegram' ? `https://t.me/s/${s.channel}` : String([].concat(s.url)[0]),
+      week: byFeed[s.name]?.week ?? 0,
+      total: byFeed[s.name]?.total ?? 0,
+      last_published: byFeed[s.name]?.last_published ?? null,
+      posts: postsByFeed[s.name] ?? 0,
+    })),
   };
 }
 
@@ -131,6 +167,7 @@ function startApi() {
         return send(res, 200, await listPosts(url.searchParams.get('status') || 'all'));
       }
       if (req.method === 'GET' && url.pathname === '/api/library') return send(res, 200, await listLibrary());
+      if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
       const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image)$/);
       if (req.method === 'POST' && write) return await handleWrite(req, res, Number(write[1]), write[2]);
       return send(res, 404, { error: 'Not found' });

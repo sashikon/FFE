@@ -301,6 +301,7 @@ export default function ChannelPage() {
           <div className="flex items-center gap-4">
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+            <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
           </div>
         </header>
 

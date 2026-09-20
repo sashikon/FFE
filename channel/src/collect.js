@@ -5,9 +5,18 @@ const sources = require('./sources');
 const parser = new Parser({
   timeout: 20_000,
   // Fibre2Fashion отвечает 406 на нестандартный User-Agent
-  headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
+  headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*', 'Cache-Control': 'no-cache' },
   customFields: { item: ['source'] },
 });
+
+const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*', 'Cache-Control': 'no-cache' };
+const SITEMAP_LIMIT = 20;
+
+async function fetchText(url) {
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Status code ${res.status}`);
+  return res.text();
+}
 
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000;
 // Трендовые агентства публикуются раз в несколько недель — им окно шире
@@ -19,7 +28,13 @@ const NOISE = [
   /\bhoroscope/i,
   /\s-\s[\w .]+,\s[A-Z]{2}\b/, // «Manager - Oak Brook, IL»
 ];
-const isNoise = (title) => title.split(/\s+/).length < 4
+// В японском, китайском и корейском письме пробелов мало — там считаем знаки, а не слова
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+const tooShort = (title) => (CJK.test(title)
+  ? title.replace(/\s+/g, '').length < 8
+  : title.split(/\s+/).length < 4);
+
+const isNoise = (title) => tooShort(title)
   || NOISE.some((re) => re.test(title))
   || title.split(' - ').length >= 3; // подписи фотогалерей: «Бренд - Недели моды - Подиум - Womenswear - …»
 
@@ -45,8 +60,12 @@ function normalizeUrl(url) {
   }
 }
 
+// Некоторые ленты отдают 304 с пустым телом, пока адрес не поменяется (Launchmetrics)
+const bustCache = (url) => `${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`;
+
 async function collectRss(src) {
-  const feed = await parser.parseURL(src.url);
+  const url = src.cacheBust ? bustCache(src.url) : src.url;
+  const feed = await parser.parseURL(url);
   const isGoogle = src.url.includes('news.google.com');
   let added = 0;
 
@@ -73,28 +92,22 @@ async function collectRss(src) {
     // Заголовок, совпадающий с названием издания, — это его главная страница, а не статья
     const sameAsSource = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === source.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
     if (sameAsSource || isNoise(title)) continue;
+    // У источника может быть свой фильтр по теме (например, только про одежду и стиль)
+    if (src.require && !src.require.test(title)) continue;
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);
 
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, summary, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO items (source, feed, layer, url, title, summary, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (url) DO NOTHING`,
-      [source, src.layer, normalizeUrl(entry.link), title, summary || null, published]
+      [source, src.name, src.layer, normalizeUrl(entry.link), title, summary || null, published]
     );
     added += rowCount;
   }
   return added;
 }
 
-const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' };
-const SITEMAP_LIMIT = 20;
-
-async function fetchText(url) {
-  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`Status code ${res.status}`);
-  return res.text();
-}
-
+// Launchmetrics без no-cache отвечает 304 с пустым телом
 const decode = (s) => s
   .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
@@ -103,7 +116,9 @@ const decode = (s) => s
 // или из адреса (titleFrom: 'slug'), если страница собирается скриптом и заголовка в HTML нет
 function titleFromSlug(url) {
   const slug = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
-  const words = slug.replace(/[-_]+/g, ' ').trim();
+  let words = slug.replace(/[-_]+/g, ' ').trim();
+  // адреса вида LONDON-FASHION-WEEK-IS-A-CELEBRATION — капс приводим к обычному виду
+  if (words === words.toUpperCase() && words.length > 12) words = words.toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -132,11 +147,12 @@ async function collectSitemap(src) {
     let title;
     try {
       title = src.titleFrom === 'slug' ? titleFromSlug(e.url) : await titleFromPage(e.url, src);
-    } catch { continue; }
+    } catch { title = null; }
+    if (!title) title = titleFromSlug(e.url);
     if (!title || isNoise(title)) continue;
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, published_at)
-       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
+      `INSERT INTO items (source, feed, layer, url, title, published_at)
+       VALUES ($1, $1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, e.url, title, e.published]
     );
     added += rowCount;
@@ -174,8 +190,8 @@ async function collectTelegram(src) {
     // Короткие подписи к фото и рекламные посты без текста — не новости
     if (p.title.length + p.summary.length < 80 || isNoise(p.title)) continue;
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, summary, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
+      `INSERT INTO items (source, feed, layer, url, title, summary, published_at)
+       VALUES ($1, $1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, p.url, p.title, p.summary || null, p.published]
     );
     added += rowCount;
