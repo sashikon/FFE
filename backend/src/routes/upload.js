@@ -3,7 +3,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const fs = require('fs');
 const pool = require('../db');
-const { uploadImage } = require('../storage/cloudinary');
+const { uploadImage, uploadBrandLogo, brandLogoInfo } = require('../storage/cloudinary');
 const { analyzeOutfit } = require('../llm/pipeline');
 const { requireAdminToken } = require('../middleware/auth');
 const { enqueue, queueLength } = require('../queue');
@@ -15,6 +15,27 @@ function fileHash(filePath) {
   const buf = fs.readFileSync(filePath);
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
+
+// GET /api/admin/brand/logo — текущий логотип канала
+router.get('/admin/brand/logo', requireAdminToken, async (_req, res, next) => {
+  try {
+    res.json({ logo: await brandLogoInfo() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/brand/logo — загрузить логотип (PNG или SVG), заменяет прежний
+router.post('/admin/brand/logo', requireAdminToken, upload.single('image'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No image provided' });
+    const logo = await uploadBrandLogo(req.file.path);
+    fs.unlink(req.file.path, () => {});
+    res.json({ logo });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // POST /api/admin/outfit/:id/image — replace the sketch image
 router.post('/admin/outfit/:id/image', requireAdminToken, upload.single('image'), async (req, res, next) => {

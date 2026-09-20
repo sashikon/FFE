@@ -6,6 +6,7 @@ const P = require('./prompts');
 const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
 const { refreshLibrary, pickImage } = require('./library');
 const { activeRules } = require('./learn');
+const { withBrandLogo } = require('./brand');
 const { cleanInvisible, findSlop, describeSlop } = require('./slop');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
@@ -138,9 +139,10 @@ async function draftPost(insightId, previous = null) {
     console.warn(`[library] pick failed: ${e.message}`);
     return null;
   });
+  const imageUrl = image ? await withBrandLogo(image.url) : null;
   const { rows: [post] } = await pool.query(
     `INSERT INTO posts (insight_id, text, format, image_url, image_ref) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [insightId, text + sourcesFooter(items), format.key, image?.url ?? null, image?.ref ?? null]
+    [insightId, text + sourcesFooter(items), format.key, imageUrl, image?.ref ?? null]
   );
   await pool.query(`UPDATE clusters SET status = 'drafted' WHERE id = $1`, [ins.cluster_id]);
   await sendReview(post.id);
