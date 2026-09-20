@@ -4,7 +4,8 @@ const { call, MODELS } = require('./llm');
 // Каталог картинок игры (эскизы и рендеры) берём через открытый API игры —
 // без доступа к её базе и ключей Cloudinary
 const FFE_API = process.env.FFE_API_URL || 'https://ffe-production.up.railway.app/api';
-const REFRESH_MS = 6 * 3600 * 1000;
+const REFRESH_MS = 6 * 3600 * 1000;      // фоновое обновление в прогоне
+const STALE_MS = 10 * 60 * 1000;         // при открытии выбора картинки в админке
 const NO_REPEAT = 10;   // образ не повторяется в последних N постах
 const MIN_FIT = 4;      // картинку ставим, только если она подходит по смыслу
 
@@ -26,9 +27,9 @@ function descriptor(outfit) {
 const big = (url) => url.replace('/upload/', '/upload/c_limit,w_1280,f_jpg,q_auto/');
 const small = (url) => url.replace('/upload/', '/upload/c_limit,w_400,f_jpg,q_auto/');
 
-async function refreshLibrary(force = false) {
+async function refreshLibrary(maxAgeMs = REFRESH_MS) {
   const last = await getState('library_refreshed_at');
-  if (!force && last && Date.now() - new Date(last).getTime() < REFRESH_MS) return;
+  if (maxAgeMs > 0 && last && Date.now() - new Date(last).getTime() < maxAgeMs) return;
 
   const { outfits } = await getJson(`${FFE_API}/gallery?lang=ru`);
   const seen = [];
@@ -105,4 +106,4 @@ async function pickImage(postText, thesis) {
   return chosen ? { url: chosen.image_url, ref: chosen.image_id } : null;
 }
 
-module.exports = { refreshLibrary, pickImage };
+module.exports = { refreshLibrary, pickImage, STALE_MS };

@@ -12,7 +12,8 @@ export default async function handler(req, res) {
   if (!base || !token) return res.status(503).json({ error: 'CHANNEL_API_URL / CHANNEL_API_TOKEN не заданы в переменных Vercel' });
 
   try {
-    const r = await fetch(`${base.replace(/\/$/, '')}/api/library`, {
+    const refresh = req.query.refresh === '1' ? '?refresh=1' : '';
+    const r = await fetch(`${base.replace(/\/$/, '')}/api/library${refresh}`, {
       headers: { 'x-channel-token': token },
       signal: AbortSignal.timeout(30000),
     });
