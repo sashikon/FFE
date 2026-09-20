@@ -70,7 +70,9 @@ async function collectRss(src) {
         if (m) { title = m[1].trim(); if (!publisher) source = m[2].trim(); }
       }
     }
-    if (isNoise(title)) continue;
+    // Заголовок, совпадающий с названием издания, — это его главная страница, а не статья
+    const sameAsSource = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === source.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    if (sameAsSource || isNoise(title)) continue;
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);
 
     const { rowCount } = await pool.query(
