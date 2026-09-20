@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
 
   const { id, op } = req.query;
-  if (!/^\d+$/.test(id) || !['action', 'text', 'redraft'].includes(op)) return res.status(400).json({ error: 'Bad request' });
+  if (!/^\d+$/.test(id) || !['action', 'text', 'redraft', 'image'].includes(op)) return res.status(400).json({ error: 'Bad request' });
 
   // адрес из Railway часто вставляют без https:// — дописываем
   const raw = (process.env.CHANNEL_API_URL || '').trim();

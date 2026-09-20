@@ -77,9 +77,54 @@ async function postAction(id, op, body) {
 const btn = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40';
 const btnPrimary = 'px-3 py-1.5 rounded-lg text-xs bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-40';
 
+// Выбор картинки из библиотеки образов игры
+function ImagePicker({ post, onPick, onClose, busy }) {
+  const { data, error, isLoading } = useSWR('/api/channel-library', fetcher);
+  const [q, setQ] = useState('');
+  const outfits = (data?.outfits || []).filter((o) =>
+    !q.trim() || `${o.title} ${o.descriptor}`.toLowerCase().includes(q.trim().toLowerCase()));
+
+  return (
+    <div className="mt-4 border-t border-zinc-800 pt-4">
+      <div className="flex items-center gap-3 mb-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Поиск по образам: чёрный, буфы, офис…"
+          className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+        />
+        <button disabled={busy} onClick={() => onPick(null)} className={btn}>Без картинки</button>
+        <button disabled={busy} onClick={onClose} className={btn}>Закрыть</button>
+      </div>
+
+      {isLoading && <p className="text-sm text-zinc-500">Загружаю образы…</p>}
+      {error && <p className="text-sm text-rose-400">Не удалось загрузить образы: {error.message}</p>}
+      {data && outfits.length === 0 && <p className="text-sm text-zinc-500">Ничего не нашлось</p>}
+
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-96 overflow-y-auto">
+        {outfits.map((o) => (
+          <button
+            key={o.outfit_id}
+            disabled={busy}
+            onClick={() => onPick(o.outfit_id)}
+            title={o.descriptor}
+            className={`group relative rounded-lg overflow-hidden border transition-colors ${o.outfit_id === post.image_ref ? 'border-zinc-100' : 'border-zinc-800 hover:border-zinc-600'}`}
+          >
+            <img src={o.thumb_url} alt="" className="w-full h-28 object-cover bg-zinc-800" loading="lazy" />
+            <span className="block px-1.5 py-1 text-[10px] leading-tight text-zinc-400 text-left line-clamp-2">{o.title}</span>
+            {o.outfit_id === post.image_ref && (
+              <span className="absolute top-1 right-1 text-[10px] bg-zinc-100 text-zinc-900 rounded px-1">сейчас</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PostCard({ post, onChanged }) {
   const [copied, setCopied] = useState(false);
-  const [mode, setMode] = useState(null); // null | 'edit' | 'redraft'
+  const [mode, setMode] = useState(null); // null | 'edit' | 'redraft' | 'image'
   const [text, setText] = useState(post.text);
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
@@ -163,6 +208,18 @@ function PostCard({ post, onChanged }) {
         </div>
       )}
 
+      {mode === 'image' && (
+        <ImagePicker
+          post={post}
+          busy={busy}
+          onClose={() => setMode(null)}
+          onPick={(outfitId) => run(
+            () => postAction(post.id, 'image', { outfit_id: outfitId }),
+            outfitId ? 'Картинка изменена' : 'Пост будет без картинки'
+          )}
+        />
+      )}
+
       {mode === 'redraft' && (
         <div className="mt-4">
           <textarea
@@ -210,11 +267,9 @@ function PostCard({ post, onChanged }) {
                   {post.status === 'approved' && a === 'defer' ? '⏸ Снять из очереди' : ACTION_LABEL[a]}
                 </button>
               ))}
-              {post.image_url && (
-                <button disabled={busy} onClick={() => run(() => postAction(post.id, 'action', { action: 'noimg' }), 'Картинка убрана')} className={btn}>
-                  🖼 Убрать картинку
-                </button>
-              )}
+              <button disabled={busy} onClick={() => setMode('image')} className={btn}>
+                {post.image_url ? '🖼 Сменить картинку' : '🖼 Добавить картинку'}
+              </button>
               <button disabled={busy} onClick={() => { setText(post.text); setMode('edit'); }} className={btn}>✏️ Редактировать</button>
               <button disabled={busy} onClick={() => setMode('redraft')} className={btn}>🤖 Поправить через модель</button>
             </>
