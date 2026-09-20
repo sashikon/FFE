@@ -146,6 +146,27 @@ async function checkTelegram() {
   return null;
 }
 
+// Что именно бот видит на месте канала: id, имя и его собственные права
+async function channelInfo() {
+  const raw = { configured: CHANNEL || null };
+  try {
+    const chat = await api('getChat', { chat_id: CHANNEL });
+    raw.chat = { id: chat.id, title: chat.title, username: chat.username || null, type: chat.type };
+  } catch (e) {
+    raw.chatError = e.message;
+    return raw;
+  }
+  try {
+    const me = await api('getMe');
+    raw.bot = { id: me.id, username: me.username };
+    const member = await api('getChatMember', { chat_id: CHANNEL, user_id: me.id });
+    raw.member = { status: member.status, can_post_messages: member.can_post_messages ?? null };
+  } catch (e) {
+    raw.memberError = e.message;
+  }
+  return raw;
+}
+
 // Самопроверка канала публикации: находится ли он и может ли бот в нём публиковать.
 // Возвращает { ok, title, problem } — problem человекочитаемо, с подсказкой, как исправить
 async function checkChannel() {
@@ -174,5 +195,5 @@ async function checkChannel() {
 }
 
 module.exports = {
-  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, TelegramError, OWNER,
+  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, TelegramError, OWNER,
 };

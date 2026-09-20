@@ -200,6 +200,26 @@ async function cmdCleanAll(chatId) {
   })();
 }
 
+// Диагностика канала: что бот видит на месте TELEGRAM_CHANNEL_ID
+async function cmdChannel(chatId) {
+  const i = await tg.channelInfo();
+  const lines = [`<b>Канал в настройках:</b> <code>${tg.escapeHtml(String(i.configured))}</code>`];
+  if (i.chatError) {
+    lines.push(`❌ Не найден: ${tg.escapeHtml(i.chatError)}`);
+    lines.push('Проверьте TELEGRAM_CHANNEL_ID: для публичного канала — @имя из ссылки t.me/имя, для приватного — числовой id вида -100… (перешлите пост канала боту @userinfobot).');
+  } else {
+    lines.push(`<b>Найден:</b> «${tg.escapeHtml(i.chat.title || '')}» · id <code>${i.chat.id}</code>${i.chat.username ? ` · @${i.chat.username}` : ' · приватный'}`);
+    if (i.bot) lines.push(`<b>Бот:</b> @${tg.escapeHtml(i.bot.username)}`);
+    if (i.memberError) lines.push(`❌ Права проверить не удалось: ${tg.escapeHtml(i.memberError)}`);
+    else {
+      const ok = i.member.status === 'creator' || (i.member.status === 'administrator' && i.member.can_post_messages !== false);
+      lines.push(`<b>Статус бота в канале:</b> ${i.member.status}${i.member.can_post_messages === null ? '' : `, публикация: ${i.member.can_post_messages ? 'разрешена' : 'запрещена'}`}`);
+      lines.push(ok ? '✅ Публиковать можно' : '❌ Публиковать нельзя — включите боту право «Публикация сообщений» и нажмите «Сохранить изменения».');
+    }
+  }
+  return tg.sendHtml(chatId, lines.join('\n'));
+}
+
 async function cmdCancel(chatId) {
   await setState('awaiting_feedback', null);
   return tg.sendHtml(chatId, 'Ок, правка отменена.');
@@ -244,6 +264,7 @@ const COMMANDS = {
   formats: ['Расписание форматов на две недели', cmdFormats],
   rules: ['Уроки редактора: что запомнено из ваших правок', cmdRules],
   check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
+  channel: ['Какой канал вижу и с какими правами', cmdChannel],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
   cancel: ['Отменить ожидание правки', cmdCancel],
 };
@@ -267,6 +288,8 @@ function forwardedOrigin(msg) {
     return {
       source: o.chat?.title || 'Telegram-канал',
       url: o.chat?.username ? `https://t.me/${o.chat.username}/${o.message_id}` : null,
+      chatId: o.chat?.id ?? null,
+      username: o.chat?.username ?? null,
     };
   }
   if (o?.type === 'chat') return { source: o.sender_chat?.title || 'Telegram-чат', url: null };
@@ -296,7 +319,11 @@ async function onForwarded(chatId, msg) {
   // без ссылки на оригинал берём первую ссылку из текста, иначе — служебный адрес (в пост не попадёт)
   const url = origin?.url || text.match(/https?:\/\/\S+/)?.[0] || `forward:${msg.chat.id}:${msg.message_id}`;
 
-  await tg.sendHtml(chatId, `Беру в работу: <i>${tg.escapeHtml(title.slice(0, 120))}</i>\nЧерновик придёт через 1–2 минуты.`, {
+  // id канала-источника пригодится для настройки TELEGRAM_CHANNEL_ID
+  const idLine = origin?.chatId
+    ? `\nИсточник: ${tg.escapeHtml(origin.source)} · id <code>${origin.chatId}</code>${origin.username ? ` · @${origin.username}` : ''}`
+    : '';
+  await tg.sendHtml(chatId, `Беру в работу: <i>${tg.escapeHtml(title.slice(0, 120))}</i>${idLine}\nЧерновик придёт через 1–2 минуты.`, {
     reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
   });
 
