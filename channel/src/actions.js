@@ -13,6 +13,7 @@ const ALLOWED = {
   defer: ['draft', 'deferred', 'approved'],
   reject: ['draft', 'deferred', 'approved'],
   noimg: ['draft', 'deferred', 'approved'],
+  image: ['draft', 'deferred', 'approved'],
   edit: ['draft', 'deferred', 'approved'],
   redraft: ['draft', 'deferred', 'approved'],
 };
@@ -74,6 +75,19 @@ async function removeImage(postId, via = 'bot') {
   if (status !== 'approved') await refreshReview(postId, `🖼 Без картинки${suffix(via)} — см. ниже`);
 }
 
+// Выбор картинки из библиотеки образов игры (из админки). outfitId = null — без картинки
+async function setImage(postId, outfitId, via = 'admin') {
+  const status = await checkStatus(postId, 'image');
+  if (!outfitId) {
+    await pool.query('UPDATE posts SET image_url = NULL, image_ref = NULL WHERE id = $1', [postId]);
+  } else {
+    const { rows: [outfit] } = await pool.query('SELECT image_url FROM library WHERE outfit_id = $1', [outfitId]);
+    if (!outfit) throw new ActionError('Образ не найден в библиотеке');
+    await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [outfit.image_url, outfitId, postId]);
+  }
+  if (status !== 'approved') await refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
+}
+
 // Ручная правка текста (только из админки): статус не меняется, пост в очереди остаётся в очереди
 async function editText(postId, text) {
   const status = await checkStatus(postId, 'edit');
@@ -104,4 +118,4 @@ async function redraftWithFeedback(postId, feedback, via = 'bot') {
   return newId;
 }
 
-module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, editText, redraftWithFeedback };
+module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, setImage, editText, redraftWithFeedback };

@@ -4,6 +4,7 @@ const { pool } = require('./db');
 const { formatByKey } = require('./formats');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
+const { refreshLibrary } = require('./library');
 
 // Закрытый API для страницы «Канал» в админке игры: список постов и действия с ними.
 // Включается, только если задан CHANNEL_API_TOKEN; запрос должен нести его в заголовке x-channel-token
@@ -44,6 +45,19 @@ async function listPosts(status) {
   };
 }
 
+// Каталог образов игры для выбора картинки в админке
+async function listLibrary() {
+  const { rows: [{ n }] } = await pool.query('SELECT COUNT(*)::int AS n FROM library');
+  if (!n) await refreshLibrary().catch((e) => console.warn(`[api] library refresh: ${e.message}`));
+  const { rows } = await pool.query('SELECT outfit_id, title, descriptor, image_url FROM library ORDER BY title');
+  return {
+    outfits: rows.map((r) => ({
+      ...r,
+      thumb_url: r.image_url.replace('c_limit,w_1280', 'c_limit,w_400'),
+    })),
+  };
+}
+
 function readJson(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -75,6 +89,10 @@ async function handleWrite(req, res, id, op) {
     const fn = ACTIONS[body.action];
     if (!fn) return send(res, 400, { error: 'Неизвестное действие' });
     await fn(id);
+    return send(res, 200, { ok: true });
+  }
+  if (op === 'image') {
+    await actions.setImage(id, body.outfit_id || null);
     return send(res, 200, { ok: true });
   }
   if (op === 'text') {
@@ -112,7 +130,8 @@ function startApi() {
       if (req.method === 'GET' && url.pathname === '/api/posts') {
         return send(res, 200, await listPosts(url.searchParams.get('status') || 'all'));
       }
-      const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft)$/);
+      if (req.method === 'GET' && url.pathname === '/api/library') return send(res, 200, await listLibrary());
+      const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image)$/);
       if (req.method === 'POST' && write) return await handleWrite(req, res, Number(write[1]), write[2]);
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
