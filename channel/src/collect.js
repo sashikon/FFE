@@ -97,10 +97,10 @@ async function collectRss(src) {
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);
 
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, summary, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO items (source, feed, layer, url, title, summary, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (url) DO NOTHING`,
-      [source, src.layer, normalizeUrl(entry.link), title, summary || null, published]
+      [source, src.name, src.layer, normalizeUrl(entry.link), title, summary || null, published]
     );
     added += rowCount;
   }
@@ -151,8 +151,8 @@ async function collectSitemap(src) {
     if (!title) title = titleFromSlug(e.url);
     if (!title || isNoise(title)) continue;
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, published_at)
-       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
+      `INSERT INTO items (source, feed, layer, url, title, published_at)
+       VALUES ($1, $1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, e.url, title, e.published]
     );
     added += rowCount;
@@ -190,8 +190,8 @@ async function collectTelegram(src) {
     // Короткие подписи к фото и рекламные посты без текста — не новости
     if (p.title.length + p.summary.length < 80 || isNoise(p.title)) continue;
     const { rowCount } = await pool.query(
-      `INSERT INTO items (source, layer, url, title, summary, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
+      `INSERT INTO items (source, feed, layer, url, title, summary, published_at)
+       VALUES ($1, $1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, p.url, p.title, p.summary || null, p.published]
     );
     added += rowCount;
