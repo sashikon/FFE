@@ -315,7 +315,7 @@ function Calendar() {
                       <>
                         <span className="text-zinc-300">#{slot.post.id}</span>{' '}
                         <span className="text-zinc-200">{headline(slot.post.text)}</span>
-                        {!slot.matched && <span className="text-zinc-600"> · другой формат</span>}
+                        {!slot.matched && <span className="text-zinc-600">{slot.no_format ? ' · без формата' : ' · другой формат'}</span>}
                       </>
                     ) : (
                       <span className="text-zinc-600">свободно</span>
@@ -412,6 +412,45 @@ function ImagePicker({ post, onPick, onClose, busy }) {
   );
 }
 
+// Формат поста: можно выбрать вручную или определить по тексту
+function FormatPicker({ post, onChanged }) {
+  const { data } = useSWR('/api/channel-formats', fetcher);
+  const [busy, setBusy] = useState(false);
+  const formats = data?.formats || [];
+  const editable = post.status !== 'published';
+
+  const set = async (value) => {
+    setBusy(true);
+    try {
+      await postAction(post.id, 'format', value === 'auto' ? { auto: true } : { format: value || null });
+      onChanged();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editable) {
+    return post.format_title
+      ? <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{post.format_title}</span>
+      : null;
+  }
+
+  return (
+    <select
+      value={post.format || ''}
+      disabled={busy || !formats.length}
+      onChange={(e) => set(e.target.value)}
+      className={`px-2 py-0.5 rounded-full text-xs border-0 focus:outline-none cursor-pointer ${post.format ? 'bg-zinc-800 text-zinc-300' : 'bg-amber-500/15 text-amber-300'}`}
+    >
+      <option value="">{busy ? 'меняю…' : 'без формата'}</option>
+      <option value="auto">🤖 определить по тексту</option>
+      {formats.map((f) => <option key={f.key} value={f.key}>{f.title}</option>)}
+    </select>
+  );
+}
+
 function PostCard({ post, onChanged }) {
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState(null); // null | 'edit' | 'redraft' | 'image'
@@ -457,7 +496,7 @@ function PostCard({ post, onChanged }) {
       <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
         <span className="text-zinc-500">#{post.id}</span>
         <span className={`px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
-        {post.format_title && <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{post.format_title}</span>}
+        <FormatPicker post={post} onChanged={onChanged} />
         <span className="text-zinc-500">{when}</span>
         <button onClick={copy} className="ml-auto text-zinc-400 hover:text-white transition-colors">
           {copied ? 'Скопировано' : 'Копировать текст'}

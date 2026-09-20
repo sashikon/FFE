@@ -41,7 +41,7 @@ async function buildSchedule(days = 14) {
     if (!left.length) return { ...slot, post: null };
     const idx = left.findIndex((p) => p.format === slot.format_key);
     const [post] = left.splice(idx === -1 ? 0 : idx, 1);
-    return { ...slot, post, matched: idx !== -1 };
+    return { ...slot, post, matched: idx !== -1, no_format: !post.format };
   });
 
   return {
