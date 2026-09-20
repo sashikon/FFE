@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { pool } = require('./db');
 const { formatByKey } = require('./formats');
 const sources = require('./sources');
+const { buildSchedule } = require('./schedule');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
@@ -173,6 +174,9 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (req.method === 'GET' && url.pathname === '/api/schedule') {
+        return send(res, 200, await buildSchedule(Math.min(30, Number(url.searchParams.get('days')) || 14)));
+      }
       const write = url.pathname.match(/^\/api\/posts\/(\d+)\/(action|text|redraft|image)$/);
       if (req.method === 'POST' && write) return await handleWrite(req, res, Number(write[1]), write[2]);
       return send(res, 404, { error: 'Not found' });

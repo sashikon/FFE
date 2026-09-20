@@ -13,6 +13,7 @@ const fetcher = (url) => fetch(url).then(async (r) => {
 const TABS = [
   { key: 'draft', label: 'Не утверждено' },
   { key: 'approved', label: 'В очереди' },
+  { key: 'calendar', label: 'Календарь' },
   { key: 'published', label: 'Опубликовано' },
   { key: 'deferred', label: 'Отложено' },
   { key: 'all', label: 'Все' },
@@ -127,6 +128,76 @@ function BrandLogo() {
         {message && <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{message.text}</span>}
       </div>
     </section>
+  );
+}
+
+// Календарь: когда выйдет каждый одобренный пост и что уже вышло
+const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+function dayLabel(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return `${WEEKDAYS[date.getUTCDay()]}, ${d} ${MONTHS[m - 1]}`;
+}
+
+const headline = (text) => stripTagsPlain(text).split('\n')[0].slice(0, 70);
+const stripTagsPlain = (t) => t.replace(/<[^>]+>/g, '');
+
+function Calendar() {
+  const { data, error, isLoading } = useSWR('/api/channel-schedule?days=14', fetcher, { refreshInterval: 60000 });
+  if (isLoading) return <p className="text-zinc-500">Загружаю календарь…</p>;
+  if (error) return <p className="text-rose-400 text-sm">Не удалось загрузить календарь: {error.message}</p>;
+  if (!data) return null;
+
+  const byDate = {};
+  for (const slot of data.slots) (byDate[slot.date] ||= { slots: [], published: [] }).slots.push(slot);
+  for (const p of data.published) (byDate[p.date] ||= { slots: [], published: [] }).published.push(p);
+  const dates = Object.keys(byDate).sort();
+  const today = data.slots[0]?.date;
+
+  return (
+    <>
+      <p className="text-sm text-zinc-500 mb-4">
+        Публикация в {data.publish_hours.map((h) => `${h}:00`).join(' и ')} ({data.timezone}). В слот идёт пост формата дня, а если такого в очереди нет — самый старый одобренный.
+        {data.queue_left > 0 && ` Ещё ${data.queue_left} постов в очереди не поместились в две недели.`}
+      </p>
+
+      <div className="space-y-2">
+        {dates.map((date) => {
+          const day = byDate[date];
+          const format = day.slots[0]?.format_title;
+          const isPast = day.slots.length === 0;
+          return (
+            <div key={date} className={`rounded-xl border p-4 ${date === today ? 'border-zinc-600 bg-zinc-900' : isPast ? 'border-zinc-900 bg-zinc-950' : 'border-zinc-800 bg-zinc-900'}`}>
+              <div className="flex flex-wrap items-baseline gap-2 mb-2">
+                <span className="text-sm text-zinc-200">{dayLabel(date)}</span>
+                {format && <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-800 text-zinc-300">{format}</span>}
+              </div>
+
+              {day.published.map((p) => (
+                <p key={p.id} className="text-sm text-sky-300 mb-1">📣 <span className="text-zinc-300">#{p.id}</span> {headline(p.text)}</p>
+              ))}
+
+              {day.slots.map((slot) => (
+                <p key={slot.hour} className="text-sm mb-1">
+                  <span className="text-zinc-500">{slot.hour}:00 · </span>
+                  {slot.post ? (
+                    <>
+                      <span className="text-zinc-300">#{slot.post.id}</span>{' '}
+                      <span className="text-zinc-200">{headline(slot.post.text)}</span>
+                      {!slot.matched && <span className="text-zinc-600"> · другой формат</span>}
+                    </>
+                  ) : (
+                    <span className="text-zinc-600">свободно</span>
+                  )}
+                </p>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -375,7 +446,9 @@ function PostCard({ post, onChanged }) {
 
 export default function ChannelPage() {
   const [tab, setTab] = useState('draft');
-  const { data, error, isLoading, mutate } = useSWR(`/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 30000 });
+  const { data, error, isLoading, mutate } = useSWR(
+    tab === 'calendar' ? null : `/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 30000 }
+  );
   const counts = data?.counts || {};
 
   return (
@@ -416,14 +489,16 @@ export default function ChannelPage() {
             })}
           </nav>
 
-          {isLoading && (
+          {tab === 'calendar' && <Calendar />}
+
+          {tab !== 'calendar' && isLoading && (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-48 bg-zinc-900 rounded-xl animate-pulse" />)}
             </div>
           )}
-          {error && <p className="text-rose-400 text-sm">Не удалось загрузить посты: {error.message}</p>}
-          {data?.posts?.length === 0 && <p className="text-zinc-500 text-center py-20">Здесь пока пусто</p>}
-          {data?.posts?.length > 0 && (
+          {tab !== 'calendar' && error && <p className="text-rose-400 text-sm">Не удалось загрузить посты: {error.message}</p>}
+          {tab !== 'calendar' && data?.posts?.length === 0 && <p className="text-zinc-500 text-center py-20">Здесь пока пусто</p>}
+          {tab !== 'calendar' && data?.posts?.length > 0 && (
             <div className="space-y-4">
               {data.posts.map((p) => <PostCard key={`${p.id}-${p.status}`} post={p} onChanged={() => mutate()} />)}
             </div>
