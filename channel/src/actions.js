@@ -76,16 +76,16 @@ async function removeImage(postId, via = 'bot') {
   if (status !== 'approved') await refreshReview(postId, `🖼 Без картинки${suffix(via)} — см. ниже`);
 }
 
-// Выбор картинки из библиотеки образов игры (из админки). outfitId = null — без картинки
-async function setImage(postId, outfitId, via = 'admin') {
+// Выбор картинки из библиотеки игры (эскиз или рендер). imageId = null — без картинки
+async function setImage(postId, imageId, via = 'admin') {
   const status = await checkStatus(postId, 'image');
-  if (!outfitId) {
+  if (!imageId) {
     await pool.query('UPDATE posts SET image_url = NULL, image_ref = NULL WHERE id = $1', [postId]);
   } else {
-    const { rows: [outfit] } = await pool.query('SELECT image_url FROM library WHERE outfit_id = $1', [outfitId]);
-    if (!outfit) throw new ActionError('Образ не найден в библиотеке');
-    const url = await withBrandLogo(outfit.image_url);
-    await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [url, outfitId, postId]);
+    const { rows: [image] } = await pool.query('SELECT image_url FROM library WHERE image_id = $1', [imageId]);
+    if (!image) throw new ActionError('Картинка не найдена в библиотеке');
+    const url = await withBrandLogo(image.image_url);
+    await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [url, imageId, postId]);
   }
   if (status !== 'approved') await refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
 }

@@ -130,42 +130,65 @@ function BrandLogo() {
   );
 }
 
-// Выбор картинки из библиотеки образов игры
+// Выбор картинки: все эскизы и рендеры игры, с фильтром и сортировкой
+const KIND_LABEL = { sketch: 'эскиз', render: 'рендер' };
+
 function ImagePicker({ post, onPick, onClose, busy }) {
   const { data, error, isLoading } = useSWR('/api/channel-library', fetcher);
   const [q, setQ] = useState('');
-  const outfits = (data?.outfits || []).filter((o) =>
-    !q.trim() || `${o.title} ${o.descriptor}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const [kind, setKind] = useState('all');
+  const [sort, setSort] = useState('new');
+
+  const counts = data?.counts || {};
+  const images = (data?.images || [])
+    .filter((i) => kind === 'all' || i.kind === kind)
+    .filter((i) => !q.trim() || `${i.title} ${i.descriptor}`.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => (sort === 'title'
+      ? a.title.localeCompare(b.title, 'ru')
+      : new Date(b.created_at || 0) - new Date(a.created_at || 0)));
+
+  const chip = (active) => `px-2 py-1 rounded-lg text-xs transition-colors ${active ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`;
 
   return (
     <div className="mt-4 border-t border-zinc-800 pt-4">
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Поиск по образам: чёрный, буфы, офис…"
-          className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+          placeholder="Поиск: чёрный, буфы, офис…"
+          className="flex-1 min-w-[200px] bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
         />
         <button disabled={busy} onClick={() => onPick(null)} className={btn}>Без картинки</button>
         <button disabled={busy} onClick={onClose} className={btn}>Закрыть</button>
       </div>
 
-      {isLoading && <p className="text-sm text-zinc-500">Загружаю образы…</p>}
-      {error && <p className="text-sm text-rose-400">Не удалось загрузить образы: {error.message}</p>}
-      {data && outfits.length === 0 && <p className="text-sm text-zinc-500">Ничего не нашлось</p>}
+      <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+        <button onClick={() => setKind('all')} className={chip(kind === 'all')}>все ({(counts.sketches || 0) + (counts.renders || 0)})</button>
+        <button onClick={() => setKind('sketch')} className={chip(kind === 'sketch')}>эскизы ({counts.sketches || 0})</button>
+        <button onClick={() => setKind('render')} className={chip(kind === 'render')}>рендеры ({counts.renders || 0})</button>
+        <span className="mx-1 text-zinc-600">·</span>
+        <button onClick={() => setSort('new')} className={chip(sort === 'new')}>сначала новые</button>
+        <button onClick={() => setSort('title')} className={chip(sort === 'title')}>по названию</button>
+        <span className="ml-auto text-zinc-500">{images.length} из {(counts.sketches || 0) + (counts.renders || 0)}</span>
+      </div>
 
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-96 overflow-y-auto">
-        {outfits.map((o) => (
+      {isLoading && <p className="text-sm text-zinc-500">Загружаю картинки…</p>}
+      {error && <p className="text-sm text-rose-400">Не удалось загрузить: {error.message}</p>}
+      {data && images.length === 0 && <p className="text-sm text-zinc-500">Ничего не нашлось</p>}
+
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-[28rem] overflow-y-auto">
+        {images.map((i) => (
           <button
-            key={o.outfit_id}
+            key={i.image_id}
             disabled={busy}
-            onClick={() => onPick(o.outfit_id)}
-            title={o.descriptor}
-            className={`group relative rounded-lg overflow-hidden border transition-colors ${o.outfit_id === post.image_ref ? 'border-zinc-100' : 'border-zinc-800 hover:border-zinc-600'}`}
+            onClick={() => onPick(i.image_id)}
+            title={i.descriptor}
+            className={`group relative rounded-lg overflow-hidden border transition-colors ${i.image_id === post.image_ref ? 'border-zinc-100' : 'border-zinc-800 hover:border-zinc-600'}`}
           >
-            <img src={o.thumb_url} alt="" className="w-full h-28 object-cover bg-zinc-800" loading="lazy" />
-            <span className="block px-1.5 py-1 text-[10px] leading-tight text-zinc-400 text-left line-clamp-2">{o.title}</span>
-            {o.outfit_id === post.image_ref && (
+            <img src={i.thumb_url} alt="" className="w-full h-28 object-cover bg-zinc-800" loading="lazy" />
+            <span className="block px-1.5 py-1 text-[10px] leading-tight text-zinc-400 text-left line-clamp-2">{i.title}</span>
+            <span className="absolute top-1 left-1 text-[10px] bg-black/70 text-zinc-300 rounded px-1">{KIND_LABEL[i.kind]}</span>
+            {i.image_id === post.image_ref && (
               <span className="absolute top-1 right-1 text-[10px] bg-zinc-100 text-zinc-900 rounded px-1">сейчас</span>
             )}
           </button>
@@ -266,9 +289,9 @@ function PostCard({ post, onChanged }) {
           post={post}
           busy={busy}
           onClose={() => setMode(null)}
-          onPick={(outfitId) => run(
-            () => postAction(post.id, 'image', { outfit_id: outfitId }),
-            outfitId ? 'Картинка изменена' : 'Пост будет без картинки'
+          onPick={(imageId) => run(
+            () => postAction(post.id, 'image', { image_id: imageId }),
+            imageId ? 'Картинка изменена' : 'Пост будет без картинки'
           )}
         />
       )}

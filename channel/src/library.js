@@ -1,14 +1,15 @@
 const { pool, getState, setState } = require('./db');
 const { call, MODELS } = require('./llm');
 
-// Каталог образов берём через открытый API игры — без доступа к её базе и ключей Cloudinary
+// Каталог картинок игры (эскизы и рендеры) берём через открытый API игры —
+// без доступа к её базе и ключей Cloudinary
 const FFE_API = process.env.FFE_API_URL || 'https://ffe-production.up.railway.app/api';
-const REFRESH_MS = 24 * 3600 * 1000;
+const REFRESH_MS = 6 * 3600 * 1000;
 const NO_REPEAT = 10;   // образ не повторяется в последних N постах
 const MIN_FIT = 4;      // картинку ставим, только если она подходит по смыслу
 
 async function getJson(url) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.json();
 }
@@ -18,47 +19,43 @@ function descriptor(outfit) {
   const layers = (outfit.game_rows || []).map((r) =>
     `${r.theme}: ${r.options.filter((o) => o !== r.correct).join(', ')}`
   );
-  return [outfit.title, ...layers].join('; ');
+  return [outfit.title, ...layers].filter(Boolean).join('; ');
 }
 
-// Рендер предпочтительнее исходника: рендеры уже используются для публикации (Pinterest).
-// Для Telegram — JPEG с ограничением размера
-function imageFor(outfit) {
-  const src = outfit.renders?.[0]?.image_url || outfit.image_url;
-  return src.replace('/upload/', '/upload/c_limit,w_1280,f_jpg,q_auto/');
-}
+// Для Telegram: JPEG с ограничением размера; превью для админки — узкое
+const big = (url) => url.replace('/upload/', '/upload/c_limit,w_1280,f_jpg,q_auto/');
+const small = (url) => url.replace('/upload/', '/upload/c_limit,w_400,f_jpg,q_auto/');
 
-async function refreshLibrary() {
+async function refreshLibrary(force = false) {
   const last = await getState('library_refreshed_at');
-  if (last && Date.now() - new Date(last).getTime() < REFRESH_MS) return;
+  if (!force && last && Date.now() - new Date(last).getTime() < REFRESH_MS) return;
 
-  const ids = [];
-  for (let page = 1; ; page++) {
-    const { outfits, total } = await getJson(`${FFE_API}/outfits?lang=ru&page=${page}`);
-    ids.push(...outfits.filter((o) => o.status === 'ready').map((o) => o.id));
-    if (!outfits.length || page * 20 >= total) break;
-  }
+  const { outfits } = await getJson(`${FFE_API}/gallery?lang=ru`);
+  const seen = [];
 
-  const { rows } = await pool.query('SELECT outfit_id FROM library');
-  const known = new Set(rows.map((r) => r.outfit_id));
-  let added = 0;
-  for (const id of ids.filter((i) => !known.has(i))) {
-    try {
-      const o = await getJson(`${FFE_API}/outfit/${id}?lang=ru`);
-      if (!o.game_rows) continue;
+  for (const o of outfits) {
+    const text = descriptor(o);
+    const rows = [
+      { image_id: `sketch:${o.id}`, kind: 'sketch', url: o.image_url, thumb: o.thumb_url, created_at: o.created_at },
+      ...(o.renders || []).map((r) => ({ image_id: `render:${r.id}`, kind: 'render', url: r.image_url, thumb: r.thumb_url, created_at: r.created_at })),
+    ].filter((r) => r.url);
+
+    for (const r of rows) {
+      seen.push(r.image_id);
       await pool.query(
-        `INSERT INTO library (outfit_id, title, descriptor, image_url) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (outfit_id) DO NOTHING`,
-        [id, o.title, descriptor(o), imageFor(o)]
+        `INSERT INTO library (image_id, outfit_id, kind, title, descriptor, image_url, thumb_url, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (image_id) DO UPDATE
+         SET title = EXCLUDED.title, descriptor = EXCLUDED.descriptor,
+             image_url = EXCLUDED.image_url, thumb_url = EXCLUDED.thumb_url, updated_at = NOW()`,
+        [r.image_id, o.id, r.kind, o.title || 'Без названия', text, big(r.url), small(r.thumb || r.url), r.created_at]
       );
-      added++;
-    } catch (e) {
-      console.warn(`[library] ${id}: ${e.message}`);
     }
   }
-  await pool.query('DELETE FROM library WHERE NOT (outfit_id = ANY($1))', [ids]);
+  await pool.query('DELETE FROM library WHERE NOT (image_id = ANY($1))', [seen]);
   await setState('library_refreshed_at', new Date().toISOString());
-  console.log(`[library] ${ids.length} outfits, new: ${added}`);
+  const { rows: [{ n }] } = await pool.query('SELECT COUNT(*)::int AS n FROM library');
+  console.log(`[library] ${outfits.length} образов, картинок: ${n}`);
 }
 
 const PICK_SYSTEM = `Ты фоторедактор авторского Telegram-канала о смыслах в моде. К посту можно поставить одну картинку из библиотеки образов канала. Выбери образ, который по смыслу перекликается с мыслью поста: тот же код, настроение, силуэт, цвет, тема — так, чтобы читатель увидел в картинке иллюстрацию тезиса. Буквального совпадения предмета не нужно.
@@ -70,12 +67,17 @@ fit — насколько картинка подходит, 0–5:
 
 Большинство постов обходятся без картинки — это нормально.`;
 
+// Модель выбирает образ, а картинку берём лучшую из его: свежий рендер, иначе эскиз
 async function pickImage(postText, thesis) {
   const { rows: lib } = await pool.query(
-    `SELECT l.outfit_id, l.descriptor, l.image_url FROM library l
-     WHERE l.outfit_id NOT IN (
-       SELECT image_ref FROM posts WHERE image_ref IS NOT NULL ORDER BY created_at DESC LIMIT $1
-     )`,
+    `SELECT DISTINCT ON (outfit_id) outfit_id, descriptor, image_id, image_url
+     FROM library
+     WHERE outfit_id NOT IN (
+       SELECT outfit_id FROM library WHERE image_id IN (
+         SELECT image_ref FROM posts WHERE image_ref IS NOT NULL ORDER BY created_at DESC LIMIT $1
+       )
+     )
+     ORDER BY outfit_id, (kind = 'render') DESC, created_at DESC NULLS LAST`,
     [NO_REPEAT]
   );
   if (!lib.length) return null;
@@ -100,7 +102,7 @@ async function pickImage(postText, thesis) {
   if (pick.outfit_id === 'none' || pick.fit < MIN_FIT) return null;
   const chosen = lib.find((l) => l.outfit_id === pick.outfit_id);
   console.log(`[library] picked ${pick.outfit_id} (fit ${pick.fit}): ${pick.reason}`);
-  return chosen ? { url: chosen.image_url, ref: chosen.outfit_id } : null;
+  return chosen ? { url: chosen.image_url, ref: chosen.image_id } : null;
 }
 
 module.exports = { refreshLibrary, pickImage };

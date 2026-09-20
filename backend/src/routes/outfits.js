@@ -79,6 +79,32 @@ router.get('/outfit/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/gallery?lang=ru — все картинки всех образов: эскизы и рендеры.
+// Используется каналом для подбора картинки к посту
+router.get('/gallery', async (req, res, next) => {
+  try {
+    const lang = req.query.lang || 'ru';
+    const { rows } = await pool.query(
+      `SELECT o.id, o.title, o.image_url, o.thumb_url, o.created_at,
+              t.game_rows,
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                   'id', r.id, 'image_url', r.image_url, 'thumb_url', r.thumb_url, 'created_at', r.created_at
+                 ) ORDER BY r.created_at DESC)
+                 FROM outfit_renders r WHERE r.outfit_id = o.id),
+                '[]'::json
+              ) AS renders
+       FROM outfits o
+       LEFT JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1 AND t.status = 'ready'
+       ORDER BY o.created_at DESC`,
+      [lang]
+    );
+    res.json({ outfits: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/renders/random?exclude=:outfitId&count=3
 router.get('/renders/random', async (req, res, next) => {
   try {
