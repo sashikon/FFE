@@ -5,9 +5,18 @@ const sources = require('./sources');
 const parser = new Parser({
   timeout: 20_000,
   // Fibre2Fashion отвечает 406 на нестандартный User-Agent
-  headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
+  headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*', 'Cache-Control': 'no-cache' },
   customFields: { item: ['source'] },
 });
+
+const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*', 'Cache-Control': 'no-cache' };
+const SITEMAP_LIMIT = 20;
+
+async function fetchText(url) {
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Status code ${res.status}`);
+  return res.text();
+}
 
 const MAX_AGE_MS = 3 * 24 * 3600 * 1000;
 // Трендовые агентства публикуются раз в несколько недель — им окно шире
@@ -51,8 +60,12 @@ function normalizeUrl(url) {
   }
 }
 
+// Некоторые ленты отдают 304 с пустым телом, пока адрес не поменяется (Launchmetrics)
+const bustCache = (url) => `${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`;
+
 async function collectRss(src) {
-  const feed = await parser.parseURL(src.url);
+  const url = src.cacheBust ? bustCache(src.url) : src.url;
+  const feed = await parser.parseURL(url);
   const isGoogle = src.url.includes('news.google.com');
   let added = 0;
 
@@ -94,15 +107,7 @@ async function collectRss(src) {
   return added;
 }
 
-const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' };
-const SITEMAP_LIMIT = 20;
-
-async function fetchText(url) {
-  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`Status code ${res.status}`);
-  return res.text();
-}
-
+// Launchmetrics без no-cache отвечает 304 с пустым телом
 const decode = (s) => s
   .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'")
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
@@ -111,7 +116,9 @@ const decode = (s) => s
 // или из адреса (titleFrom: 'slug'), если страница собирается скриптом и заголовка в HTML нет
 function titleFromSlug(url) {
   const slug = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
-  const words = slug.replace(/[-_]+/g, ' ').trim();
+  let words = slug.replace(/[-_]+/g, ' ').trim();
+  // адреса вида LONDON-FASHION-WEEK-IS-A-CELEBRATION — капс приводим к обычному виду
+  if (words === words.toUpperCase() && words.length > 12) words = words.toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -140,7 +147,8 @@ async function collectSitemap(src) {
     let title;
     try {
       title = src.titleFrom === 'slug' ? titleFromSlug(e.url) : await titleFromPage(e.url, src);
-    } catch { continue; }
+    } catch { title = null; }
+    if (!title) title = titleFromSlug(e.url);
     if (!title || isNoise(title)) continue;
     const { rowCount } = await pool.query(
       `INSERT INTO items (source, layer, url, title, published_at)

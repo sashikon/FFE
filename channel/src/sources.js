@@ -46,6 +46,20 @@ module.exports = [
   { name: 'Fashion Seoul', layer: 'industry', url: 'https://www.fashionseoul.com/rss' },
   { name: 'Fashion Insight', layer: 'industry', url: gnewsKr('site:fi.co.kr') },
 
+  // ── Недели моды и аналитика ──
+  { name: 'CFDA', layer: 'industry', type: 'sitemap', url: 'https://cfda.com/sitemap.xml', urlFilter: /\/news\//, maxAgeDays: 30 },
+  {
+    name: 'British Fashion Council',
+    layer: 'industry',
+    type: 'sitemap',
+    url: 'https://britishfashioncouncil.co.uk/sitemap.xml',
+    urlFilter: /\/BFCNews\//,
+    titleFrom: 'slug', // страницы собираются скриптом, заголовка в HTML нет
+    maxAgeDays: 30,
+  },
+  { name: 'Launchmetrics', layer: 'industry', url: 'https://launchmetrics.com/feed', maxAgeDays: 30, cacheBust: true },
+  { name: 'EDITED', layer: 'industry', type: 'sitemap', url: 'https://edited.com/post-sitemap.xml', urlFilter: /\/blog\/.+/, maxAgeDays: 45 },
+
   // production — самый ценный слой: здесь меньше всего чужих интерпретаций
   { name: 'Just Style', layer: 'production', url: 'https://www.just-style.com/feed/' },
   { name: 'Fibre2Fashion', layer: 'production', url: 'https://www.fibre2fashion.com/news/rss/news.xml' },
@@ -60,6 +74,9 @@ module.exports = [
 
   // culture
   { name: 'Vogue', layer: 'culture', url: 'https://www.vogue.com/feed/rss' },
+  // Официальные организаторы недель моды публикуются по сезонам — окно шире
+  { name: 'FHCM Paris', layer: 'culture', url: 'https://fhcm.paris/rss.xml', maxAgeDays: 90 },
+  { name: 'FDCI Индия', layer: 'culture', url: 'https://fdci.org/feed', maxAgeDays: 90 },
   { name: 'Dazed', layer: 'culture', url: 'https://www.dazeddigital.com/rss' },
   { name: 'i-D', layer: 'culture', url: 'https://i-d.co/feed/' },
   { name: 'Highsnobiety', layer: 'culture', url: 'https://www.highsnobiety.com/feed/' },
