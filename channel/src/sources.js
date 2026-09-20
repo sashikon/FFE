@@ -6,6 +6,9 @@ const gnews = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=en-US&gl=US&ceid=US:en`;
 const gnewsRu = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=ru&gl=RU&ceid=RU:ru`;
+// Индия: издания выходят реже, окно шире (см. maxAgeDays у источника)
+const gnewsIn = (query, days = 14) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:${days}d&hl=en-IN&gl=IN&ceid=IN:en`;
 
 module.exports = [
   // industry
@@ -50,6 +53,8 @@ module.exports = [
   { name: 'Highsnobiety', layer: 'culture', url: 'https://www.highsnobiety.com/feed/' },
   { name: 'Hypebeast', layer: 'culture', url: 'https://hypebeast.com/feed' },
   { name: 'Who What Wear', layer: 'culture', url: 'https://www.whowhatwear.com/rss' },
+  // Индийское издание о моде, ремесле и текстиле; своей ленты нет, карта сайта не обновляется
+  { name: 'The Voice of Fashion', layer: 'culture', url: gnewsIn('site:thevoiceoffashion.com'), maxAgeDays: 14 },
   { name: 'The Guardian Fashion', layer: 'culture', url: 'https://www.theguardian.com/fashion/rss' },
   { name: 'NYT Fashion', layer: 'culture', url: 'https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/fashion/rss.xml' },
   { name: 'The Cut', layer: 'culture', url: gnews('site:thecut.com fashion') },
