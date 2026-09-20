@@ -144,8 +144,53 @@ function dayLabel(iso) {
 const headline = (text) => stripTagsPlain(text).split('\n')[0].slice(0, 70);
 const stripTagsPlain = (t) => t.replace(/<[^>]+>/g, '');
 
+// Понедельник недели, в которую попадает дата (ISO «гггг-мм-дд»)
+function weekStart(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const shift = (date.getUTCDay() + 6) % 7; // понедельник — начало недели
+  date.setUTCDate(date.getUTCDate() - shift);
+  return date.toISOString().slice(0, 10);
+}
+
+const addDays = (iso, n) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + n));
+  return date.toISOString().slice(0, 10);
+};
+
+function DayCell({ iso, day, today, compact }) {
+  const format = day?.slots?.[0]?.format_title;
+  const dayNum = Number(iso.slice(-2));
+  return (
+    <div className={`min-h-[104px] rounded-lg border p-2 ${iso === today ? 'border-zinc-500 bg-zinc-900' : day ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-900 bg-zinc-950'}`}>
+      <div className="flex items-baseline justify-between gap-1 mb-1">
+        <span className={`text-xs ${iso === today ? 'text-zinc-100' : 'text-zinc-500'}`}>{dayNum}</span>
+        {format && <span className="text-[10px] text-zinc-500 truncate max-w-[70%]" title={format}>{format}</span>}
+      </div>
+      {day?.published?.map((p) => (
+        <p key={p.id} className="text-[11px] leading-tight text-sky-300 mb-1 line-clamp-2">📣 {headline(p.text)}</p>
+      ))}
+      {day?.slots?.map((slot) => (
+        <p key={slot.hour} className="text-[11px] leading-tight mb-1 line-clamp-3">
+          {slot.post ? (
+            <>
+              <span className="text-zinc-500">{slot.hour}:00 </span>
+              <span className={slot.matched ? 'text-zinc-200' : 'text-zinc-400'}>{headline(slot.post.text)}</span>
+            </>
+          ) : (
+            <span className="text-zinc-700">{slot.hour}:00 свободно</span>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function Calendar() {
   const { data, error, isLoading } = useSWR('/api/channel-schedule?days=14', fetcher, { refreshInterval: 60000 });
+  const [view, setView] = useState('grid');
+
   if (isLoading) return <p className="text-zinc-500">Загружаю календарь…</p>;
   if (error) return <p className="text-rose-400 text-sm">Не удалось загрузить календарь: {error.message}</p>;
   if (!data) return null;
@@ -154,49 +199,81 @@ function Calendar() {
   for (const slot of data.slots) (byDate[slot.date] ||= { slots: [], published: [] }).slots.push(slot);
   for (const p of data.published) (byDate[p.date] ||= { slots: [], published: [] }).published.push(p);
   const dates = Object.keys(byDate).sort();
-  const today = data.slots[0]?.date;
+  const today = data.slots[0]?.date || dates[0];
+
+  // сетка: целые недели от первой до последней даты
+  const first = weekStart(dates[0]);
+  const last = weekStart(dates[dates.length - 1]);
+  const weeks = [];
+  for (let w = first; w <= last; w = addDays(w, 7)) {
+    weeks.push(Array.from({ length: 7 }, (_, i) => addDays(w, i)));
+  }
+
+  const tab = (active) => `px-3 py-1.5 rounded-lg text-sm transition-colors ${active ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'}`;
 
   return (
     <>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={() => setView('grid')} className={tab(view === 'grid')}>Сеткой</button>
+        <button onClick={() => setView('list')} className={tab(view === 'list')}>Списком</button>
+      </div>
+
       <p className="text-sm text-zinc-500 mb-4">
         Публикация в {data.publish_hours.map((h) => `${h}:00`).join(' и ')} ({data.timezone}). В слот идёт пост формата дня, а если такого в очереди нет — самый старый одобренный.
         {data.queue_left > 0 && ` Ещё ${data.queue_left} постов в очереди не поместились в две недели.`}
       </p>
 
-      <div className="space-y-2">
-        {dates.map((date) => {
-          const day = byDate[date];
-          const format = day.slots[0]?.format_title;
-          const isPast = day.slots.length === 0;
-          return (
-            <div key={date} className={`rounded-xl border p-4 ${date === today ? 'border-zinc-600 bg-zinc-900' : isPast ? 'border-zinc-900 bg-zinc-950' : 'border-zinc-800 bg-zinc-900'}`}>
-              <div className="flex flex-wrap items-baseline gap-2 mb-2">
-                <span className="text-sm text-zinc-200">{dayLabel(date)}</span>
-                {format && <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-800 text-zinc-300">{format}</span>}
-              </div>
-
-              {day.published.map((p) => (
-                <p key={p.id} className="text-sm text-sky-300 mb-1">📣 <span className="text-zinc-300">#{p.id}</span> {headline(p.text)}</p>
-              ))}
-
-              {day.slots.map((slot) => (
-                <p key={slot.hour} className="text-sm mb-1">
-                  <span className="text-zinc-500">{slot.hour}:00 · </span>
-                  {slot.post ? (
-                    <>
-                      <span className="text-zinc-300">#{slot.post.id}</span>{' '}
-                      <span className="text-zinc-200">{headline(slot.post.text)}</span>
-                      {!slot.matched && <span className="text-zinc-600"> · другой формат</span>}
-                    </>
-                  ) : (
-                    <span className="text-zinc-600">свободно</span>
-                  )}
-                </p>
+      {view === 'grid' ? (
+        <div className="overflow-x-auto">
+          <div className="min-w-[680px]">
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                <div key={d} className="text-center text-[11px] text-zinc-500 py-1">{d}</div>
               ))}
             </div>
-          );
-        })}
-      </div>
+            <div className="space-y-1">
+              {weeks.map((week) => (
+                <div key={week[0]} className="grid grid-cols-7 gap-1">
+                  {week.map((iso) => <DayCell key={iso} iso={iso} day={byDate[iso]} today={today} />)}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {dates.map((date) => {
+            const day = byDate[date];
+            const format = day.slots[0]?.format_title;
+            const isPast = day.slots.length === 0;
+            return (
+              <div key={date} className={`rounded-xl border p-4 ${date === today ? 'border-zinc-600 bg-zinc-900' : isPast ? 'border-zinc-900 bg-zinc-950' : 'border-zinc-800 bg-zinc-900'}`}>
+                <div className="flex flex-wrap items-baseline gap-2 mb-2">
+                  <span className="text-sm text-zinc-200">{dayLabel(date)}</span>
+                  {format && <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-800 text-zinc-300">{format}</span>}
+                </div>
+                {day.published.map((p) => (
+                  <p key={p.id} className="text-sm text-sky-300 mb-1">📣 <span className="text-zinc-300">#{p.id}</span> {headline(p.text)}</p>
+                ))}
+                {day.slots.map((slot) => (
+                  <p key={slot.hour} className="text-sm mb-1">
+                    <span className="text-zinc-500">{slot.hour}:00 · </span>
+                    {slot.post ? (
+                      <>
+                        <span className="text-zinc-300">#{slot.post.id}</span>{' '}
+                        <span className="text-zinc-200">{headline(slot.post.text)}</span>
+                        {!slot.matched && <span className="text-zinc-600"> · другой формат</span>}
+                      </>
+                    ) : (
+                      <span className="text-zinc-600">свободно</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
