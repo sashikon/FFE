@@ -159,11 +159,14 @@ const addDays = (iso, n) => {
   return date.toISOString().slice(0, 10);
 };
 
-function DayCell({ iso, day, today, compact }) {
+function DayCell({ iso, day, today, onOpen }) {
   const format = day?.slots?.[0]?.format_title;
   const dayNum = Number(iso.slice(-2));
+  const clickable = Boolean(day);
   return (
-    <div className={`min-h-[104px] rounded-lg border p-2 ${iso === today ? 'border-zinc-500 bg-zinc-900' : day ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-900 bg-zinc-950'}`}>
+    <div
+      onClick={() => clickable && onOpen(iso)}
+      className={`min-h-[104px] rounded-lg border p-2 text-left ${clickable ? 'cursor-pointer hover:border-zinc-600' : ''} ${iso === today ? 'border-zinc-500 bg-zinc-900' : day ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-900 bg-zinc-950'}`}>
       <div className="flex items-baseline justify-between gap-1 mb-1">
         <span className={`text-xs ${iso === today ? 'text-zinc-100' : 'text-zinc-500'}`}>{dayNum}</span>
         {format && <span className="text-[10px] text-zinc-500 truncate max-w-[70%]" title={format}>{format}</span>}
@@ -187,9 +190,54 @@ function DayCell({ iso, day, today, compact }) {
   );
 }
 
+// Карточка дня: заголовки целиком, без обрезки
+function DayDetails({ iso, day, onClose }) {
+  if (!day) return null;
+  const format = day.slots?.[0]?.format_title;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 max-w-xl w-full mt-16" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-baseline gap-2 mb-4">
+          <h3 className="text-zinc-100">{dayLabel(iso)}</h3>
+          {format && <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-800 text-zinc-300">{format}</span>}
+          <button onClick={onClose} className="ml-auto text-sm text-zinc-400 hover:text-white">Закрыть</button>
+        </div>
+
+        {day.published?.map((p) => (
+          <div key={p.id} className="mb-4 pb-4 border-b border-zinc-800 last:border-0">
+            <p className="text-xs text-sky-300 mb-1">📣 опубликован · #{p.id}</p>
+            <p className="text-sm text-zinc-200">{stripTagsPlain(p.text).split('\n')[0]}</p>
+          </div>
+        ))}
+
+        {day.slots?.map((slot) => (
+          <div key={slot.hour} className="mb-4 pb-4 border-b border-zinc-800 last:border-0">
+            <p className="text-xs text-zinc-500 mb-1">
+              {slot.hour}:00{slot.post ? ` · #${slot.post.id}` : ''}{slot.post && !slot.matched ? ' · занял слот другого формата' : ''}
+            </p>
+            {slot.post ? (
+              <div className="flex gap-3">
+                {slot.post.image_url && <img src={slot.post.image_url} alt="" className="w-16 h-20 object-cover rounded bg-zinc-800 shrink-0" />}
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-200">{stripTagsPlain(slot.post.text).split('\n')[0]}</p>
+                  {slot.post.thesis && <p className="text-xs text-zinc-500 mt-1">{slot.post.thesis}</p>}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-600">слот свободен</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Calendar() {
-  const { data, error, isLoading } = useSWR('/api/channel-schedule?days=14', fetcher, { refreshInterval: 60000 });
+  const [days, setDays] = useState(30);
   const [view, setView] = useState('grid');
+  const [selected, setSelected] = useState(null);
+  const { data, error, isLoading } = useSWR(`/api/channel-schedule?days=${days}`, fetcher, { refreshInterval: 60000 });
 
   if (isLoading) return <p className="text-zinc-500">Загружаю календарь…</p>;
   if (error) return <p className="text-rose-400 text-sm">Не удалось загрузить календарь: {error.message}</p>;
@@ -216,12 +264,17 @@ function Calendar() {
       <div className="flex items-center gap-2 mb-4">
         <button onClick={() => setView('grid')} className={tab(view === 'grid')}>Сеткой</button>
         <button onClick={() => setView('list')} className={tab(view === 'list')}>Списком</button>
+        <span className="mx-1 text-zinc-700">·</span>
+        <button onClick={() => setDays(14)} className={tab(days === 14)}>2 недели</button>
+        <button onClick={() => setDays(30)} className={tab(days === 30)}>месяц</button>
       </div>
 
       <p className="text-sm text-zinc-500 mb-4">
         Публикация в {data.publish_hours.map((h) => `${h}:00`).join(' и ')} ({data.timezone}). В слот идёт пост формата дня, а если такого в очереди нет — самый старый одобренный.
         {data.queue_left > 0 && ` Ещё ${data.queue_left} постов в очереди не поместились в две недели.`}
       </p>
+
+      {selected && <DayDetails iso={selected} day={byDate[selected]} onClose={() => setSelected(null)} />}
 
       {view === 'grid' ? (
         <div className="overflow-x-auto">
@@ -234,7 +287,7 @@ function Calendar() {
             <div className="space-y-1">
               {weeks.map((week) => (
                 <div key={week[0]} className="grid grid-cols-7 gap-1">
-                  {week.map((iso) => <DayCell key={iso} iso={iso} day={byDate[iso]} today={today} />)}
+                  {week.map((iso) => <DayCell key={iso} iso={iso} day={byDate[iso]} today={today} onOpen={setSelected} />)}
                 </div>
               ))}
             </div>
