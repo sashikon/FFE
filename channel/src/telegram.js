@@ -4,7 +4,18 @@ const { findSlop } = require('./slop');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER = process.env.TELEGRAM_OWNER_CHAT_ID;
-const CHANNEL = process.env.TELEGRAM_CHANNEL_ID;
+// В значение легко попадает тире вместо минуса или пробелы — приводим к виду, который понимает Telegram
+function normalizeChannel(raw) {
+  const value = String(raw || '').trim().replace(/[\u2012-\u2015\u2212]/g, '-').replace(/\s+/g, '');
+  if (!value) return '';
+  if (/^-?\d+$/.test(value)) {
+    const digits = value.replace('-', '');
+    return digits.startsWith('100') ? `-${digits}` : value; // id каналов всегда начинается с -100
+  }
+  return value.startsWith('@') || value.startsWith('http') ? value : `@${value}`;
+}
+
+const CHANNEL = normalizeChannel(process.env.TELEGRAM_CHANNEL_ID);
 
 class TelegramError extends Error {
   constructor(method, data) {
@@ -195,5 +206,6 @@ async function checkChannel() {
 }
 
 module.exports = {
+  normalizeChannel,
   api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, TelegramError, OWNER,
 };
