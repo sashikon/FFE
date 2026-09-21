@@ -10,6 +10,15 @@ const DAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 const stripTags = (html) => html.replace(/<[^>]+>/g, '');
 
+// «1 пост», «2 поста», «5 постов»
+function plural(n, one, few, many) {
+  const n10 = n % 10;
+  const n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return `${n} ${one}`;
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 // ─── Команды ─────────────────────────────────────────────────────────────────
 // Одни и те же действия вызываются и командой (/status), и кнопкой меню (menu:status)
 
@@ -220,6 +229,22 @@ async function cmdChannel(chatId) {
   return tg.sendHtml(chatId, lines.join('\n'));
 }
 
+// Проставить формат всем постам, где он не задан
+async function cmdSetFormats(chatId) {
+  const { rows: [{ n }] } = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM posts WHERE format IS NULL AND status IN ('draft', 'deferred', 'approved')`
+  );
+  if (!n) return tg.sendHtml(chatId, 'У всех постов формат уже задан 👌');
+  await tg.sendHtml(chatId, `Определяю формат у ${plural(n, 'поста', 'постов', 'постов')}…`);
+  actions.detectMissingFormats()
+    .then((r) => {
+      const list = r.done.map((d) => `#${d.id} → ${d.title}`).join('\n');
+      const fails = r.failed.length ? `\n\nНе получилось: ${r.failed.map((f) => `#${f.id} (${tg.escapeHtml(f.error)})`).join(', ')}` : '';
+      return tg.sendHtml(chatId, `Готово: ${r.done.length} из ${r.total}\n${tg.escapeHtml(list)}${fails}`);
+    })
+    .catch((e) => tg.sendHtml(chatId, `Не получилось: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+}
+
 async function cmdCancel(chatId) {
   await setState('awaiting_feedback', null);
   return tg.sendHtml(chatId, 'Ок, правка отменена.');
@@ -265,6 +290,7 @@ const COMMANDS = {
   rules: ['Уроки редактора: что запомнено из ваших правок', cmdRules],
   check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
   channel: ['Какой канал вижу и с какими правами', cmdChannel],
+  setformats: ['Определить формат у постов без формата', cmdSetFormats],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
   cancel: ['Отменить ожидание правки', cmdCancel],
 };

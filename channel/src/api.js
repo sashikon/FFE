@@ -182,6 +182,9 @@ function startApi() {
       if (req.method === 'GET' && url.pathname === '/api/schedule') {
         return send(res, 200, await buildSchedule(Math.min(30, Number(url.searchParams.get('days')) || 14)));
       }
+      if (req.method === 'POST' && url.pathname === '/api/posts/format-all') {
+        return send(res, 200, { ok: true, ...(await actions.detectMissingFormats()) });
+      }
       if (req.method === 'GET' && url.pathname === '/api/formats') {
         return send(res, 200, { formats: require('./formats').FORMATS.map(({ key, title, week, day, idea }) => ({ key, title, week, day, idea })) });
       }

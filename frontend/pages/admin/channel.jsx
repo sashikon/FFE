@@ -131,6 +131,45 @@ function BrandLogo() {
   );
 }
 
+// Массовое определение формата — для постов, сделанных до появления форматов
+function BulkFormats({ posts, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const without = (posts || []).filter((p) => !p.format && p.status !== 'published').length;
+  if (!without && !result) return null;
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await fetch('/api/channel-posts/format-all', { method: 'POST' });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      setResult(body);
+      onChanged();
+    } catch (e) {
+      setResult({ error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3">
+      <button disabled={busy} onClick={run} className={btnPrimary}>
+        {busy ? 'Определяю…' : `🤖 Определить формат у ${without} постов`}
+      </button>
+      {result?.error && <span className="text-xs text-rose-400">{result.error}</span>}
+      {result?.done && (
+        <span className="text-xs text-emerald-400">
+          Готово: {result.done.length} из {result.total}
+          {result.failed?.length ? `, не получилось: ${result.failed.length}` : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // Календарь: когда выйдет каждый одобренный пост и что уже вышло
 const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -640,6 +679,8 @@ export default function ChannelPage() {
           <p className="text-sm text-zinc-500 mb-6">Изменения отсюда видны и в боте: черновик в Telegram помечается «изменён в админке», а новая версия приходит туда же.</p>
 
           <BrandLogo />
+
+          <BulkFormats posts={data?.posts} onChanged={() => mutate()} />
 
           <nav className="flex flex-wrap gap-2 mb-8">
             {TABS.map((t) => {
