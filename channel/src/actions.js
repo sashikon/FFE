@@ -126,6 +126,24 @@ async function detectFormat(postId) {
   return { format: res.format, title: formatByKey(res.format)?.title, reason: res.reason };
 }
 
+// Определить формат у всех постов, где он не задан (посты до появления форматов)
+async function detectMissingFormats() {
+  const { rows } = await pool.query(
+    `SELECT id FROM posts WHERE format IS NULL AND status IN ('draft', 'deferred', 'approved') ORDER BY id`
+  );
+  const done = [];
+  const failed = [];
+  for (const { id } of rows) {
+    try {
+      const r = await detectFormat(id);
+      done.push({ id, format: r.format, title: r.title });
+    } catch (e) {
+      failed.push({ id, error: e.message });
+    }
+  }
+  return { total: rows.length, done, failed };
+}
+
 // Ручная правка текста (только из админки): статус не меняется, пост в очереди остаётся в очереди
 async function editText(postId, text) {
   const status = await checkStatus(postId, 'edit');
@@ -156,4 +174,4 @@ async function redraftWithFeedback(postId, feedback, via = 'bot') {
   return newId;
 }
 
-module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, setImage, setFormat, detectFormat, editText, redraftWithFeedback };
+module.exports = { ActionError, approve, publishNow, defer, reject, removeImage, setImage, setFormat, detectFormat, detectMissingFormats, editText, redraftWithFeedback };
