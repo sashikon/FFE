@@ -75,6 +75,7 @@ export default function SourcesPage() {
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
+            <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
           </div>
         </header>
 

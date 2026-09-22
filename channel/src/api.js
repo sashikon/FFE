@@ -4,6 +4,7 @@ const { pool } = require('./db');
 const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
+const trends = require('./trends');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
@@ -179,6 +180,18 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (req.method === 'GET' && url.pathname === '/api/trends') {
+        return send(res, 200, await trends.listTrends({
+          limit: 100,
+          kind: url.searchParams.get('kind') || null,
+          region: url.searchParams.get('region') || null,
+        }));
+      }
+      const trendMatch = url.pathname.match(/^\/api\/trends\/(\d+)$/);
+      if (req.method === 'GET' && trendMatch) {
+        const detail = await trends.termDetail(Number(trendMatch[1]));
+        return detail ? send(res, 200, detail) : send(res, 404, { error: 'Not found' });
+      }
       if (req.method === 'GET' && url.pathname === '/api/schedule') {
         return send(res, 200, await buildSchedule(Math.min(30, Number(url.searchParams.get('days')) || 14)));
       }
