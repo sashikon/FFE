@@ -205,7 +205,19 @@ async function checkChannel() {
   return { ok: true, title };
 }
 
+// Скачать файл, присланный боту (скриншот): возвращает { data: base64, media_type }
+async function downloadFile(fileId) {
+  const file = await api('getFile', { file_id: fileId });
+  const res = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`Telegram file ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const ext = (file.file_path.split('.').pop() || '').toLowerCase();
+  const media_type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  return { data: buf.toString('base64'), media_type, size: buf.length };
+}
+
 module.exports = {
+  downloadFile,
   normalizeChannel,
   api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, TelegramError, OWNER,
 };

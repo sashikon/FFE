@@ -753,6 +753,7 @@ export default function ChannelPage() {
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
+            <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
           </div>
         </header>
 

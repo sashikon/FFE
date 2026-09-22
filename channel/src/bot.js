@@ -1,6 +1,8 @@
 const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
-const { runPipeline, redraft, cleanSlop, draftFromSource } = require('./pipeline');
+const { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem } = require('./pipeline');
+const { analyzeScreenshot, saveScreenshot } = require('./screenshots');
+const { listTrends, KINDS } = require('./trends');
 const { findSlop } = require('./slop');
 const { activeRules, addRule, removeRule } = require('./learn');
 const actions = require('./actions');
@@ -254,7 +256,8 @@ const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
 Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить.
-Перешлите сюда любой пост из Telegram — сделаю из него черновик в формате ближайшего дня. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
+Перешлите сюда любой пост из Telegram — сделаю из него черновик в формате ближайшего дня.
+Пришлите скриншот из TikTok, Reels или Pinterest — разберу подпись, хэштеги и что в кадре, добавлю в тренды. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
 async function menuKeyboard() {
@@ -270,7 +273,7 @@ async function menuKeyboard() {
       [{ text: `✅ Очередь (${c.queue})`, callback_data: 'menu:queue' }, { text: `⏸ Отложенные (${c.deferred})`, callback_data: 'menu:deferred' }],
       [{ text: '📊 Статус', callback_data: 'menu:status' }, { text: '🗓 Форматы', callback_data: 'menu:formats' }],
       [{ text: `🧠 Уроки редактора (${rules})`, callback_data: 'menu:rules' }, { text: '🧹 Проверить на слоп', callback_data: 'menu:check' }],
-      [{ text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
+      [{ text: '📈 Тренды', callback_data: 'menu:trends' }, { text: '▶️ Прогон сейчас', callback_data: 'menu:run' }],
     ],
   };
 }
@@ -290,6 +293,7 @@ const COMMANDS = {
   rules: ['Уроки редактора: что запомнено из ваших правок', cmdRules],
   check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
   channel: ['Какой канал вижу и с какими правами', cmdChannel],
+  trends: ['Какие темы растут и угасают', cmdTrends],
   setformats: ['Определить формат у постов без формата', cmdSetFormats],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
   cancel: ['Отменить ожидание правки', cmdCancel],
@@ -303,6 +307,57 @@ async function setupMenu() {
     scope: { type: 'chat', chat_id: Number(tg.OWNER) },
   });
   await tg.api('setChatMenuButton', { chat_id: Number(tg.OWNER), menu_button: { type: 'commands' } });
+}
+
+// ─── Скриншоты соцсетей как источник трендов ────────────────────────────────
+
+async function onScreenshot(chatId, msg) {
+  const photo = msg.photo?.[msg.photo.length - 1];
+  const file = photo || msg.document;
+  const note = (msg.caption || '').trim();
+  await tg.sendHtml(chatId, 'Разбираю скриншот…', {
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
+  });
+
+  (async () => {
+    const image = await tg.downloadFile(file.file_id);
+    const a = await analyzeScreenshot(image, note);
+    const itemId = await saveScreenshot(a, file.file_unique_id, note);
+
+    const stats = [a.views && `👁 ${a.views}`, a.likes && `♥ ${a.likes}`, a.comments && `💬 ${a.comments}`].filter(Boolean).join(' · ');
+    const lines = [
+      `<b>${tg.escapeHtml(a.platform || 'Соцсети')}</b>${a.author ? ` · ${tg.escapeHtml(a.author)}` : ''}${stats ? ` · ${stats}` : ''}`,
+      a.caption && `«${tg.escapeHtml(a.caption.slice(0, 300))}»`,
+      a.shows && `<i>${tg.escapeHtml(a.shows)}</i>`,
+      a.hashtags.length && tg.escapeHtml(a.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')),
+      a.sound && `🎵 ${tg.escapeHtml(a.sound)}`,
+      '',
+      a.entities.length
+        ? `<b>В тренды:</b> ${a.entities.map((e) => `${tg.escapeHtml(e.display)} <i>(${KINDS[e.kind] || e.kind})</i>`).join(', ')}`
+        : a.is_fashion ? 'Модных сущностей не нашлось.' : 'Похоже, ролик не про моду — в тренды не пошёл.',
+    ].filter((l) => l !== false && l !== undefined && l !== '').join('\n');
+
+    return tg.sendHtml(chatId, lines, {
+      reply_markup: { inline_keyboard: [[{ text: '✍️ Сделать черновик', callback_data: `shotdraft:${itemId}` }]] },
+    });
+  })().catch((e) => tg.sendHtml(chatId, `Не получилось разобрать скриншот: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+}
+
+// Растущие и угасающие темы за неделю
+async function cmdTrends(chatId) {
+  const { rising, fading, top } = await listTrends({ limit: 12 });
+  if (!rising.length && !fading.length && !top.length) {
+    return tg.sendHtml(chatId, 'Трендов пока мало данных: они считаются по заметкам с каждым прогоном. Загляните через пару дней или пришлите скриншоты из соцсетей.');
+  }
+  const arrow = (t) => (t.prev_week ? `${t.prev_week} → ${t.week}` : `новое · ${t.week}`);
+  const line = (t) => `• <b>${tg.escapeHtml(t.display)}</b> <i>${KINDS[t.kind] || t.kind}</i> — ${arrow(t)} за неделю, источников ${t.feeds}${t.signals.includes('search') ? ' · 🔎 Google' : ''}${t.signals.includes('screenshot') ? ' · 📱 соцсети' : ''}`;
+  const parts = [];
+  if (rising.length) parts.push(`<b>📈 Растут</b>\n${rising.map(line).join('\n')}`);
+  // пока истории мало, растущих нет — показываем самое упоминаемое
+  else parts.push(`<b>Чаще всего за неделю</b> <i>(растущие появятся, когда накопится история)</i>\n${top.slice(0, 10).map(line).join('\n')}`);
+  if (fading.length) parts.push(`<b>📉 Угасают</b>\n${fading.slice(0, 6).map(line).join('\n')}`);
+  parts.push('Подробнее — на странице «Тренды» в админке.');
+  return tg.sendHtml(chatId, parts.join('\n\n'));
 }
 
 // ─── Пересланные сообщения как источник ──────────────────────────────────────
@@ -399,6 +454,13 @@ async function onCallback(q) {
     cleanOne(tg.OWNER, Number(arg)).catch((e) => tg.sendHtml(tg.OWNER, `Ошибка: ${tg.escapeHtml(e.message)}`).catch(() => {}));
     return;
   }
+  if (action === 'shotdraft') {
+    await tg.sendHtml(tg.OWNER, 'Делаю черновик из скриншота — придёт через 1–2 минуты.');
+    draftFromItem(Number(arg))
+      .then((r) => r.skipped && tg.sendHtml(tg.OWNER, 'Модель не нашла в этом ролике смысла для поста.'))
+      .catch((e) => tg.sendHtml(tg.OWNER, `Не получилось: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+    return;
+  }
   if (action === 'delrule') {
     const removed = await removeRule(Number(arg));
     return tg.sendHtml(tg.OWNER, removed ? 'Правило убрано.' : 'Это правило уже убрано или объединено с другими — см. /rules.');
@@ -448,6 +510,9 @@ async function onMessage(msg) {
     return;
   }
   if (chatId !== String(tg.OWNER)) return onStranger(msg);
+
+  // Скриншот из соцсети (фото или картинка файлом) — источник для трендов
+  if (msg.photo?.length || msg.document?.mime_type?.startsWith('image/')) return onScreenshot(chatId, msg);
 
   // Пересланный пост из Telegram — это источник для нового черновика
   if (msg.forward_origin || msg.forward_from_chat || msg.forward_sender_name) return onForwarded(chatId, msg);

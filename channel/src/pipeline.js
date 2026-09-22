@@ -7,6 +7,7 @@ const { formatForNextSlot, formatByKey, FORMATS } = require('./formats');
 const { refreshLibrary, pickImage } = require('./library');
 const { activeRules } = require('./learn');
 const { withBrandLogo } = require('./brand');
+const { runTrends } = require('./trends');
 const { cleanInvisible, findSlop, describeSlop } = require('./slop');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
@@ -205,6 +206,18 @@ async function draftFromSource({ title, summary, url, source, layer = 'culture' 
   return { postId, format: format.title };
 }
 
+// Черновик из уже сохранённой заметки (например, разобранного скриншота соцсети)
+async function draftFromItem(itemId) {
+  const { rows: [cluster] } = await pool.query(
+    `INSERT INTO clusters (status, score, lens, score_reason) VALUES ('scored', 5, 'sign', 'прислано вручную') RETURNING id`
+  );
+  await pool.query('UPDATE items SET cluster_id = $1 WHERE id = $2', [cluster.id, itemId]);
+  const format = formatForNextSlot();
+  const insight = await makeInsight(cluster.id, format, true);
+  if (!insight) return { skipped: true, format: format.title };
+  return { postId: await draftPost(insight), format: format.title };
+}
+
 // ─── Прогон целиком ──────────────────────────────────────────────────────────
 
 let running = false;
@@ -217,6 +230,8 @@ async function runPipeline() {
     await refreshLibrary().catch((e) => console.warn(`[library] refresh failed: ${e.message}`));
     await clusterNewItems();
     await scoreNew();
+    // Аналитика трендов: сущности из новых заметок, Google Trends, поисковые подсказки
+    await runTrends().catch((e) => console.warn(`[trends] прогон не удался: ${e.message}`));
 
     const format = formatForNextSlot();
     console.log(`[pipeline] format: ${format.title}`);
@@ -247,4 +262,4 @@ async function runPipeline() {
   }
 }
 
-module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, scoreNew, __draftPost: draftPost };
