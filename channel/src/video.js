@@ -15,17 +15,32 @@ const run = promisify(execFile);
 const FEED = 'Видео соцсетей';
 const FRAMES = 6;
 
+// ffmpeg: встроенный из ffmpeg-static, а если его бинарник не скачался при сборке — системный
 let FFMPEG = null;
-try { FFMPEG = require('ffmpeg-static'); } catch { /* без ffmpeg — только обложка от Telegram */ }
+try {
+  const bundled = require('ffmpeg-static');
+  if (bundled && fs.existsSync(bundled)) FFMPEG = bundled;
+} catch { /* пакета нет */ }
+if (!FFMPEG) FFMPEG = 'ffmpeg';
+
+// Для диагностики: какой ffmpeg нашёлся и работает ли он
+async function ffmpegInfo() {
+  try {
+    const { stdout } = await run(FFMPEG, ['-version']);
+    return { ok: true, path: FFMPEG, version: stdout.split('\n')[0] };
+  } catch (e) {
+    return { ok: false, path: FFMPEG, error: e.code === 'ENOENT' ? 'ffmpeg не найден на сервере' : e.message };
+  }
+}
 
 async function extractFrames(videoBuf, count = FRAMES) {
-  if (!FFMPEG) throw new Error('ffmpeg недоступен');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-'));
   const input = path.join(dir, 'in.mp4');
   fs.writeFileSync(input, videoBuf);
   try {
     // длительность из заголовка ролика
     const probe = await run(FFMPEG, ['-i', input]).catch((e) => e); // ffmpeg без выхода печатает инфо в stderr и «падает»
+    if (probe.code === 'ENOENT') throw new Error('ffmpeg не найден на сервере');
     const m = String(probe.stderr || '').match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
     const duration = m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 10;
 
@@ -141,4 +156,4 @@ async function attachSound(itemId, audio) {
   return name;
 }
 
-module.exports = { extractFrames, analyzeVideo, saveVideo, attachSound, soundName, FEED, hasFfmpeg: () => Boolean(FFMPEG) };
+module.exports = { extractFrames, analyzeVideo, saveVideo, attachSound, soundName, ffmpegInfo, FEED };
