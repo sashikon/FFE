@@ -13,6 +13,7 @@ const VIEWS = [
   { key: 'rising', label: '📈 Растут' },
   { key: 'top', label: 'Топ недели' },
   { key: 'fading', label: '📉 Угасают' },
+  { key: 'social', label: '📱 Соцсети' },
 ];
 
 const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', screenshot: '📱 скриншоты', video: '🎬 видео' };
@@ -65,6 +66,122 @@ function Detail({ id }) {
         </ul>
       </div>
     </div>
+  );
+}
+
+// ─── Соцсети: ролики и скриншоты, присланные боту ────────────────────────────
+
+function TermModal({ id, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 max-w-xl w-full mt-16" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-end"><button onClick={onClose} className="text-sm text-zinc-400 hover:text-white">Закрыть</button></div>
+        <Detail id={id} />
+      </div>
+    </div>
+  );
+}
+
+function SocialCard({ it, kinds, onTerm }) {
+  const a = it.analysis || {};
+  const [frame, setFrame] = useState(0);
+  const [drafting, setDrafting] = useState(null);
+  const img = (i) => `/api/channel-social/${it.item_id}/frame/${i}`;
+  const stats = [a.views && `👁 ${a.views}`, a.likes && `♥ ${a.likes}`, a.comments && `💬 ${a.comments}`].filter(Boolean).join(' · ');
+
+  const draft = async () => {
+    setDrafting('…');
+    const r = await fetch(`/api/channel-social/${it.item_id}/draft`, { method: 'POST' });
+    const body = await r.json().catch(() => ({}));
+    setDrafting(r.ok ? 'Черновик пишется — появится в «Канале» и в боте через 1–2 минуты' : (body.error || `Ошибка ${r.status}`));
+  };
+
+  return (
+    <article className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden flex flex-col">
+      {it.frames > 0 ? (
+        <div className="bg-black">
+          <img src={img(frame)} alt="" className="w-full max-h-[420px] object-contain" loading="lazy" />
+          {it.frames > 1 && (
+            <div className="flex gap-1 p-1 overflow-x-auto">
+              {Array.from({ length: it.frames }, (_, i) => (
+                <button key={i} onClick={() => setFrame(i)} className={`shrink-0 rounded overflow-hidden border ${i === frame ? 'border-zinc-100' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                  <img src={img(i)} alt="" className="h-14 w-10 object-cover" loading="lazy" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="h-24 flex items-center justify-center text-xs text-zinc-600 bg-zinc-950">картинка не сохранилась (прислано до появления раздела)</div>
+      )}
+
+      <div className="p-4 space-y-2 text-sm flex-1">
+        <p className="text-xs text-zinc-500">
+          {it.kind === 'video' ? '🎬' : '📱'} <span className="text-zinc-300">{it.platform || 'Соцсети'}</span>
+          {it.author && ` · ${it.author}`}
+          {it.duration ? ` · ${Math.round(it.duration)} с` : ''}
+          {stats && ` · ${stats}`}
+          <span className="float-right">{new Date(it.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
+        </p>
+        {a.caption && <p className="text-zinc-200">«{a.caption}»</p>}
+        {a.what_happens && <p className="text-zinc-300">{a.what_happens}</p>}
+        {a.shows && <p className="text-zinc-400 italic">{a.shows}</p>}
+        {a.hashtags?.length > 0 && <p className="text-xs text-zinc-500">{a.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')}</p>}
+        {it.sound && <p className="text-xs text-zinc-400">🎵 {it.sound}</p>}
+        {it.terms?.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {it.terms.map((t) => (
+              <button key={t.id} onClick={() => onTerm(t.id)} className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300">
+                {t.display} <span className="text-zinc-500">{kinds[t.kind] || t.kind}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 pb-4">
+        {it.post_id ? (
+          <p className="text-xs text-zinc-500">Черновик уже есть: #{it.post_id} — во вкладках «Канала».</p>
+        ) : (
+          <button onClick={draft} disabled={Boolean(drafting)} className="px-3 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-60">
+            {drafting ? drafting : '✍️ Сделать черновик'}
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SocialFeed({ kinds }) {
+  const [kind, setKind] = useState('');
+  const [platform, setPlatform] = useState('');
+  const [term, setTerm] = useState(null);
+  const qs = new URLSearchParams({ ...(kind && { kind }), ...(platform && { platform }) }).toString();
+  const { data, error, isLoading } = useSWR(`/api/channel-social${qs ? `?${qs}` : ''}`, fetcher, { refreshInterval: 60000 });
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        <button onClick={() => setKind('')} className={chip(!kind)}>всё</button>
+        <button onClick={() => setKind('video')} className={chip(kind === 'video')}>🎬 ролики</button>
+        <button onClick={() => setKind('screenshot')} className={chip(kind === 'screenshot')}>📱 скриншоты</button>
+      </div>
+      {data?.platforms?.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 mb-6">
+          <button onClick={() => setPlatform('')} className={chip(!platform)}>все площадки</button>
+          {data.platforms.map((p) => <button key={p} onClick={() => setPlatform(p)} className={chip(platform === p)}>{p}</button>)}
+        </div>
+      )}
+      {isLoading && <p className="text-zinc-500">Загружаю…</p>}
+      {error && <p className="text-rose-400 text-sm">Не удалось загрузить: {error.message}</p>}
+      {data && data.items.length === 0 && (
+        <p className="text-zinc-500 text-center py-20">Пока пусто. Пришлите боту скриншот или ролик из TikTok, Reels или Pinterest.</p>
+      )}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {data?.items.map((it) => <SocialCard key={it.item_id} it={it} kinds={kinds} onTerm={setTerm} />)}
+      </div>
+      {term && <TermModal id={term} onClose={() => setTerm(null)} />}
+    </>
   );
 }
 
@@ -134,11 +251,12 @@ export default function TrendsPage() {
           <div className="flex flex-wrap gap-2 mb-4">
             {VIEWS.map((v) => (
               <button key={v.key} onClick={() => setView(v.key)} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${view === v.key ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'}`}>
-                {v.label}{data ? ` · ${data[v.key]?.length || 0}` : ''}
+                {v.label}{data && v.key !== 'social' ? ` · ${data[v.key]?.length || 0}` : ''}
               </button>
             ))}
           </div>
 
+          {view === 'social' ? <SocialFeed kinds={kinds} /> : (<>
           <div className="flex flex-wrap gap-1.5 mb-2">
             <button onClick={() => setKind('')} className={chip(!kind)}>все типы</button>
             {Object.entries(kinds).map(([k, label]) => <button key={k} onClick={() => setKind(k)} className={chip(kind === k)}>{label}</button>)}
@@ -158,6 +276,7 @@ export default function TrendsPage() {
           <div className="space-y-2">
             {list.map((t) => <TrendRow key={t.id} t={t} kinds={kinds} />)}
           </div>
+          </>)}
         </main>
       </div>
     </>

@@ -57,6 +57,39 @@ async function extractFrames(videoBuf, count = FRAMES) {
   }
 }
 
+// Уменьшить картинку (скриншот) для хранения; если ffmpeg недоступен — вернуть как есть
+async function shrinkImage(buf, width = 720) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'img-'));
+  try {
+    const input = path.join(dir, 'in');
+    const out = path.join(dir, 'out.jpg');
+    fs.writeFileSync(input, buf);
+    await run(FFMPEG, ['-i', input, '-vf', `scale='min(${width},iw)':-2`, '-q:v', '4', '-y', out]);
+    return fs.readFileSync(out);
+  } catch {
+    return buf;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Сохранить разбор и картинки для раздела «Соцсети» в админке
+async function saveSocial(itemId, { kind, analysis, frames = [], duration = null }) {
+  await pool.query(
+    `INSERT INTO social_media (item_id, kind, platform, author, analysis, duration)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (item_id) DO UPDATE SET analysis = EXCLUDED.analysis, platform = EXCLUDED.platform,
+       author = EXCLUDED.author, duration = EXCLUDED.duration`,
+    [itemId, kind, analysis.platform || null, analysis.author || null, JSON.stringify(analysis), duration]
+  );
+  await pool.query('DELETE FROM social_frames WHERE item_id = $1', [itemId]);
+  for (let i = 0; i < frames.length; i++) {
+    const buf = Buffer.isBuffer(frames[i].jpeg) ? frames[i].jpeg : Buffer.from(frames[i].data, 'base64');
+    if (buf.length > 1.5 * 1024 * 1024) continue; // слишком большой кадр не храним
+    await pool.query('INSERT INTO social_frames (item_id, idx, at, jpeg) VALUES ($1, $2, $3, $4)', [itemId, i, frames[i].at ?? null, buf]);
+  }
+}
+
 const VIDEO_SYSTEM = `Ты аналитик модных трендов. Тебе присылают кадры ролика из соцсети по порядку — чаще всего TikTok, иногда Reels или Shorts — и, если есть, подпись к нему. Опиши:
 - platform — площадка, если можно понять (по интерфейсу на кадрах или по подписи), иначе «TikTok»;
 - author — ник автора, если виден;
@@ -148,6 +181,7 @@ async function attachSound(itemId, audio) {
   if (itemId) await pool.query('DELETE FROM trend_mentions WHERE term_id = $1 AND ref = $2', [termId, `sound:${audio.file_unique_id}`]);
   await addMention(termId, { signal: 'video', ref, itemId: itemId || null, feed: FEED, region: 'соцсети' });
   if (itemId) {
+    await pool.query('UPDATE social_media SET sound = $1 WHERE item_id = $2', [name, itemId]);
     await pool.query(
       `UPDATE items SET summary = LEFT(COALESCE(summary, '') || $1, 1500) WHERE id = $2 AND COALESCE(summary, '') NOT LIKE '%Звук:%'`,
       [`. Звук: ${name}`, itemId]
@@ -156,4 +190,4 @@ async function attachSound(itemId, audio) {
   return name;
 }
 
-module.exports = { extractFrames, analyzeVideo, saveVideo, attachSound, soundName, ffmpegInfo, FEED };
+module.exports = { extractFrames, analyzeVideo, saveVideo, attachSound, soundName, ffmpegInfo, shrinkImage, saveSocial, FEED };

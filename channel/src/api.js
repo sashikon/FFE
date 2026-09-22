@@ -5,6 +5,7 @@ const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
 const trends = require('./trends');
+const { draftFromItem } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
@@ -81,6 +82,25 @@ async function listSources() {
       posts: postsByFeed[s.name] ?? 0,
     })),
   };
+}
+
+// Ролики и скриншоты соцсетей, присланные боту
+async function listSocial({ kind = null, platform = null } = {}) {
+  const { rows } = await pool.query(
+    `SELECT s.item_id, s.kind, s.platform, s.author, s.analysis, s.sound, s.duration, s.created_at,
+            i.title,
+            (SELECT COUNT(*)::int FROM social_frames f WHERE f.item_id = s.item_id) AS frames,
+            (SELECT COALESCE(json_agg(json_build_object('id', t.id, 'display', t.display, 'kind', t.kind)), '[]'::json)
+               FROM trend_mentions m JOIN trend_terms t ON t.id = m.term_id WHERE m.item_id = s.item_id) AS terms,
+            (SELECT p.id FROM posts p JOIN insights ins ON ins.id = p.insight_id
+               WHERE ins.cluster_id = i.cluster_id ORDER BY p.id DESC LIMIT 1) AS post_id
+     FROM social_media s JOIN items i ON i.id = s.item_id
+     WHERE ($1::text IS NULL OR s.kind = $1) AND ($2::text IS NULL OR s.platform = $2)
+     ORDER BY s.created_at DESC LIMIT 200`,
+    [kind, platform]
+  );
+  const { rows: platforms } = await pool.query('SELECT DISTINCT platform FROM social_media WHERE platform IS NOT NULL ORDER BY 1');
+  return { items: rows, platforms: platforms.map((p) => p.platform) };
 }
 
 // Каталог картинок игры (эскизы и рендеры) для выбора в админке
@@ -180,6 +200,22 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (req.method === 'GET' && url.pathname === '/api/social') {
+        return send(res, 200, await listSocial({ kind: url.searchParams.get('kind') || null, platform: url.searchParams.get('platform') || null }));
+      }
+      const frameMatch = url.pathname.match(/^\/api\/social\/(\d+)\/frame\/(\d+)$/);
+      if (req.method === 'GET' && frameMatch) {
+        const { rows: [f] } = await pool.query('SELECT jpeg FROM social_frames WHERE item_id = $1 AND idx = $2', [Number(frameMatch[1]), Number(frameMatch[2])]);
+        if (!f) return send(res, 404, { error: 'Not found' });
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+        return res.end(f.jpeg);
+      }
+      const socialDraft = url.pathname.match(/^\/api\/social\/(\d+)\/draft$/);
+      if (req.method === 'POST' && socialDraft) {
+        // черновик пишется 1–2 минуты — отвечаем сразу, он появится во вкладке «Не утверждено» и в боте
+        draftFromItem(Number(socialDraft[1])).catch((e) => console.error('[api] social draft failed', e));
+        return send(res, 202, { ok: true, pending: true });
+      }
       if (req.method === 'GET' && url.pathname === '/api/trends') {
         return send(res, 200, await trends.listTrends({
           limit: 100,

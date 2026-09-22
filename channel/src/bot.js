@@ -326,6 +326,8 @@ async function onScreenshot(chatId, msg) {
     const image = await tg.downloadFile(file.file_id);
     const a = await analyzeScreenshot(image, note);
     const itemId = await saveScreenshot(a, file.file_unique_id, note);
+    const small = await video.shrinkImage(Buffer.from(image.data, 'base64'));
+    await video.saveSocial(itemId, { kind: 'screenshot', analysis: a, frames: [{ jpeg: small }] });
 
     const stats = [a.views && `👁 ${a.views}`, a.likes && `♥ ${a.likes}`, a.comments && `💬 ${a.comments}`].filter(Boolean).join(' · ');
     const lines = [
@@ -384,6 +386,7 @@ async function onVideo(chatId, msg) {
 
     const a = await video.analyzeVideo(frames, note);
     const itemId = await video.saveVideo(a, v.file_unique_id, { duration, note });
+    await video.saveSocial(itemId, { kind: 'video', analysis: a, frames, duration });
     await setState('last_video', { itemId, at: new Date().toISOString() });
 
     // звук мог прийти раньше ролика
