@@ -296,6 +296,7 @@ const COMMANDS = {
   check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
   channel: ['Какой канал вижу и с какими правами', cmdChannel],
   trends: ['Какие темы растут и угасают', cmdTrends],
+  videodiag: ['Почему ролик разобран только по обложке', cmdVideoDiag],
   setformats: ['Определить формат у постов без формата', cmdSetFormats],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
   cancel: ['Отменить ожидание правки', cmdCancel],
@@ -355,7 +356,10 @@ const fresh = (state) => state && Date.now() - new Date(state.at).getTime() < PA
 async function onVideo(chatId, msg) {
   const v = msg.video || msg.animation || msg.document;
   const note = (msg.caption || '').trim();
-  await tg.sendHtml(chatId, 'Разбираю ролик — нарезаю кадры…', {
+  const tooBig = v.file_size && v.file_size > 20 * 1024 * 1024;
+  await tg.sendHtml(chatId, tooBig
+    ? `Ролик ${(v.file_size / 1024 / 1024).toFixed(0)} МБ — больше 20 МБ, Telegram не отдаёт ботам такие файлы. Разберу по обложке.`
+    : 'Разбираю ролик — нарезаю кадры…', {
     reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
   });
 
@@ -370,6 +374,8 @@ async function onVideo(chatId, msg) {
       duration = duration || r.duration;
     } catch (e) {
       // без кадров — берём обложку, которую Telegram прикладывает к видео
+      console.error(`[video] кадры не нарезаны: ${e.message}`);
+      await setState('last_video_error', { error: e.message, size: v.file_size || null, at: new Date().toISOString() });
       const thumb = v.thumbnail || v.thumb;
       if (!thumb) throw e;
       frames = [await tg.downloadFile(thumb.file_id)];
@@ -406,6 +412,22 @@ async function onVideo(chatId, msg) {
       reply_markup: { inline_keyboard: [[{ text: '✍️ Сделать черновик', callback_data: `shotdraft:${itemId}` }]] },
     });
   })().catch((e) => tg.sendHtml(chatId, `Не получилось разобрать ролик: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+}
+
+// Диагностика разбора роликов: есть ли ffmpeg и что случилось с последним роликом
+async function cmdVideoDiag(chatId) {
+  const ff = await video.ffmpegInfo();
+  const last = await getState('last_video_error');
+  const mb = (b) => `${(b / 1024 / 1024).toFixed(1)} МБ`;
+  const lines = [
+    ff.ok ? `✅ ffmpeg работает: <code>${tg.escapeHtml(ff.version)}</code>` : `❌ ffmpeg: ${tg.escapeHtml(ff.error)}`,
+    last
+      ? `Последняя ошибка: ${tg.escapeHtml(last.error)}${last.size ? ` · размер ролика ${mb(last.size)}` : ''}`
+      : 'Ошибок с роликами не было.',
+  ];
+  if (!ff.ok) lines.push('Решение: Railway → сервис канала → Variables → RAILPACK_DEPLOY_APT_PACKAGES = ffmpeg → Deploy.');
+  if (last?.size > 20 * 1024 * 1024) lines.push('Ролик больше 20 МБ — Telegram не отдаёт ботам такие файлы. Попросите загрузчик отдать ролик в меньшем качестве.');
+  return tg.sendHtml(chatId, lines.join('\n'));
 }
 
 async function onAudio(chatId, msg) {
