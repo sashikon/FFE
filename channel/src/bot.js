@@ -2,6 +2,7 @@ const { pool, getState, setState } = require('./db');
 const tg = require('./telegram');
 const { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem } = require('./pipeline');
 const { analyzeScreenshot, saveScreenshot } = require('./screenshots');
+const video = require('./video');
 const { listTrends, KINDS } = require('./trends');
 const { findSlop } = require('./slop');
 const { activeRules, addRule, removeRule } = require('./learn');
@@ -257,7 +258,8 @@ const MENU_TEXT = `<b>Канал о смыслах в моде</b>
 Черновики приходят сюда сами раз в 6 часов. Под каждым — кнопки: ✅ в очередь · 🚀 сейчас · ✏️ править · ⏸ отложить · ✖️ удалить · 🖼 убрать картинку.
 Чтобы поправить пост, можно просто ответить на него (свайп или «Ответить») и написать, что изменить.
 Перешлите сюда любой пост из Telegram — сделаю из него черновик в формате ближайшего дня.
-Пришлите скриншот из TikTok, Reels или Pinterest — разберу подпись, хэштеги и что в кадре, добавлю в тренды. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
+Пришлите скриншот из TikTok, Reels или Pinterest — разберу подпись, хэштеги и что в кадре, добавлю в тренды.
+Пришлите ролик и его звук (например, из бота-загрузчика TikTok) — нарежу кадры, разберу, запишу звук в тренды. Общие замечания запоминаются и учитываются в следующих черновиках — см. «Уроки редактора».
 Одобренное выходит в канал в ${PUBLISH_HOURS.map((h) => `${h}:00`).join(' и ')}; если черновики ждут решения, я напомню.`;
 
 async function menuKeyboard() {
@@ -343,6 +345,85 @@ async function onScreenshot(chatId, msg) {
   })().catch((e) => tg.sendHtml(chatId, `Не получилось разобрать скриншот: ${tg.escapeHtml(e.message)}`).catch(() => {}));
 }
 
+// ─── Видео и звук из соцсетей ────────────────────────────────────────────────
+// Ролик и его звук приходят отдельными сообщениями (например, от бота-загрузчика TikTok):
+// связываем их, если пришли в пределах 10 минут друг от друга
+
+const PAIR_MS = 10 * 60 * 1000;
+const fresh = (state) => state && Date.now() - new Date(state.at).getTime() < PAIR_MS;
+
+async function onVideo(chatId, msg) {
+  const v = msg.video || msg.animation || msg.document;
+  const note = (msg.caption || '').trim();
+  await tg.sendHtml(chatId, 'Разбираю ролик — нарезаю кадры…', {
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
+  });
+
+  (async () => {
+    let frames = [];
+    let duration = v.duration || null;
+    let fallback = '';
+    try {
+      const { buf } = await tg.downloadBuffer(v.file_id);
+      const r = await video.extractFrames(buf);
+      frames = r.frames;
+      duration = duration || r.duration;
+    } catch (e) {
+      // без кадров — берём обложку, которую Telegram прикладывает к видео
+      const thumb = v.thumbnail || v.thumb;
+      if (!thumb) throw e;
+      frames = [await tg.downloadFile(thumb.file_id)];
+      fallback = `\n<i>Кадры нарезать не вышло (${tg.escapeHtml(e.message)}) — разобрала только обложку.</i>`;
+    }
+
+    const a = await video.analyzeVideo(frames, note);
+    const itemId = await video.saveVideo(a, v.file_unique_id, { duration, note });
+    await setState('last_video', { itemId, at: new Date().toISOString() });
+
+    // звук мог прийти раньше ролика
+    const pending = await getState('last_audio');
+    let sound = null;
+    if (fresh(pending)) {
+      sound = await video.attachSound(itemId, pending.audio);
+      await setState('last_audio', null);
+    }
+
+    const lines = [
+      `<b>🎬 ${tg.escapeHtml(a.platform || 'Ролик')}</b>${a.author ? ` · ${tg.escapeHtml(a.author)}` : ''}${duration ? ` · ${Math.round(duration)} с` : ''} · кадров: ${frames.length}`,
+      a.caption && `«${tg.escapeHtml(a.caption.slice(0, 300))}»`,
+      a.what_happens && tg.escapeHtml(a.what_happens),
+      a.shows && `<i>${tg.escapeHtml(a.shows)}</i>`,
+      a.hashtags.length && tg.escapeHtml(a.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')),
+      sound && `🎵 ${tg.escapeHtml(sound)}`,
+      '',
+      a.entities.length
+        ? `<b>В тренды:</b> ${a.entities.map((e) => `${tg.escapeHtml(e.display)} <i>(${KINDS[e.kind] || e.kind})</i>`).join(', ')}`
+        : a.is_fashion ? 'Модных сущностей не нашлось.' : 'Похоже, ролик не про моду — в тренды не пошёл.',
+      !sound && '<i>Пришлите следом аудио из ролика — привяжу звук.</i>',
+    ].filter((l) => l !== false && l !== undefined && l !== null && l !== '').join('\n') + fallback;
+
+    return tg.sendHtml(chatId, lines, {
+      reply_markup: { inline_keyboard: [[{ text: '✍️ Сделать черновик', callback_data: `shotdraft:${itemId}` }]] },
+    });
+  })().catch((e) => tg.sendHtml(chatId, `Не получилось разобрать ролик: ${tg.escapeHtml(e.message)}`).catch(() => {}));
+}
+
+async function onAudio(chatId, msg) {
+  const audio = msg.audio;
+  const name = video.soundName(audio);
+  if (!name) return tg.sendHtml(chatId, 'У аудиофайла нет названия и исполнителя — нечего записать в тренды.');
+
+  const last = await getState('last_video');
+  if (fresh(last)) {
+    await video.attachSound(last.itemId, audio);
+    await setState('last_video', null);
+    return tg.sendHtml(chatId, `🎵 Звук привязан к ролику: <b>${tg.escapeHtml(name)}</b>`);
+  }
+  await video.attachSound(null, audio);
+  await setState('last_audio', { audio, at: new Date().toISOString() });
+  return tg.sendHtml(chatId, `🎵 Звук записан в тренды: <b>${tg.escapeHtml(name)}</b>\nЕсли следом пришлёте ролик — привяжу к нему.`);
+}
+
 // Растущие и угасающие темы за неделю
 async function cmdTrends(chatId) {
   const { rising, fading, top } = await listTrends({ limit: 12 });
@@ -350,7 +431,7 @@ async function cmdTrends(chatId) {
     return tg.sendHtml(chatId, 'Трендов пока мало данных: они считаются по заметкам с каждым прогоном. Загляните через пару дней или пришлите скриншоты из соцсетей.');
   }
   const arrow = (t) => (t.prev_week ? `${t.prev_week} → ${t.week}` : `новое · ${t.week}`);
-  const line = (t) => `• <b>${tg.escapeHtml(t.display)}</b> <i>${KINDS[t.kind] || t.kind}</i> — ${arrow(t)} за неделю, источников ${t.feeds}${t.signals.includes('search') ? ' · 🔎 Google' : ''}${t.signals.includes('screenshot') ? ' · 📱 соцсети' : ''}`;
+  const line = (t) => `• <b>${tg.escapeHtml(t.display)}</b> <i>${KINDS[t.kind] || t.kind}</i> — ${arrow(t)} за неделю, источников ${t.feeds}${t.signals.includes('search') ? ' · 🔎 Google' : ''}${t.signals.includes('screenshot') ? ' · 📱 скриншоты' : ''}${t.signals.includes('video') ? ' · 🎬 видео' : ''}`;
   const parts = [];
   if (rising.length) parts.push(`<b>📈 Растут</b>\n${rising.map(line).join('\n')}`);
   // пока истории мало, растущих нет — показываем самое упоминаемое
@@ -510,6 +591,10 @@ async function onMessage(msg) {
     return;
   }
   if (chatId !== String(tg.OWNER)) return onStranger(msg);
+
+  // Ролик и его звук из соцсетей
+  if (msg.video || msg.animation || msg.document?.mime_type?.startsWith('video/')) return onVideo(chatId, msg);
+  if (msg.audio) return onAudio(chatId, msg);
 
   // Скриншот из соцсети (фото или картинка файлом) — источник для трендов
   if (msg.photo?.length || msg.document?.mime_type?.startsWith('image/')) return onScreenshot(chatId, msg);
