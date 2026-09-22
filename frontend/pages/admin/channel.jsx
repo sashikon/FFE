@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import Head from 'next/head';
 import { withAuth } from '../../lib/withAuth';
@@ -232,7 +232,7 @@ function DayCell({ iso, day, today, onOpen }) {
 }
 
 // Карточка дня: заголовки целиком, без обрезки
-function DayDetails({ iso, day, onClose }) {
+function DayDetails({ iso, day, onClose, onOpenPost }) {
   if (!day) return null;
   const format = day.slots?.[0]?.format_title;
   return (
@@ -248,6 +248,7 @@ function DayDetails({ iso, day, onClose }) {
           <div key={p.id} className="mb-4 pb-4 border-b border-zinc-800 last:border-0">
             <p className="text-xs text-sky-300 mb-1">📣 опубликован · #{p.id}</p>
             <p className="text-sm text-zinc-200">{stripTagsPlain(p.text).split('\n')[0]}</p>
+            <button onClick={() => onOpenPost(p.id, 'published')} className={`${btn} mt-2`}>Открыть пост</button>
           </div>
         ))}
 
@@ -262,6 +263,7 @@ function DayDetails({ iso, day, onClose }) {
                 <div className="min-w-0">
                   <p className="text-sm text-zinc-200">{stripTagsPlain(slot.post.text).split('\n')[0]}</p>
                   {slot.post.thesis && <p className="text-xs text-zinc-500 mt-1">{slot.post.thesis}</p>}
+                  <button onClick={() => onOpenPost(slot.post.id, 'approved')} className={`${btn} mt-2`}>Открыть пост</button>
                 </div>
               </div>
             ) : (
@@ -325,7 +327,7 @@ function FormatsLegend({ activeKey }) {
   );
 }
 
-function Calendar() {
+function Calendar({ onOpenPost }) {
   const [days, setDays] = useState(30);
   const [view, setView] = useState('grid');
   const [selected, setSelected] = useState(null);
@@ -366,7 +368,14 @@ function Calendar() {
         {data.queue_left > 0 && ` Ещё ${data.queue_left} постов в очереди не поместились в две недели.`}
       </p>
 
-      {selected && <DayDetails iso={selected} day={byDate[selected]} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DayDetails
+          iso={selected}
+          day={byDate[selected]}
+          onClose={() => setSelected(null)}
+          onOpenPost={(id, status) => { setSelected(null); onOpenPost(id, status); }}
+        />
+      )}
 
       {view === 'grid' ? (
         <div className="overflow-x-auto">
@@ -398,14 +407,14 @@ function Calendar() {
                   {format && <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-800 text-zinc-300">{format}</span>}
                 </div>
                 {day.published.map((p) => (
-                  <p key={p.id} className="text-sm text-sky-300 mb-1">📣 <span className="text-zinc-300">#{p.id}</span> {headline(p.text)}</p>
+                  <p key={p.id} className="text-sm text-sky-300 mb-1">📣 <button onClick={() => onOpenPost(p.id, 'published')} className="text-zinc-300 hover:text-white underline underline-offset-2">#{p.id}</button> {headline(p.text)}</p>
                 ))}
                 {day.slots.map((slot) => (
                   <p key={slot.hour} className="text-sm mb-1">
                     <span className="text-zinc-500">{slot.hour}:00 · </span>
                     {slot.post ? (
                       <>
-                        <span className="text-zinc-300">#{slot.post.id}</span>{' '}
+                        <button onClick={() => onOpenPost(slot.post.id, 'approved')} className="text-zinc-300 hover:text-white underline underline-offset-2">#{slot.post.id}</button>{' '}
                         <span className="text-zinc-200">{headline(slot.post.text)}</span>
                         {!slot.matched && <span className="text-zinc-600">{slot.no_format ? ' · без формата' : ' · другой формат'}</span>}
                       </>
@@ -545,7 +554,7 @@ function FormatPicker({ post, onChanged }) {
   );
 }
 
-function PostCard({ post, onChanged }) {
+function PostCard({ post, onChanged, highlighted }) {
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState(null); // null | 'edit' | 'redraft' | 'image'
   const [text, setText] = useState(post.text);
@@ -586,7 +595,7 @@ function PostCard({ post, onChanged }) {
   };
 
   return (
-    <article className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+    <article id={`post-${post.id}`} className={`bg-zinc-900 rounded-xl border p-5 transition-colors ${highlighted ? 'border-zinc-100' : 'border-zinc-800'}`}>
       <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
         <span className="text-zinc-500">#{post.id}</span>
         <span className={`px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
@@ -709,6 +718,23 @@ function PostCard({ post, onChanged }) {
 
 export default function ChannelPage() {
   const [tab, setTab] = useState('draft');
+  const [highlight, setHighlight] = useState(null);
+
+  // переход из календаря к тексту поста
+  const openPost = (id, status) => {
+    setTab(status === 'published' ? 'published' : 'approved');
+    setHighlight(id);
+  };
+  useEffect(() => {
+    if (!highlight) return;
+    const el = document.getElementById(`post-${highlight}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const timer = setTimeout(() => setHighlight(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  });
+
   const { data, error, isLoading, mutate } = useSWR(
     tab === 'calendar' ? null : `/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 30000 }
   );
@@ -754,7 +780,7 @@ export default function ChannelPage() {
             })}
           </nav>
 
-          {tab === 'calendar' && <Calendar />}
+          {tab === 'calendar' && <Calendar onOpenPost={openPost} />}
 
           {tab !== 'calendar' && isLoading && (
             <div className="space-y-4">
@@ -765,7 +791,9 @@ export default function ChannelPage() {
           {tab !== 'calendar' && data?.posts?.length === 0 && <p className="text-zinc-500 text-center py-20">Здесь пока пусто</p>}
           {tab !== 'calendar' && data?.posts?.length > 0 && (
             <div className="space-y-4">
-              {data.posts.map((p) => <PostCard key={`${p.id}-${p.status}`} post={p} onChanged={() => mutate()} />)}
+              {data.posts.map((p) => (
+                <PostCard key={`${p.id}-${p.status}`} post={p} onChanged={() => mutate()} highlighted={p.id === highlight} />
+              ))}
             </div>
           )}
         </main>
