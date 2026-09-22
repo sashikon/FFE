@@ -206,9 +206,11 @@ function DayCell({ iso, day, today, onOpen }) {
     <div
       onClick={() => clickable && onOpen(iso)}
       className={`min-h-[104px] rounded-lg border p-2 text-left ${clickable ? 'cursor-pointer hover:border-zinc-600' : ''} ${iso === today ? 'border-zinc-500 bg-zinc-900' : day ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-900 bg-zinc-950'}`}>
-      <div className="flex items-baseline justify-between gap-1 mb-1">
+      <div className="mb-1">
         <span className={`text-xs ${iso === today ? 'text-zinc-100' : 'text-zinc-500'}`}>{dayNum}</span>
-        {format && <span className="text-[10px] text-zinc-500 truncate max-w-[70%]" title={format}>{format}</span>}
+        {format && (
+          <span className="block text-[10px] leading-tight text-zinc-500 line-clamp-2" title={format}>{format}</span>
+        )}
       </div>
       {day?.published?.map((p) => (
         <p key={p.id} className="text-[11px] leading-tight text-sky-300 mb-1 line-clamp-2">📣 {headline(p.text)}</p>
@@ -268,6 +270,57 @@ function DayDetails({ iso, day, onClose }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Расписание форматов: какой формат в какой день двух недель
+function FormatsLegend({ activeKey }) {
+  const { data } = useSWR('/api/channel-formats', fetcher);
+  const [open, setOpen] = useState(false);
+  const formats = data?.formats || [];
+  if (!formats.length) return null;
+
+  const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  const cell = (week, day) => formats.find((f) => f.week === week && f.day === day);
+
+  return (
+    <div className="mt-8">
+      <button onClick={() => setOpen(!open)} className="text-sm text-zinc-400 hover:text-white transition-colors">
+        {open ? '▾' : '▸'} Расписание форматов
+      </button>
+      {open && (
+        <div className="mt-3 overflow-x-auto">
+          <table className="text-xs border-separate border-spacing-1 min-w-[640px]">
+            <thead>
+              <tr>
+                <th />
+                {days.map((d) => <th key={d} className="font-normal text-zinc-500 px-2">{d}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {[1, 2].map((week) => (
+                <tr key={week}>
+                  <td className="text-zinc-500 pr-2 whitespace-nowrap">Неделя {week}</td>
+                  {days.map((_, i) => {
+                    const f = cell(week, i + 1);
+                    if (!f) return <td key={i} />;
+                    const active = f.key === activeKey;
+                    return (
+                      <td
+                        key={i}
+                        title={f.idea}
+                        className={`px-2 py-1.5 rounded-lg align-top ${active ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-300'}`}
+                      >{f.title}</td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-zinc-500 mt-2">Выделен формат сегодняшнего дня. Наведите на формат, чтобы увидеть, о чём он.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -366,6 +419,8 @@ function Calendar() {
           })}
         </div>
       )}
+
+      <FormatsLegend activeKey={byDate[today]?.slots?.[0]?.format_key} />
     </>
   );
 }
