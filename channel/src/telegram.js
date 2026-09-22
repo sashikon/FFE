@@ -206,11 +206,23 @@ async function checkChannel() {
 }
 
 // Скачать файл, присланный боту (скриншот): возвращает { data: base64, media_type }
-async function downloadFile(fileId) {
-  const file = await api('getFile', { file_id: fileId });
-  const res = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`, { signal: AbortSignal.timeout(30_000) });
+// Скачать файл целиком. Бот может скачать не больше 20 МБ — это ограничение Telegram
+async function downloadBuffer(fileId) {
+  let file;
+  try {
+    file = await api('getFile', { file_id: fileId });
+  } catch (e) {
+    if (/too big/i.test(e.message)) throw new Error('файл больше 20 МБ — Telegram не отдаёт ботам такие файлы');
+    throw e;
+  }
+  const res = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`, { signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw new Error(`Telegram file ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  return { buf: Buffer.from(await res.arrayBuffer()), path: file.file_path };
+}
+
+async function downloadFile(fileId) {
+  const { buf, path: filePath } = await downloadBuffer(fileId);
+  const file = { file_path: filePath };
   const ext = (file.file_path.split('.').pop() || '').toLowerCase();
   const media_type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
   return { data: buf.toString('base64'), media_type, size: buf.length };
@@ -218,6 +230,7 @@ async function downloadFile(fileId) {
 
 module.exports = {
   downloadFile,
+  downloadBuffer,
   normalizeChannel,
   api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, TelegramError, OWNER,
 };

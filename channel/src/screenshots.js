@@ -74,7 +74,7 @@ async function saveScreenshot(a, fileUniqueId, note = '') {
     stats && `Счётчики: ${stats}`,
     a.author && `Автор: ${a.author}`,
     note && `Комментарий автора канала: ${note}`,
-  ].filter(Boolean).join('. ').slice(0, 1500);
+  ].filter(Boolean).map((p) => String(p).trim().replace(/[.。]+$/, '')).join('. ').slice(0, 1500);
 
   const { rows: [item] } = await pool.query(
     `INSERT INTO items (source, feed, layer, url, title, summary, published_at, trends_done)

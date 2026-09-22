@@ -15,7 +15,7 @@ const VIEWS = [
   { key: 'fading', label: '📉 Угасают' },
 ];
 
-const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', screenshot: '📱 соцсети' };
+const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', screenshot: '📱 скриншоты', video: '🎬 видео' };
 const REGIONS = ['сша', 'британия', 'франция', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир', 'соцсети'];
 
 const chip = (active) => `px-2 py-1 rounded-lg text-xs transition-colors ${active ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`;
@@ -126,7 +126,7 @@ export default function TrendsPage() {
 
         <main className="max-w-5xl mx-auto px-6 py-8">
           <p className="text-sm text-zinc-500 mb-6">
-            Считается по всем заметкам ленты, по поисковым трендам Google и по скриншотам соцсетей, которые вы присылаете боту.
+            Считается по всем заметкам ленты, по поисковым трендам Google и по скриншотам и роликам соцсетей, которые вы присылаете боту (у роликов — ещё и звук).
             «Растут» — упоминаний за 7 дней больше, чем за предыдущие 7, и тему подхватили хотя бы два источника (или она есть в Google или соцсетях).
             Нажмите на тему, чтобы увидеть, где она всплывала и что ищут вокруг неё.
           </p>

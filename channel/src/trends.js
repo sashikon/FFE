@@ -13,6 +13,7 @@ const KINDS = {
   color: 'цвет',
   brand: 'бренд',
   term: 'термин',
+  sound: 'звук',
 };
 
 const REGION_TAGS = ['сша', 'британия', 'франция', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир'];
@@ -73,12 +74,12 @@ const canon = (t) => String(t || '').toLowerCase().replace(/[«»"“”]/g, '')
 
 async function upsertTerm({ term, display, kind }) {
   const key = canon(term);
-  if (!key || key.length < 2 || key.length > 60) return null;
+  if (!key || key.length < 2 || key.length > 100) return null;
   const { rows: [row] } = await pool.query(
     `INSERT INTO trend_terms (term, display, kind) VALUES ($1, $2, $3)
      ON CONFLICT (term) DO UPDATE SET term = EXCLUDED.term
      RETURNING id`,
-    [key, String(display || term).trim().slice(0, 80), KINDS[kind] ? kind : 'term']
+    [key, String(display || term).trim().slice(0, 100), KINDS[kind] ? kind : 'term']
   );
   return row.id;
 }
@@ -102,7 +103,7 @@ async function saveEntities(item, entities, signal = 'news') {
       ref: `item:${item.id}`,
       itemId: item.id,
       feed: item.feed,
-      region: signal === 'screenshot' ? 'соцсети' : (REGION_BY_FEED[item.feed] || 'мир'),
+      region: ['screenshot', 'video'].includes(signal) ? 'соцсети' : (REGION_BY_FEED[item.feed] || 'мир'),
       seenAt: item.published_at || item.fetched_at,
     });
   }
@@ -266,7 +267,7 @@ async function listTrends({ limit = 100, kind = null, region = null } = {}) {
   }));
 
   const rising = scored
-    .filter((r) => r.week >= 2 && (r.feeds >= 2 || r.signals.includes('search') || r.signals.includes('screenshot')) && r.week > r.prev_week)
+    .filter((r) => r.week >= 2 && (r.feeds >= 2 || r.signals.some((x) => ['search', 'screenshot', 'video'].includes(x))) && r.week > r.prev_week)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
   const top = [...scored].sort((a, b) => b.week - a.week || b.total - a.total).slice(0, limit);
@@ -298,4 +299,4 @@ async function runTrends() {
   return { extracted, search, suggestions };
 }
 
-module.exports = { KINDS, runTrends, extractTrends, googleTrending, listTrends, termDetail, saveEntities, fetchSuggestions, canon };
+module.exports = { KINDS, runTrends, extractTrends, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
