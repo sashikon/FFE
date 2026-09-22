@@ -1,7 +1,7 @@
 const { pool } = require('./db');
 const tg = require('./telegram');
 const { redraft } = require('./pipeline');
-const { learnFromFeedback } = require('./learn');
+const { learnFromFeedback, learnFromEdit } = require('./learn');
 const { withBrandLogo } = require('./brand');
 const { FORMATS, formatByKey } = require('./formats');
 const { call, MODELS } = require('./llm');
@@ -150,8 +150,16 @@ async function editText(postId, text) {
   const clean = String(text || '').replace(/\r\n/g, '\n').trim();
   if (!clean) throw new ActionError('Текст пустой');
   if (clean.length > 3800) throw new ActionError(`Слишком длинно для Telegram: ${clean.length} знаков из 3800`);
+  const { rows: [old] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
   await pool.query('UPDATE posts SET text = $1 WHERE id = $2', [clean, postId]);
   if (status !== 'approved') await refreshReview(postId, '✏️ Изменён в админке — см. ниже');
+
+  // Память правок: из ручной правки тоже пробуем вывести общее правило — в фоне
+  learnFromEdit(postId, old.text, clean)
+    .then((learned) => learned && tg.sendHtml(tg.OWNER, `🧠 Запомнено из вашей правки #${postId}: <i>${tg.escapeHtml(learned.rule)}</i>`, learned.id ? {
+      reply_markup: { inline_keyboard: [[{ text: '✖️ Не запоминать', callback_data: `delrule:${learned.id}` }]] },
+    } : {}))
+    .catch((e) => console.warn(`[learn] из правки не вышло: ${e.message}`));
 }
 
 // Правка через модель по комментарию + память правок. Долго — вызывающий не ждёт завершения
