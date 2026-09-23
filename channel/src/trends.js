@@ -33,8 +33,9 @@ const EXTRACT_SYSTEM = `Ты аналитик модных трендов. Те�
 - term — модное слово, явление или практика: dupe, ресейл, deinfluencing, коллаборация люкса и масс-маркета.
 
 Правила:
-- term — канон в нижнем регистре. Для явлений, которые обсуждают по всему миру, — англоязычное название («quiet luxury», «balletcore», «dupe»); для местных — на языке оригинала. Одно явление — всегда один и тот же канон.
-- display — как написать в интерфейсе: «Quiet luxury», «Miu Miu», «Балеткор».
+- term — канон в нижнем регистре, латиницей: общепринятое английское название («quiet luxury», «balletcore», «leather jacket», «dupe») или имя бренда как он пишется («miu miu», «uniqlo»). Одно явление — всегда один и тот же канон, на каком бы языке ни была заметка: 「レザージャケット」, «кожаная куртка» и «leather jacket» — это один term «leather jacket».
+- display — понятное название по-русски: «Кожаная куртка», «Балеткор», «Тихая роскошь». Исключение — бренды и устойчивые английские ярлыки, которые по-русски не говорят: «Miu Miu», «Quiet luxury», «Barrel jeans».
+- Иероглифов и хангыля в term и display быть не должно, кроме названий брендов.
 - Не выписывай общие слова (мода, коллекция, бренд, показ, неделя моды, одежда, продажи), людей, города, компании вне моды.
 - Не больше 5 сущностей на заметку. Если в заметке нет модной сущности — пустой список. Это частый ответ.`;
 
@@ -228,6 +229,73 @@ async function refreshSuggestions(limit = 15) {
   return done;
 }
 
+// ─── Приведение старых тем к канону ─────────────────────────────────────────
+// Раньше промпт разрешал оставлять «местные» явления на языке оригинала, и в темах
+// оказались японские и корейские названия обычных вещей. Переименовываем и склеиваем с дублями.
+
+const CJK_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+
+const NORMALIZE_SYSTEM = `Тебе дают темы трендов модного канала, записанные иероглифами или хангылем. Приведи каждую к канону:
+- term — общепринятое английское название в нижнем регистре («leather jacket», «geta sandals», «quiet luxury») или имя бренда латиницей;
+- display — понятное название по-русски («Кожаная куртка», «Сандалии гэта»); для брендов и устойчивых английских ярлыков — как пишут («Miu Miu», «Quiet luxury»).
+Если это имя бренда, оставь его латиницей и в term, и в display. Если понять невозможно — верни term и display как есть.`;
+
+const NORMALIZE_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, term: { type: 'string' }, display: { type: 'string' } },
+        required: ['id', 'term', 'display'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+};
+
+async function normalizeTerms(limit = 60) {
+  const { rows } = await pool.query(
+    `SELECT id, term, display, kind FROM trend_terms
+     WHERE term ~ '[ぁ-ゟ゠-ヿ㐀-鿿가-힣]' OR display ~ '[ぁ-ゟ゠-ヿ㐀-鿿가-힣]'
+     ORDER BY id LIMIT $1`,
+    [limit]
+  );
+  if (!rows.length) return { renamed: 0, merged: 0 };
+
+  const { results } = await call({
+    model: MODELS.cheap,
+    system: NORMALIZE_SYSTEM,
+    user: rows.map((r) => `${r.id}. ${r.display} (${r.term}, ${KINDS[r.kind] || r.kind})`).join('\n'),
+    schema: NORMALIZE_SCHEMA,
+    maxTokens: 4000,
+  });
+
+  let renamed = 0;
+  let merged = 0;
+  for (const r of results) {
+    const row = rows.find((x) => x.id === r.id);
+    const key = canon(r.term);
+    if (!row || !key || CJK_RE.test(key)) continue;
+
+    const { rows: [existing] } = await pool.query('SELECT id FROM trend_terms WHERE term = $1 AND id <> $2', [key, row.id]);
+    if (existing) {
+      // такая тема уже есть — переносим упоминания и убираем дубль
+      await pool.query('UPDATE trend_mentions SET term_id = $1 WHERE term_id = $2 AND ref NOT IN (SELECT ref FROM trend_mentions WHERE term_id = $1)', [existing.id, row.id]);
+      await pool.query('DELETE FROM trend_terms WHERE id = $1', [row.id]);
+      merged++;
+    } else {
+      await pool.query('UPDATE trend_terms SET term = $1, display = $2 WHERE id = $3', [key, r.display.trim().slice(0, 100), row.id]);
+      renamed++;
+    }
+  }
+  console.log(`[trends] канон: переименовано ${renamed}, склеено ${merged}`);
+  return { renamed, merged };
+}
+
 // ─── Расчёт трендов ─────────────────────────────────────────────────────────
 
 // Рост: упоминания за последние 7 дней против предыдущих 7; вес — число разных источников
@@ -294,9 +362,10 @@ async function termDetail(termId) {
 // Всё за прогон: сущности из новых заметок, Google Trends раз в день, подсказки для растущих
 async function runTrends() {
   const extracted = await extractTrends();
+  const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { extracted, search, suggestions };
+  return { extracted, normalized, search, suggestions };
 }
 
-module.exports = { KINDS, runTrends, extractTrends, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, runTrends, extractTrends, normalizeTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
