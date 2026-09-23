@@ -112,7 +112,7 @@ async function upsertTerm({ term, display, kind, category, parent }) {
 
   // модель обуви или сумки привязываем к её виду: «adidas samba jane» → «mary jane»
   const parentKey = canon(parent);
-  if (parentKey && parentKey !== key && !JUNK_TERMS.has(parentKey)) {
+  if (parentKey && parentKey !== key && !JUNK_TERMS.has(parentKey) && !isPluralVariant(parentKey, key)) {
     const parentId = await upsertTerm({ term: parentKey, display: parent, kind: 'item', category: cat });
     if (parentId) await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
   }
@@ -353,6 +353,64 @@ async function normalizeTerms(limit = 60) {
   return { renamed, merged };
 }
 
+// Множественное число — не отдельная вещь: «mary janes» это те же «mary jane»,
+// и уж точно не её модель. Сливаем такие пары и не даём им становиться видом.
+const pluralForms = (key) => [
+  `${key}s`,
+  `${key}es`,
+  key.endsWith('y') ? `${key.slice(0, -1)}ies` : null,
+].filter(Boolean);
+
+const isPluralVariant = (a, b) => pluralForms(a).includes(b) || pluralForms(b).includes(a);
+
+// Перенести всё с темы-дубля на тему-победителя и убрать дубль
+async function mergeTerms(keepId, dropId) {
+  await pool.query(
+    `UPDATE trend_mentions SET term_id = $1 WHERE term_id = $2
+       AND ref NOT IN (SELECT ref FROM trend_mentions WHERE term_id = $1)`,
+    [keepId, dropId]
+  );
+  // дети дубля становятся детьми победителя, а сам победитель не может быть себе родителем
+  await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE parent_id = $2 AND id <> $1', [keepId, dropId]);
+  await pool.query(
+    `UPDATE trend_terms k SET category = COALESCE(k.category, d.category)
+     FROM trend_terms d WHERE k.id = $1 AND d.id = $2`,
+    [keepId, dropId]
+  );
+  await pool.query('DELETE FROM trend_terms WHERE id = $1', [dropId]);
+  await pool.query('UPDATE trend_terms SET parent_id = NULL WHERE id = $1 AND parent_id = $1', [keepId]);
+}
+
+async function mergePlurals() {
+  const { rows } = await pool.query(
+    `SELECT t.id, t.term, t.first_seen, COUNT(m.*)::int AS mentions
+     FROM trend_terms t LEFT JOIN trend_mentions m ON m.term_id = t.id
+     WHERE t.kind = 'item' GROUP BY t.id ORDER BY t.id`
+  );
+  const byTerm = new Map(rows.map((r) => [r.term, r]));
+  const gone = new Set();
+  let merged = 0;
+
+  for (const row of rows) {
+    if (gone.has(row.id)) continue;
+    for (const form of pluralForms(row.term)) {
+      const twin = byTerm.get(form);
+      if (!twin || gone.has(twin.id)) continue;
+      // побеждает та форма, которую чаще пишут: «jeans» останутся «jeans», «mary jane» — единственным числом
+      const [keep, drop] = twin.mentions > row.mentions
+        || (twin.mentions === row.mentions && new Date(twin.first_seen) < new Date(row.first_seen))
+        ? [twin, row] : [row, twin];
+      await mergeTerms(keep.id, drop.id);
+      gone.add(drop.id);
+      merged++;
+      console.log(`[trends] склеено число: «${drop.term}» → «${keep.term}»`);
+      if (drop.id === row.id) break;
+    }
+  }
+  if (merged) console.log(`[trends] склеено пар по числу: ${merged}`);
+  return { merged };
+}
+
 // Разметка уже накопленных вещей: категория (обувь, сумки…) и вид для моделей
 const CLASSIFY_SYSTEM = `Тебе дают темы модных трендов типа «вещь». Для каждой определи:
 - category — одна из: ${CATEGORIES.join(', ')};
@@ -417,7 +475,7 @@ async function classifyBatch(limit) {
     classified++;
 
     const parentKey = canon(r.parent);
-    if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey)) {
+    if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey) && !isPluralVariant(parentKey, row.term)) {
       const parentId = await upsertTerm({ term: parentKey, display: parentKey, kind: 'item', category: cat });
       if (parentId && parentId !== row.id) {
         await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
@@ -481,7 +539,7 @@ async function reviseKinds(limit = 120) {
       moved++;
 
       const parentKey = canon(r.parent);
-      if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey)) {
+      if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey) && !isPluralVariant(parentKey, row.term)) {
         const parentId = await upsertTerm({ term: parentKey, display: parentKey, kind: 'item', category: cat });
         if (parentId && parentId !== row.id) {
           await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
@@ -736,6 +794,7 @@ async function runTrends({ onStage = () => {} } = {}) {
   onStage('разбираю заметки на темы');
   const extracted = await extractTrends();
   const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
+  const plurals = await mergePlurals().catch((e) => ({ error: e.message }));
   onStage('перепроверяю типы и размечаю вещи');
   const revised = await reviseKinds().catch((e) => ({ error: e.message }));
   const classified = await classifyItems().catch((e) => ({ error: e.message }));
@@ -743,7 +802,7 @@ async function runTrends({ onStage = () => {} } = {}) {
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const pinterest = await pinterestTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { junk, extracted, normalized, revised, classified, search, pinterest, suggestions };
+  return { junk, extracted, normalized, plurals, revised, classified, search, pinterest, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, mergePlurals, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
