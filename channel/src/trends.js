@@ -375,7 +375,23 @@ const CLASSIFY_SCHEMA = {
   additionalProperties: false,
 };
 
-async function classifyItems(limit = 60) {
+const CLASSIFY_BATCH = 60;
+
+async function classifyItems(limit = 300) {
+  let classified = 0;
+  let linked = 0;
+  // Разметка догоняет накопленное: за прогон разбираем несколько партий, а не одну
+  for (let done = 0; done < limit; done += CLASSIFY_BATCH) {
+    const part = await classifyBatch(Math.min(CLASSIFY_BATCH, limit - done));
+    classified += part.classified;
+    linked += part.linked;
+    if (!part.classified) break;
+  }
+  console.log(`[trends] размечено вещей: ${classified}, привязано моделей: ${linked}`);
+  return { classified, linked };
+}
+
+async function classifyBatch(limit) {
   const { rows } = await pool.query(
     `SELECT id, term, display FROM trend_terms WHERE kind = 'item' AND category IS NULL ORDER BY id LIMIT $1`,
     [limit]
@@ -408,8 +424,75 @@ async function classifyItems(limit = 60) {
       }
     }
   }
-  console.log(`[trends] размечено вещей: ${classified}, привязано моделей: ${linked}`);
   return { classified, linked };
+}
+
+// Перепроверка типа: «mary jane» и «barrel jeans» могли попасть в «термины» или «эстетики»
+// и тогда их не видно во вкладке «Вещи». Каждую тему смотрим один раз.
+const REVISE_KINDS = ['term', 'aesthetic', 'material'];
+const REVISE_SYSTEM = `Тебе дают темы модных трендов. Про каждую ответь, конкретная ли это вещь — предмет одежды, обуви, сумка, украшение, головной убор, очки, бельё («mary jane», «barrel jeans», «балетки», «тренч») — или нет.
+Не вещь: эстетика и стиль («quiet luxury», «балеткор»), материал («замша»), цвет, бренд, явление индустрии («ресейл», «коллаборация»), событие, имя человека.
+- is_item — true только для конкретной вещи;
+- category — для вещи одна из: ${CATEGORIES.join(', ')}; иначе пустая строка;
+- parent — если вещь это конкретная модель, вид, к которому она относится, в нижнем регистре латиницей («adidas samba jane» → «mary jane»); иначе пустая строка.`;
+
+const REVISE_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, is_item: { type: 'boolean' }, category: { type: 'string' }, parent: { type: 'string' } },
+        required: ['id', 'is_item', 'category', 'parent'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+};
+
+async function reviseKinds(limit = 120) {
+  let moved = 0;
+  let checked = 0;
+  for (let done = 0; done < limit; done += CLASSIFY_BATCH) {
+    const { rows } = await pool.query(
+      `SELECT id, term, display, kind FROM trend_terms
+       WHERE NOT kind_checked AND kind = ANY($1) ORDER BY id LIMIT $2`,
+      [REVISE_KINDS, Math.min(CLASSIFY_BATCH, limit - done)]
+    );
+    if (!rows.length) break;
+
+    const { results } = await call({
+      model: MODELS.cheap,
+      system: REVISE_SYSTEM,
+      user: rows.map((r) => `${r.id}. ${r.display} (${r.term}) — сейчас «${KINDS[r.kind] || r.kind}»`).join('\n'),
+      schema: REVISE_SCHEMA,
+      maxTokens: 4000,
+    });
+
+    for (const r of results) {
+      const row = rows.find((x) => x.id === r.id);
+      if (!row || !r.is_item) continue;
+      const cat = CATEGORIES.includes(String(r.category || '').toLowerCase()) ? String(r.category).toLowerCase() : 'другое';
+      await pool.query(`UPDATE trend_terms SET kind = 'item', category = COALESCE(category, $1) WHERE id = $2`, [cat, row.id]);
+      moved++;
+
+      const parentKey = canon(r.parent);
+      if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey)) {
+        const parentId = await upsertTerm({ term: parentKey, display: parentKey, kind: 'item', category: cat });
+        if (parentId && parentId !== row.id) {
+          await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
+        }
+      }
+    }
+    // помечаем всю партию, чтобы не платить за неё второй раз
+    await pool.query('UPDATE trend_terms SET kind_checked = TRUE WHERE id = ANY($1)', [rows.map((r) => r.id)]);
+    checked += rows.length;
+  }
+  if (checked) console.log(`[trends] перепроверено тем: ${checked}, переведено в вещи: ${moved}`);
+  return { checked, moved };
 }
 
 // ─── Расчёт трендов ─────────────────────────────────────────────────────────
@@ -465,6 +548,34 @@ async function listTrends({ limit = 100, kind = null, region = null, category = 
   return { rising, top, fading, kinds: KINDS, categories: CATEGORIES };
 }
 
+// Поиск по названию: тема может не попасть ни в растущие, ни в топ, и её нечем найти
+async function searchTerms(q, limit = 40) {
+  const needle = `%${canon(q)}%`;
+  const { rows } = await pool.query(
+    `SELECT t.id, t.term, t.display, t.kind, t.category, t.first_seen, t.suggestions,
+            (SELECT p.display FROM trend_terms p WHERE p.id = t.parent_id) AS parent,
+            (SELECT COUNT(*)::int FROM trend_terms c WHERE c.parent_id = t.id) AS models,
+            COUNT(m.*) FILTER (WHERE m.seen_at > NOW() - INTERVAL '7 days')::int AS week,
+            COUNT(m.*) FILTER (WHERE m.seen_at <= NOW() - INTERVAL '7 days' AND m.seen_at > NOW() - INTERVAL '14 days')::int AS prev_week,
+            COUNT(m.*)::int AS total,
+            COUNT(DISTINCT m.feed)::int AS feeds,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT m.region), NULL) AS regions,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT m.signal), NULL) AS signals,
+            ARRAY(
+              SELECT COUNT(mm.*)::int FROM generate_series(7, 0, -1) AS w
+              LEFT JOIN trend_mentions mm ON mm.term_id = t.id
+                AND mm.seen_at > NOW() - make_interval(days => (w + 1) * 7)
+                AND mm.seen_at <= NOW() - make_interval(days => w * 7)
+              GROUP BY w ORDER BY w DESC
+            ) AS weeks
+     FROM trend_terms t LEFT JOIN trend_mentions m ON m.term_id = t.id
+     WHERE t.term ILIKE $1 OR t.display ILIKE $1
+     GROUP BY t.id ORDER BY total DESC LIMIT $2`,
+    [needle, limit]
+  );
+  return rows.map((r) => ({ ...r, growth: (r.week + 1) / (r.prev_week + 1), is_new: false }));
+}
+
 async function termDetail(termId) {
   const { rows: [term] } = await pool.query('SELECT * FROM trend_terms WHERE id = $1', [termId]);
   if (!term) return null;
@@ -491,10 +602,11 @@ async function runTrends() {
   const junk = await cleanupJunkTerms().catch((e) => ({ error: e.message }));
   const extracted = await extractTrends();
   const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
+  const revised = await reviseKinds().catch((e) => ({ error: e.message }));
   const classified = await classifyItems().catch((e) => ({ error: e.message }));
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { junk, extracted, normalized, classified, search, suggestions };
+  return { junk, extracted, normalized, revised, classified, search, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
