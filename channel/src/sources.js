@@ -9,6 +9,8 @@ const gnewsRu = (query) =>
 // Индия: издания выходят реже, окно шире (см. maxAgeDays у источника)
 const gnewsIn = (query, days = 14) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:${days}d&hl=en-IN&gl=IN&ceid=IN:en`;
+const gnewsIt = (query) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=it&gl=IT&ceid=IT:it`;
 const gnewsKr = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=ko&gl=KR&ceid=KR:ko`;
 const gnewsCn = (query) =>
@@ -39,6 +41,10 @@ module.exports = [
     titleFrom: 'slug', // сайт собирается скриптом, в HTML заголовка нет
     maxAgeDays: 30,
   },
+
+  // ── Италия: без неё картина мировой моды неполная ──
+  { name: 'Pambianco', description: 'Итальянская деловая пресса о моде: марки, сделки, рынок, назначения.', tags: ['италия', 'бизнес'], layer: 'industry', url: 'https://www.pambianconews.com/feed/' },
+  { name: 'Il Sole 24 Ore Moda', description: 'Деловое издание Италии, раздел моды: индустрия и экономика.', tags: ['италия', 'бизнес'], layer: 'industry', maxAgeDays: 7, url: 'https://www.ilsole24ore.com/rss/moda.xml' },
 
   // ── Азия: другой взгляд на моду, часто более авангардный ──
   { name: 'WWD Japan', description: 'Японская индустрия моды и красоты: бренды, коллаборации, рынок.', tags: ['япония', 'бизнес'], layer: 'industry', url: 'https://www.wwdjapan.com/feed' },
@@ -83,6 +89,7 @@ module.exports = [
   { name: 'Hypebeast', description: 'Стритвир и дропы: что покупает молодая аудитория.', tags: ['мир', 'стрит'], layer: 'culture', url: 'https://hypebeast.com/feed' },
   { name: 'Who What Wear', description: 'Тренды для читателя: что носить и как это читается.', tags: ['сша', 'тренды', 'потребитель'], layer: 'culture', url: 'https://www.whowhatwear.com/rss' },
   { name: 'Fashionsnap', description: 'Японская мода и дизайн: бренды, магазины, уличный стиль.', tags: ['япония', 'культура', 'стрит'], layer: 'culture', url: 'https://www.fashionsnap.com/rss.xml' },
+  { name: 'Vogue Italia', description: 'Итальянский Vogue: показы Милана, кампейны, светская мода.', tags: ['италия', 'люкс', 'культура'], layer: 'culture', url: gnewsIt('site:vogue.it') },
   { name: 'Vogue Korea', description: 'Корейский Vogue: звёзды, кампейны, локальные бренды.', tags: ['корея', 'люкс', 'культура'], layer: 'culture', url: gnewsKr('site:vogue.co.kr') },
   { name: 'Vogue China', description: 'Китайский Vogue: показы, кампейны, местная сцена.', tags: ['китай', 'люкс', 'культура'], layer: 'culture', url: gnewsCn('site:vogue.com.cn'), maxAgeDays: 7 },
   // Корейские знаменитости первыми выносят на публику локальные бренды; берём только про одежду и стиль
