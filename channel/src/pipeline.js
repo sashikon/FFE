@@ -1,4 +1,4 @@
-const { pool } = require('./db');
+const { pool, setState } = require('./db');
 const { collectAll } = require('./collect');
 const { clusterNewItems, clusterItems } = require('./cluster');
 const { call, MODELS } = require('./llm');
@@ -222,11 +222,29 @@ async function draftFromItem(itemId) {
 
 let running = false;
 
+const TIMEOUT_MIN = Number(process.env.PIPELINE_TIMEOUT_MIN || 40);
+
+const timeoutIn = (minutes) => new Promise((_, reject) => {
+  setTimeout(() => reject(new Error(`прогон идёт дольше ${minutes} минут — похоже, он застрял`)), minutes * 60_000).unref();
+});
+
 // onStage — сообщить, на каком шаге прогон: он идёт минутами, и со стороны
 // неотличим живой прогон от упавшего
 async function runPipeline({ onStage = () => {} } = {}) {
   if (running) return { skipped: true };
   running = true;
+  // отметка в базе переживает перезапуск: иначе оборванный деплоем прогон исчезает молча
+  await setState('run_started', new Date().toISOString()).catch(() => {});
+  const work = runPipelineInner(onStage);
+  work.finally(async () => {
+    running = false;
+    await setState('run_started', null).catch(() => {});
+  });
+  // ждём не дольше предела — сам прогон при этом продолжается
+  return Promise.race([work, timeoutIn(TIMEOUT_MIN)]);
+}
+
+async function runPipelineInner(onStage) {
   const stage = (text) => { try { onStage(text); } catch { /* отчёт не должен ронять прогон */ } };
   try {
     stage('собираю ленту');
@@ -264,7 +282,7 @@ async function runPipeline({ onStage = () => {} } = {}) {
     console.log(`[pipeline] drafts sent: ${drafted}`);
     return { drafted, candidates: candidates.length, format: format.title };
   } finally {
-    running = false;
+    await setState('last_pipeline_finished', new Date().toISOString()).catch(() => {});
   }
 }
 

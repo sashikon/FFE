@@ -106,11 +106,22 @@ async function start() {
   if (problem) console.error(`[telegram] ${problem}`);
   else console.log(`[telegram] ok, owner ${OWNER}`);
 
+  // прогон, оборванный деплоем или падением, иначе исчезает молча — а человек ждёт ответа
+  const interrupted = await getState('run_started').catch(() => null);
+  if (interrupted) {
+    await setState('run_started', null).catch(() => {});
+    console.warn(`[pipeline] прошлый прогон оборван на перезапуске (начался ${interrupted})`);
+  }
+
   startApi();
   poll();
   if (!OWNER) return;
   await setupMenu().catch((e) => console.error('[telegram] menu setup failed', e.message));
   const channel = await checkChannel().catch((e) => ({ ok: false, problem: e.message }));
+  if (interrupted) {
+    const at = new Date(interrupted).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
+    await sendHtml(OWNER, `⚠️ Прогон, начатый в ${at}, оборвался: сервис перезапустился (обычно это деплой). Черновики, которые успели уйти, остались. Можно запустить заново — /run.`).catch(() => {});
+  }
   if (channel.ok) console.log(`[telegram] channel ok: ${channel.title}`);
   else {
     console.error(`[telegram] channel problem: ${channel.problem}`);
