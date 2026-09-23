@@ -38,6 +38,10 @@ async function cmdStatus(chatId) {
            COUNT(*) FILTER (WHERE status = 'published' AND published_at > NOW() - INTERVAL '7 days')::int AS week_published
     FROM posts`);
   const channel = await tg.checkChannel().catch((e) => ({ ok: false, problem: e.message }));
+  const running = await getState('run_started');
+  const runLine = running
+    ? `⏳ Прогон идёт ${Math.round((Date.now() - new Date(running).getTime()) / 60000)} мин`
+    : null;
   const last = await getState('last_pipeline_at');
   const lastRun = last
     ? new Date(last).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
@@ -52,7 +56,7 @@ async function cmdStatus(chatId) {
     `⏸ Отложено: ${c.deferred}`,
     `📣 Опубликовано за 7 дней: ${c.week_published}`,
     '',
-    `Последний прогон: ${lastRun}`,
+    runLine || `Последний прогон: ${lastRun}`,
     channel.ok
       ? `Канал: ✅ «${tg.escapeHtml(channel.title)}» — публиковать можно`
       : `Канал: ❌ ${tg.escapeHtml(channel.problem)}`,
@@ -61,8 +65,15 @@ async function cmdStatus(chatId) {
 
 // Прогон идёт минуты — запускаем в фоне, чтобы бот не замолкал на это время
 async function cmdRun(chatId) {
-  await tg.sendHtml(chatId, 'Собираю ленту и готовлю черновики — это займёт несколько минут. Бот тем временем отвечает на кнопки.');
-  runPipeline()
+  const msg = await tg.sendHtml(chatId, 'Начинаю прогон — это займёт несколько минут. Бот тем временем отвечает на кнопки.');
+  const started = Date.now();
+  // правим одно сообщение, а не шлём новое на каждый шаг
+  const onStage = (text) => tg.api('editMessageText', {
+    chat_id: chatId,
+    message_id: msg.message_id,
+    text: `⏳ Прогон идёт ${Math.round((Date.now() - started) / 60000)} мин: ${text}.\nБот тем временем отвечает на кнопки.`,
+  }).catch(() => {});
+  runPipeline({ onStage })
     .then((r) => tg.sendHtml(chatId, r.skipped
       ? 'Прогон уже идёт.'
       : `Готово: формат «${r.format}», черновиков ${r.drafted} из ${r.candidates} кандидатов.`))

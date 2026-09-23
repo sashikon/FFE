@@ -712,12 +712,15 @@ async function termDetail(termId) {
 }
 
 // Всё за прогон: сущности из новых заметок, Google Trends раз в день, подсказки для растущих
-async function runTrends() {
+async function runTrends({ onStage = () => {} } = {}) {
   const junk = await cleanupJunkTerms().catch((e) => ({ error: e.message }));
+  onStage('разбираю заметки на темы');
   const extracted = await extractTrends();
   const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
+  onStage('перепроверяю типы и размечаю вещи');
   const revised = await reviseKinds().catch((e) => ({ error: e.message }));
   const classified = await classifyItems().catch((e) => ({ error: e.message }));
+  onStage('спрашиваю Google и Pinterest');
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const pinterest = await pinterestTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);

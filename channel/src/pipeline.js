@@ -1,4 +1,4 @@
-const { pool } = require('./db');
+const { pool, setState } = require('./db');
 const { collectAll } = require('./collect');
 const { clusterNewItems, clusterItems } = require('./cluster');
 const { call, MODELS } = require('./llm');
@@ -222,20 +222,44 @@ async function draftFromItem(itemId) {
 
 let running = false;
 
-async function runPipeline() {
+const TIMEOUT_MIN = Number(process.env.PIPELINE_TIMEOUT_MIN || 40);
+
+const timeoutIn = (minutes) => new Promise((_, reject) => {
+  setTimeout(() => reject(new Error(`прогон идёт дольше ${minutes} минут — похоже, он застрял`)), minutes * 60_000).unref();
+});
+
+// onStage — сообщить, на каком шаге прогон: он идёт минутами, и со стороны
+// неотличим живой прогон от упавшего
+async function runPipeline({ onStage = () => {} } = {}) {
   if (running) return { skipped: true };
   running = true;
+  // отметка в базе переживает перезапуск: иначе оборванный деплоем прогон исчезает молча
+  await setState('run_started', new Date().toISOString()).catch(() => {});
+  const work = runPipelineInner(onStage);
+  work.finally(async () => {
+    running = false;
+    await setState('run_started', null).catch(() => {});
+  });
+  // ждём не дольше предела — сам прогон при этом продолжается
+  return Promise.race([work, timeoutIn(TIMEOUT_MIN)]);
+}
+
+async function runPipelineInner(onStage) {
+  const stage = (text) => { try { onStage(text); } catch { /* отчёт не должен ронять прогон */ } };
   try {
+    stage('собираю ленту');
     await collectAll();
     await refreshLibrary().catch((e) => console.warn(`[library] refresh failed: ${e.message}`));
+    stage('группирую и оцениваю сюжеты');
     await clusterNewItems();
     await scoreNew();
     // Аналитика трендов: сущности из новых заметок, Google Trends, поисковые подсказки
-    await runTrends().catch((e) => console.warn(`[trends] прогон не удался: ${e.message}`));
+    await runTrends({ onStage: (what) => stage(`тренды — ${what}`) }).catch((e) => console.warn(`[trends] прогон не удался: ${e.message}`));
 
     const format = formatForNextSlot();
     console.log(`[pipeline] format: ${format.title}`);
     // Под конкретный формат подходит не каждый сюжет — берём кандидатов с запасом
+    stage(`пишу черновики, формат «${format.title}»`);
     const candidates = await selectCandidates(DRAFTS_PER_RUN * 3);
     let drafted = 0;
     for (const c of candidates) {
@@ -258,7 +282,7 @@ async function runPipeline() {
     console.log(`[pipeline] drafts sent: ${drafted}`);
     return { drafted, candidates: candidates.length, format: format.title };
   } finally {
-    running = false;
+    await setState('last_pipeline_finished', new Date().toISOString()).catch(() => {});
   }
 }
 
