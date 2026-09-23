@@ -222,20 +222,26 @@ async function draftFromItem(itemId) {
 
 let running = false;
 
-async function runPipeline() {
+// onStage — сообщить, на каком шаге прогон: он идёт минутами, и со стороны
+// неотличим живой прогон от упавшего
+async function runPipeline({ onStage = () => {} } = {}) {
   if (running) return { skipped: true };
   running = true;
+  const stage = (text) => { try { onStage(text); } catch { /* отчёт не должен ронять прогон */ } };
   try {
+    stage('собираю ленту');
     await collectAll();
     await refreshLibrary().catch((e) => console.warn(`[library] refresh failed: ${e.message}`));
+    stage('группирую и оцениваю сюжеты');
     await clusterNewItems();
     await scoreNew();
     // Аналитика трендов: сущности из новых заметок, Google Trends, поисковые подсказки
-    await runTrends().catch((e) => console.warn(`[trends] прогон не удался: ${e.message}`));
+    await runTrends({ onStage: (what) => stage(`тренды — ${what}`) }).catch((e) => console.warn(`[trends] прогон не удался: ${e.message}`));
 
     const format = formatForNextSlot();
     console.log(`[pipeline] format: ${format.title}`);
     // Под конкретный формат подходит не каждый сюжет — берём кандидатов с запасом
+    stage(`пишу черновики, формат «${format.title}»`);
     const candidates = await selectCandidates(DRAFTS_PER_RUN * 3);
     let drafted = 0;
     for (const c of candidates) {

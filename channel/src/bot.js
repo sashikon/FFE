@@ -61,8 +61,15 @@ async function cmdStatus(chatId) {
 
 // Прогон идёт минуты — запускаем в фоне, чтобы бот не замолкал на это время
 async function cmdRun(chatId) {
-  await tg.sendHtml(chatId, 'Собираю ленту и готовлю черновики — это займёт несколько минут. Бот тем временем отвечает на кнопки.');
-  runPipeline()
+  const msg = await tg.sendHtml(chatId, 'Начинаю прогон — это займёт несколько минут. Бот тем временем отвечает на кнопки.');
+  const started = Date.now();
+  // правим одно сообщение, а не шлём новое на каждый шаг
+  const onStage = (text) => tg.api('editMessageText', {
+    chat_id: chatId,
+    message_id: msg.message_id,
+    text: `⏳ Прогон идёт ${Math.round((Date.now() - started) / 60000)} мин: ${text}.\nБот тем временем отвечает на кнопки.`,
+  }).catch(() => {});
+  runPipeline({ onStage })
     .then((r) => tg.sendHtml(chatId, r.skipped
       ? 'Прогон уже идёт.'
       : `Готово: формат «${r.format}», черновиков ${r.drafted} из ${r.candidates} кандидатов.`))
