@@ -16,7 +16,7 @@ const KINDS = {
   sound: 'звук',
 };
 
-const REGION_TAGS = ['сша', 'британия', 'франция', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир'];
+const REGION_TAGS = ['сша', 'британия', 'франция', 'италия', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир'];
 const REGION_BY_FEED = Object.fromEntries(sources.map((s) => [s.name, (s.tags || []).find((t) => REGION_TAGS.includes(t)) || 'мир']));
 
 const EXTRACT_BATCH = 40;
