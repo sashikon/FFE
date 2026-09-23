@@ -9,7 +9,14 @@ const parser = new Parser({
   customFields: { item: ['source'] },
 });
 
-const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: '*/*', 'Cache-Control': 'no-cache' };
+// Заголовки подбирались опытом: полный браузерный User-Agent, наоборот, включает
+// защиту от ботов у Launchmetrics, Just Style и Who What Wear — им нужен короткий
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0',
+  Accept: '*/*',
+  'Accept-Language': 'en,it;q=0.9,fr;q=0.8,ja;q=0.7',
+  'Cache-Control': 'no-cache',
+};
 const SITEMAP_LIMIT = 20;
 
 async function fetchText(url) {
@@ -63,9 +70,39 @@ function normalizeUrl(url) {
 // Некоторые ленты отдают 304 с пустым телом, пока адрес не поменяется (Launchmetrics)
 const bustCache = (url) => `${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`;
 
+// Сломанный XML почти всегда — это голый «&» в заголовке, а не настоящая поломка ленты
+const fixEntities = (xml) => xml.replace(/&(?![a-zA-Z][a-zA-Z0-9]{0,30};|#\d{1,6};|#x[0-9a-fA-F]{1,6};)/g, '&amp;');
+
+// Что за страница пришла вместо ленты: с адреса дата-центра часто отдают защиту от ботов,
+// и без этой подсказки в логе видно только «Unable to parse XML»
+function describeBody(text) {
+  const head = text.slice(0, 400).toLowerCase();
+  if (/<!doctype html|<html/.test(head)) {
+    if (/cloudflare|just a moment|attention required|captcha/.test(text.slice(0, 4000).toLowerCase())) {
+      return 'вместо ленты пришла страница защиты от ботов (Cloudflare)';
+    }
+    return 'вместо ленты пришла HTML-страница';
+  }
+  if (!text.trim()) return 'пустой ответ';
+  return `${text.length} байт, начало: ${text.slice(0, 80).replace(/\s+/g, ' ')}`;
+}
+
+async function fetchFeed(url) {
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Status code ${res.status} — ${describeBody(text)}`);
+  return text;
+}
+
 async function collectRss(src) {
   const url = src.cacheBust ? bustCache(src.url) : src.url;
-  const feed = await parser.parseURL(url);
+  const xml = await fetchFeed(url);
+  let feed;
+  try {
+    feed = await parser.parseString(fixEntities(xml));
+  } catch (e) {
+    throw new Error(`${e.message.split('\n')[0]} — ${describeBody(xml)}`);
+  }
   const isGoogle = src.url.includes('news.google.com');
   let added = 0;
 
