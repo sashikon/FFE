@@ -507,6 +507,8 @@ const PINTEREST_FILTER_SYSTEM = `Тебе дают верхние поисков
 Запрос вида «fall outfits 2026» — это про моду, сущность здесь эстетика или вещь, а не сам запрос целиком. Если модных запросов нет — пустой список, это нормальный ответ.`;
 
 async function pinterestKeywords(region, type, token) {
+  // нелатинский символ в переменной иначе падает невнятной ошибкой про ByteString
+  if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('в маркере посторонние символы — похоже, скопировалось лишнее или не то поле');
   const url = `https://api.pinterest.com/v5/trends/keywords/${encodeURIComponent(region)}/top/${type}?limit=${PINTEREST_LIMIT}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
   if (res.status === 401) throw new Error('маркер недействителен или истёк (маркер из панели живёт 30 дней) — выпустите новый и обновите PINTEREST_ACCESS_TOKEN');
@@ -560,6 +562,35 @@ async function pinterestTrending() {
   await setState('pinterest_day', day);
   console.log(`[trends] Pinterest: запросов ${queries.length}, про моду ${saved}`);
   return { queries: queries.length, fashion: saved, failures: failures.length };
+}
+
+// Живая проверка внешних сигналов: молчаливый пропуск из-за опечатки в переменной
+// или истёкшего маркера иначе выглядит так же, как «трендов пока нет»
+async function checkSignals() {
+  const out = { pinterest: {}, google: {} };
+  const token = (process.env.PINTEREST_ACCESS_TOKEN || '').trim();
+  out.pinterest.lastRun = await getState('pinterest_day');
+  if (!token) {
+    out.pinterest.problem = 'PINTEREST_ACCESS_TOKEN не задан';
+  } else {
+    try {
+      const keywords = await pinterestKeywords('US', 'growing', token);
+      out.pinterest.ok = true;
+      out.pinterest.sample = keywords.slice(0, 3).map((k) => k.keyword);
+    } catch (e) {
+      out.pinterest.problem = e.message;
+    }
+  }
+
+  out.google.lastRun = await getState('gtrends_day');
+  try {
+    const feed = await parser.parseURL('https://trends.google.com/trending/rss?geo=US');
+    out.google.ok = true;
+    out.google.sample = (feed.items || []).slice(0, 3).map((e) => String(e.title || '').trim());
+  } catch (e) {
+    out.google.problem = e.message;
+  }
+  return out;
 }
 
 // ─── Расчёт трендов ─────────────────────────────────────────────────────────
@@ -677,4 +708,4 @@ async function runTrends() {
   return { junk, extracted, normalized, revised, classified, search, pinterest, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };

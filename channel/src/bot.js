@@ -3,7 +3,7 @@ const tg = require('./telegram');
 const { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem } = require('./pipeline');
 const { analyzeScreenshot, saveScreenshot } = require('./screenshots');
 const video = require('./video');
-const { listTrends, KINDS } = require('./trends');
+const { listTrends, KINDS, checkSignals } = require('./trends');
 const { findSlop } = require('./slop');
 const { activeRules, addRule, removeRule } = require('./learn');
 const actions = require('./actions');
@@ -296,6 +296,7 @@ const COMMANDS = {
   check: ['Проверить очередь и черновики на ИИ-слоп', cmdCheck],
   channel: ['Какой канал вижу и с какими правами', cmdChannel],
   trends: ['Какие темы растут и угасают', cmdTrends],
+  signals: ['Проверить Pinterest и Google Trends', cmdSignals],
   videodiag: ['Почему ролик разобран только по обложке', cmdVideoDiag],
   setformats: ['Определить формат у постов без формата', cmdSetFormats],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
@@ -450,13 +451,23 @@ async function onAudio(chatId, msg) {
 }
 
 // Растущие и угасающие темы за неделю
+async function cmdSignals(chatId) {
+  await tg.sendHtml(chatId, 'Проверяю внешние сигналы…');
+  const s = await checkSignals();
+  const when = (day) => (day ? `последний сбор ${day}` : 'сбора ещё не было');
+  const block = (name, r) => (r.ok
+    ? `✅ <b>${name}</b> — отвечает, ${when(r.lastRun)}\nсейчас в топе: ${r.sample.map((x) => tg.escapeHtml(x)).join(', ') || '—'}`
+    : `❌ <b>${name}</b> — ${tg.escapeHtml(r.problem || 'не отвечает')}\n${when(r.lastRun)}`);
+  return tg.sendHtml(chatId, [block('Pinterest', s.pinterest), block('Google Trends', s.google)].join('\n\n'));
+}
+
 async function cmdTrends(chatId) {
   const { rising, fading, top } = await listTrends({ limit: 12 });
   if (!rising.length && !fading.length && !top.length) {
     return tg.sendHtml(chatId, 'Трендов пока мало данных: они считаются по заметкам с каждым прогоном. Загляните через пару дней или пришлите скриншоты из соцсетей.');
   }
   const arrow = (t) => (t.prev_week ? `${t.prev_week} → ${t.week}` : `новое · ${t.week}`);
-  const line = (t) => `• <b>${tg.escapeHtml(t.display)}</b> <i>${KINDS[t.kind] || t.kind}</i> — ${arrow(t)} за неделю, источников ${t.feeds}${t.signals.includes('search') ? ' · 🔎 Google' : ''}${t.signals.includes('screenshot') ? ' · 📱 скриншоты' : ''}${t.signals.includes('video') ? ' · 🎬 видео' : ''}`;
+  const line = (t) => `• <b>${tg.escapeHtml(t.display)}</b> <i>${KINDS[t.kind] || t.kind}</i> — ${arrow(t)} за неделю, источников ${t.feeds}${t.signals.includes('search') ? ' · 🔎 Google' : ''}${t.signals.includes('pinterest') ? ' · 📌 Pinterest' : ''}${t.signals.includes('screenshot') ? ' · 📱 скриншоты' : ''}${t.signals.includes('video') ? ' · 🎬 видео' : ''}`;
   const parts = [];
   if (rising.length) parts.push(`<b>📈 Растут</b>\n${rising.map(line).join('\n')}`);
   // пока истории мало, растущих нет — показываем самое упоминаемое
