@@ -14,6 +14,8 @@ export default async function handler(req, res) {
   const qs = new URLSearchParams();
   if (req.query.kind) qs.set('kind', String(req.query.kind));
   if (req.query.region) qs.set('region', String(req.query.region));
+  if (req.query.category) qs.set('category', String(req.query.category));
+  if (req.query.q) qs.set('q', String(req.query.q));
   try {
     const r = await fetch(`${base.replace(/\/$/, '')}/api/trends${qs.toString() ? `?${qs}` : ''}`, {
       headers: { 'x-channel-token': token },

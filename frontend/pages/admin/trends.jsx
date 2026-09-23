@@ -221,7 +221,9 @@ function TrendRow({ t, kinds }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="min-w-[180px] flex-1">
             <span className="text-zinc-100">{t.display}</span>
-            <span className="ml-2 text-[11px] text-zinc-500">{t.category || kinds[t.kind] || t.kind}</span>
+            <span className="ml-2 text-[11px] text-zinc-500">
+              {kinds[t.kind] || t.kind}{t.category ? ` · ${t.category}` : ''}
+            </span>
             {t.parent && <span className="ml-2 text-[11px] text-zinc-600">вид: {t.parent}</span>}
             {t.models > 0 && <span className="ml-2 text-[11px] text-zinc-600">моделей: {t.models}</span>}
             {t.is_new && <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px]">новое</span>}
@@ -251,7 +253,11 @@ export default function TrendsPage() {
   const [region, setRegion] = useState('');
   const [sort, setSort] = useState('growth');
   const [category, setCategory] = useState('');
-  const qs = new URLSearchParams({ ...(kind && { kind }), ...(region && { region }), ...(category && { category }) }).toString();
+  const [q, setQ] = useState('');
+  const query = q.trim();
+  const qs = query
+    ? new URLSearchParams({ q: query }).toString()
+    : new URLSearchParams({ ...(kind && { kind }), ...(region && { region }), ...(category && { category }) }).toString();
   const { data, error, isLoading } = useSWR(`/api/channel-trends${qs ? `?${qs}` : ''}`, fetcher, { refreshInterval: 300000 });
   const kinds = data?.kinds || {};
   const sorters = {
@@ -260,7 +266,7 @@ export default function TrendsPage() {
     new: (a, b) => new Date(b.first_seen) - new Date(a.first_seen),
     alpha: (a, b) => a.display.localeCompare(b.display, 'ru'),
   };
-  const list = [...(data?.[view] || [])].sort(sorters[sort]);
+  const list = [...(query ? data?.found || [] : data?.[view] || [])].sort(sorters[sort]);
 
   return (
     <>
@@ -285,7 +291,21 @@ export default function TrendsPage() {
             Нажмите на тему, чтобы увидеть, где она всплывала и что ищут вокруг неё.
           </p>
 
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="mb-4">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Найти тему — например, mary jane"
+              className="w-full sm:w-80 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            />
+            {query && (
+              <span className="ml-3 text-xs text-zinc-500">
+                поиск по всем темам, независимо от типа и региона · <button onClick={() => setQ('')} className="underline hover:text-zinc-300">сбросить</button>
+              </span>
+            )}
+          </div>
+
+          <div className={`flex flex-wrap gap-2 mb-4 ${query ? 'opacity-40 pointer-events-none' : ''}`}>
             {VIEWS.map((v) => (
               <button key={v.key} onClick={() => setView(v.key)} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${view === v.key ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'}`}>
                 {v.label}{data && v.key !== 'social' ? ` · ${data[v.key]?.length || 0}` : ''}
@@ -293,8 +313,8 @@ export default function TrendsPage() {
             ))}
           </div>
 
-          {view === 'social' ? <SocialFeed kinds={kinds} /> : (<>
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          {view === 'social' && !query ? <SocialFeed kinds={kinds} /> : (<>
+          <div className={`flex flex-wrap gap-1.5 mb-3 ${query ? 'opacity-40 pointer-events-none' : ''}`}>
             {KIND_TABS.map((t) => (
               <button key={t.key} onClick={() => { setKind(t.key); if (t.key !== 'item') setCategory(''); }} className={chip(kind === t.key)}>{t.label}</button>
             ))}
@@ -318,7 +338,10 @@ export default function TrendsPage() {
 
           {isLoading && <p className="text-zinc-500">Загружаю…</p>}
           {error && <p className="text-rose-400 text-sm">Не удалось загрузить тренды: {error.message}</p>}
-          {data && list.length === 0 && (
+          {data && list.length === 0 && query && (
+            <p className="text-zinc-500 text-center py-20">По запросу «{query}» ничего не нашлось.</p>
+          )}
+          {data && list.length === 0 && !query && (
             <p className="text-zinc-500 text-center py-20">
               Пока пусто. Тренды копятся с каждым прогоном — через пару дней картина станет видна. Скриншоты из соцсетей можно присылать боту уже сейчас.
             </p>

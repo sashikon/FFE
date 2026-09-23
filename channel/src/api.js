@@ -217,6 +217,14 @@ function startApi() {
         return send(res, 202, { ok: true, pending: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/trends') {
+        // поиск идёт мимо витрин: тема может не попасть ни в растущие, ни в топ
+        const q = (url.searchParams.get('q') || '').trim();
+        if (q) {
+          return send(res, 200, {
+            found: await trends.searchTerms(q), rising: [], top: [], fading: [],
+            kinds: trends.KINDS, categories: trends.CATEGORIES,
+          });
+        }
         return send(res, 200, await trends.listTrends({
           limit: 100,
           kind: url.searchParams.get('kind') || null,
