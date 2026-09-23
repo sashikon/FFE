@@ -16,6 +16,25 @@ const VIEWS = [
   { key: 'social', label: '📱 Соцсети' },
 ];
 
+const SORTS = [
+  { key: 'growth', label: 'по росту' },
+  { key: 'week', label: 'по упоминаниям' },
+  { key: 'new', label: 'сначала новые' },
+  { key: 'alpha', label: 'по алфавиту' },
+];
+
+// Быстрые вкладки по типам — то, что чаще всего нужно смотреть отдельно
+const KIND_TABS = [
+  { key: '', label: 'все' },
+  { key: 'brand', label: '🏷 Бренды' },
+  { key: 'item', label: '👗 Вещи' },
+  { key: 'aesthetic', label: '✨ Эстетики' },
+  { key: 'material', label: '🧵 Материалы' },
+  { key: 'color', label: '🎨 Цвета' },
+  { key: 'term', label: '💬 Термины' },
+  { key: 'sound', label: '🎵 Звуки' },
+];
+
 const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', screenshot: '📱 скриншоты', video: '🎬 видео' };
 const REGIONS = ['сша', 'британия', 'франция', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир', 'соцсети'];
 
@@ -220,10 +239,17 @@ export default function TrendsPage() {
   const [view, setView] = useState('rising');
   const [kind, setKind] = useState('');
   const [region, setRegion] = useState('');
+  const [sort, setSort] = useState('growth');
   const qs = new URLSearchParams({ ...(kind && { kind }), ...(region && { region }) }).toString();
   const { data, error, isLoading } = useSWR(`/api/channel-trends${qs ? `?${qs}` : ''}`, fetcher, { refreshInterval: 300000 });
-  const list = data?.[view] || [];
   const kinds = data?.kinds || {};
+  const sorters = {
+    growth: (a, b) => b.growth - a.growth || b.week - a.week,
+    week: (a, b) => b.week - a.week || b.total - a.total,
+    new: (a, b) => new Date(b.first_seen) - new Date(a.first_seen),
+    alpha: (a, b) => a.display.localeCompare(b.display, 'ru'),
+  };
+  const list = [...(data?.[view] || [])].sort(sorters[sort]);
 
   return (
     <>
@@ -257,9 +283,15 @@ export default function TrendsPage() {
           </div>
 
           {view === 'social' ? <SocialFeed kinds={kinds} /> : (<>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            <button onClick={() => setKind('')} className={chip(!kind)}>все типы</button>
-            {Object.entries(kinds).map(([k, label]) => <button key={k} onClick={() => setKind(k)} className={chip(kind === k)}>{label}</button>)}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {KIND_TABS.map((t) => (
+              <button key={t.key} onClick={() => setKind(t.key)} className={chip(kind === t.key)}>{t.label}</button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+            <span className="text-zinc-600 mr-1">сортировка:</span>
+            {SORTS.map((o) => <button key={o.key} onClick={() => setSort(o.key)} className={chip(sort === o.key)}>{o.label}</button>)}
           </div>
           <div className="flex flex-wrap gap-1.5 mb-8">
             <button onClick={() => setRegion('')} className={chip(!region)}>все регионы</button>
