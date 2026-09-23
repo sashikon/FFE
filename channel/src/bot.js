@@ -455,8 +455,9 @@ async function cmdSignals(chatId) {
   await tg.sendHtml(chatId, 'Проверяю внешние сигналы…');
   const s = await checkSignals();
   const when = (day) => (day ? `последний сбор ${day}` : 'сбора ещё не было');
+  const filterNote = (r) => (r.filtered === false ? '\n⚠️ фильтр по интересам не принят — в топе будет всё подряд, не только мода' : '');
   const block = (name, r) => (r.ok
-    ? `✅ <b>${name}</b> — отвечает, ${when(r.lastRun)}\nсейчас в топе: ${r.sample.map((x) => tg.escapeHtml(x)).join(', ') || '—'}`
+    ? `✅ <b>${name}</b> — отвечает, ${when(r.lastRun)}\nсейчас в топе: ${r.sample.map((x) => tg.escapeHtml(x)).join(', ') || '—'}${filterNote(r)}`
     : `❌ <b>${name}</b> — ${tg.escapeHtml(r.problem || 'не отвечает')}\n${when(r.lastRun)}`);
   return tg.sendHtml(chatId, [block('Pinterest', s.pinterest), block('Google Trends', s.google)].join('\n\n'));
 }

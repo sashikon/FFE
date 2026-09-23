@@ -502,21 +502,33 @@ async function reviseKinds(limit = 120) {
 const PINTEREST_REGIONS = { US: 'сша', 'GB+IE': 'британия', FR: 'франция', IT: 'италия', 'DE+AT+CH': 'европа' };
 const PINTEREST_TYPES = ['growing', 'monthly']; // что взлетает и что держится месяц
 const PINTEREST_LIMIT = 25;
+// Без фильтра в топ лезут обои, гача-игры и рецепты: у Pinterest своя аудитория
+const PINTEREST_INTERESTS = ['womens_fashion', 'mens_fashion'];
 
 const PINTEREST_FILTER_SYSTEM = `Тебе дают верхние поисковые запросы Pinterest по странам. Pinterest — это не только мода: там рецепты, интерьеры, ремонт, свадьбы, маникюр, обои для телефона. Выбери только то, что прямо про одежду, обувь, аксессуары, украшения, стиль, модные бренды или модные явления, и для каждого назови модную сущность по тем же правилам: term — канон в нижнем регистре (для мировых явлений по-английски), display — по-русски, kind.
 Запрос вида «fall outfits 2026» — это про моду, сущность здесь эстетика или вещь, а не сам запрос целиком. Если модных запросов нет — пустой список, это нормальный ответ.`;
 
-async function pinterestKeywords(region, type, token) {
+async function pinterestKeywords(region, type, token, { interests = PINTEREST_INTERESTS } = {}) {
   // нелатинский символ в переменной иначе падает невнятной ошибкой про ByteString
   if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('в маркере посторонние символы — похоже, скопировалось лишнее или не то поле');
-  const url = `https://api.pinterest.com/v5/trends/keywords/${encodeURIComponent(region)}/top/${type}?limit=${PINTEREST_LIMIT}`;
+  const params = new URLSearchParams({ limit: String(PINTEREST_LIMIT) });
+  for (const i of interests) params.append('interests', i);
+  const url = `https://api.pinterest.com/v5/trends/keywords/${encodeURIComponent(region)}/top/${type}?${params}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
   if (res.status === 401) throw new Error('маркер недействителен или истёк (маркер из панели живёт 30 дней) — выпустите новый и обновите PINTEREST_ACCESS_TOKEN');
   if (res.status === 403) throw new Error('приложению не выдан доступ к трендам (нужен скоуп user_accounts:read и одобренный доступ)');
   if (res.status === 429) throw new Error('превышен дневной лимит запросов');
+  // фильтр по интересам мог не подойти этому доступу — лучше общий топ, чем ничего
+  if (res.status === 400 && interests.length) {
+    console.warn('[trends] Pinterest: фильтр по интересам не принят, беру общий топ');
+    return pinterestKeywords(region, type, token, { interests: [] });
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  return (data.trends || []).map((t) => ({ keyword: String(t.keyword || '').trim(), growth: t.pct_growth_wow ?? null })).filter((t) => t.keyword);
+  const items = (data.trends || [])
+    .map((t) => ({ keyword: String(t.keyword || '').trim(), growth: t.pct_growth_wow ?? null }))
+    .filter((t) => t.keyword);
+  return { items, filtered: interests.length > 0 };
 }
 
 async function pinterestTrending() {
@@ -527,10 +539,13 @@ async function pinterestTrending() {
 
   const queries = [];
   const failures = [];
+  let unfiltered = 0;
   for (const [region, tag] of Object.entries(PINTEREST_REGIONS)) {
     for (const type of PINTEREST_TYPES) {
       try {
-        for (const k of await pinterestKeywords(region, type, token)) queries.push({ ...k, region, tag, type });
+        const { items, filtered } = await pinterestKeywords(region, type, token);
+        if (!filtered) unfiltered++;
+        for (const k of items) queries.push({ ...k, region, tag, type });
       } catch (e) {
         failures.push(`${region}/${type}: ${e.message}`);
       }
@@ -560,8 +575,8 @@ async function pinterestTrending() {
     saved++;
   }
   await setState('pinterest_day', day);
-  console.log(`[trends] Pinterest: запросов ${queries.length}, про моду ${saved}`);
-  return { queries: queries.length, fashion: saved, failures: failures.length };
+  console.log(`[trends] Pinterest: запросов ${queries.length}, про моду ${saved}${unfiltered ? `, без фильтра по интересам ${unfiltered}` : ''}`);
+  return { queries: queries.length, fashion: saved, failures: failures.length, unfiltered };
 }
 
 // Живая проверка внешних сигналов: молчаливый пропуск из-за опечатки в переменной
@@ -574,9 +589,10 @@ async function checkSignals() {
     out.pinterest.problem = 'PINTEREST_ACCESS_TOKEN не задан';
   } else {
     try {
-      const keywords = await pinterestKeywords('US', 'growing', token);
+      const { items, filtered } = await pinterestKeywords('US', 'growing', token);
       out.pinterest.ok = true;
-      out.pinterest.sample = keywords.slice(0, 3).map((k) => k.keyword);
+      out.pinterest.filtered = filtered;
+      out.pinterest.sample = items.slice(0, 3).map((k) => k.keyword);
     } catch (e) {
       out.pinterest.problem = e.message;
     }
