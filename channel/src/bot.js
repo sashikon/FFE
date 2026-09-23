@@ -4,6 +4,7 @@ const { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem } = requ
 const { analyzeScreenshot, saveScreenshot } = require('./screenshots');
 const video = require('./video');
 const { listTrends, KINDS, checkSignals } = require('./trends');
+const pinterest = require('./pinterest');
 const { findSlop } = require('./slop');
 const { activeRules, addRule, removeRule } = require('./learn');
 const actions = require('./actions');
@@ -308,6 +309,7 @@ const COMMANDS = {
   channel: ['Какой канал вижу и с какими правами', cmdChannel],
   trends: ['Какие темы растут и угасают', cmdTrends],
   signals: ['Проверить Pinterest и Google Trends', cmdSignals],
+  pinterest: ['Подключить Pinterest по OAuth или продлить доступ', cmdPinterest],
   videodiag: ['Почему ролик разобран только по обложке', cmdVideoDiag],
   setformats: ['Определить формат у постов без формата', cmdSetFormats],
   cleanall: ['Вычистить слоп во всех найденных постах', cmdCleanAll],
@@ -462,13 +464,51 @@ async function onAudio(chatId, msg) {
 }
 
 // Растущие и угасающие темы за неделю
+async function cmdPinterest(chatId) {
+  const info = await pinterest.tokenInfo();
+  const fmt = (iso) => new Date(iso).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', day: 'numeric', month: 'long' });
+
+  if (!pinterest.configured()) {
+    return tg.sendHtml(chatId, [
+      'Чтобы доступ продлевался сам, нужны три переменные в Railway:',
+      `• <b>${info.missing?.join('</b>\n• <b>') || '—'}</b>`,
+      '',
+      `Адрес возврата (PINTEREST_REDIRECT_URI) должен слово в слово совпадать с тем, что записан в приложении на developers.pinterest.com.`,
+      info.source === 'manual' ? '\nСейчас работает маркер из переменной — он живёт 30 дней.' : '',
+    ].filter(Boolean).join('\n'));
+  }
+
+  if (info.source === 'oauth') {
+    const lines = [
+      `Доступ по OAuth действует до <b>${fmt(info.expiresAt)}</b> и продлевается сам.`,
+      info.refreshExpiresAt ? `Право на продление — до ${fmt(info.refreshExpiresAt)}, каждое продление отодвигает эту дату.` : '',
+      '',
+      'Если что-то сломалось, можно выдать доступ заново — ссылка ниже.',
+    ];
+    await tg.sendHtml(chatId, lines.filter(Boolean).join('\n'));
+  }
+
+  const url = await pinterest.authUrl();
+  return tg.sendHtml(chatId, [
+    '🔗 <a href="' + url + '">Разрешить доступ к Pinterest</a>',
+    '',
+    'Откройте ссылку, войдите в Pinterest и подтвердите доступ. Дальше бот напишет сам.',
+    'Ссылка одноразовая и действует 15 минут — никому её не пересылайте.',
+  ].join('\n'), { link_preview_options: { is_disabled: true } });
+}
+
 async function cmdSignals(chatId) {
   await tg.sendHtml(chatId, 'Проверяю внешние сигналы…');
   const s = await checkSignals();
   const when = (day) => (day ? `последний сбор ${day}` : 'сбора ещё не было');
   const filterNote = (r) => (r.filtered === false ? '\n⚠️ фильтр по интересам не принят — в топе будет всё подряд, не только мода' : '');
+  const tokenNote = (r) => {
+    if (r.token?.source !== 'oauth') return r.token?.source === 'manual' ? '\nдоступ по маркеру из переменной — 30 дней, продлевать вручную (/pinterest)' : '';
+    const until = new Date(r.token.expiresAt).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', day: 'numeric', month: 'long' });
+    return `\nдоступ по OAuth до ${until}, продлевается сам`;
+  };
   const block = (name, r) => (r.ok
-    ? `✅ <b>${name}</b> — отвечает, ${when(r.lastRun)}\nсейчас в топе: ${r.sample.map((x) => tg.escapeHtml(x)).join(', ') || '—'}${filterNote(r)}`
+    ? `✅ <b>${name}</b> — отвечает, ${when(r.lastRun)}\nсейчас в топе: ${r.sample.map((x) => tg.escapeHtml(x)).join(', ') || '—'}${filterNote(r)}${tokenNote(r)}`
     : `❌ <b>${name}</b> — ${tg.escapeHtml(r.problem || 'не отвечает')}\n${when(r.lastRun)}`);
   return tg.sendHtml(chatId, [block('Pinterest', s.pinterest), block('Google Trends', s.google)].join('\n\n'));
 }

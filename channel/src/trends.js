@@ -1,6 +1,7 @@
 const Parser = require('rss-parser');
 const { pool, getState, setState } = require('./db');
 const { call, MODELS } = require('./llm');
+const pinterest = require('./pinterest');
 const sources = require('./sources');
 
 // Аналитика трендов: из заметок, поисковых трендов Google и скриншотов извлекаем сущности
@@ -531,9 +532,24 @@ async function pinterestKeywords(region, type, token, { interests = PINTEREST_IN
   return { items, filtered: interests.length > 0 };
 }
 
+// Истёкший маркер — обычное дело: пробуем обновить и повторить ровно один раз
+const EXPIRED = /маркер недействителен или истёк/;
+
+async function withFreshToken(fn, token) {
+  try {
+    return await fn(token);
+  } catch (e) {
+    if (!EXPIRED.test(e.message)) throw e;
+    const fresh = await pinterest.accessToken({ force: true }).catch(() => null);
+    if (!fresh || fresh === token) throw e;
+    console.log('[trends] Pinterest: маркер обновлён по refresh');
+    return fn(fresh);
+  }
+}
+
 async function pinterestTrending() {
-  const token = (process.env.PINTEREST_ACCESS_TOKEN || '').trim();
-  if (!token) return { skipped: 'нет PINTEREST_ACCESS_TOKEN' };
+  const token = await pinterest.accessToken();
+  if (!token) return { skipped: 'доступ к Pinterest не настроен' };
   const day = new Date().toISOString().slice(0, 10);
   if ((await getState('pinterest_day')) === day) return { skipped: true };
 
@@ -543,7 +559,7 @@ async function pinterestTrending() {
   for (const [region, tag] of Object.entries(PINTEREST_REGIONS)) {
     for (const type of PINTEREST_TYPES) {
       try {
-        const { items, filtered } = await pinterestKeywords(region, type, token);
+        const { items, filtered } = await withFreshToken((t) => pinterestKeywords(region, type, t), token);
         if (!filtered) unfiltered++;
         for (const k of items) queries.push({ ...k, region, tag, type });
       } catch (e) {
@@ -583,13 +599,16 @@ async function pinterestTrending() {
 // или истёкшего маркера иначе выглядит так же, как «трендов пока нет»
 async function checkSignals() {
   const out = { pinterest: {}, google: {} };
-  const token = (process.env.PINTEREST_ACCESS_TOKEN || '').trim();
+  const token = await pinterest.accessToken().catch(() => null);
   out.pinterest.lastRun = await getState('pinterest_day');
+  out.pinterest.token = await pinterest.tokenInfo().catch(() => ({ source: null }));
   if (!token) {
-    out.pinterest.problem = 'PINTEREST_ACCESS_TOKEN не задан';
+    out.pinterest.problem = out.pinterest.token.missing?.length
+      ? `доступ не настроен: нет ${out.pinterest.token.missing.join(', ')}`
+      : 'доступ к Pinterest не настроен — /pinterest';
   } else {
     try {
-      const { items, filtered } = await pinterestKeywords('US', 'growing', token);
+      const { items, filtered } = await withFreshToken((t) => pinterestKeywords('US', 'growing', t), token);
       out.pinterest.ok = true;
       out.pinterest.filtered = filtered;
       out.pinterest.sample = items.slice(0, 3).map((k) => k.keyword);
