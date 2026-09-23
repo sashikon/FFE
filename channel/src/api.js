@@ -9,6 +9,8 @@ const { draftFromItem } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
+const pinterest = require('./pinterest');
+const tg = require('./telegram');
 
 // Закрытый API для страницы «Канал» в админке игры: список постов и действия с ними.
 // Включается, только если задан CHANNEL_API_TOKEN; запрос должен нести его в заголовке x-channel-token
@@ -182,6 +184,8 @@ function send(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
+const escapeText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 function startApi() {
   if (!TOKEN) {
     console.log('[api] CHANNEL_API_TOKEN не задан — API для админки выключен');
@@ -192,6 +196,28 @@ function startApi() {
     try {
       const url = new URL(req.url, 'http://localhost');
       if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
+
+      // Адрес возврата Pinterest: сюда браузер владельца приходит после разрешения.
+      // Заголовка с нашим токеном тут быть не может, поэтому защита — одноразовый state
+      if (req.method === 'GET' && url.pathname === '/api/pinterest/callback') {
+        const page = (title, text) => {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`<!doctype html><meta charset="utf-8"><title>${title}</title>`
+            + '<body style="font:16px/1.5 system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem">'
+            + `<h1 style="font-size:1.25rem">${title}</h1><p>${text}</p></body>`);
+        };
+        const error = url.searchParams.get('error');
+        if (error) return page('Доступ не выдан', `Pinterest вернул: ${escapeText(error)}. Можно начать заново командой /pinterest в боте.`);
+        try {
+          const tokens = await pinterest.exchangeCode(url.searchParams.get('code'), url.searchParams.get('state'));
+          const until = new Date(tokens.expires_at).toLocaleString('ru-RU', { timeZone: process.env.TZ || 'Europe/Moscow', day: 'numeric', month: 'long' });
+          await tg.sendHtml(tg.OWNER, `✅ Pinterest подключён по OAuth. Доступ действует до ${until} и будет продлеваться сам.`).catch(() => {});
+          return page('Готово', 'Pinterest подключён, вкладку можно закрыть. Бот написал подтверждение.');
+        } catch (e) {
+          return page('Не получилось', `${escapeText(e.message)}`);
+        }
+      }
+
       if (!authorized(req)) return send(res, 401, { error: 'Unauthorized' });
       if (req.method === 'GET' && url.pathname === '/api/posts') {
         return send(res, 200, await listPosts(url.searchParams.get('status') || 'all'));
