@@ -63,6 +63,14 @@ function Detail({ id }) {
   const suggestions = data.term.suggestions || [];
   return (
     <div className="mt-3 pt-3 border-t border-zinc-800 space-y-3">
+      {(data.parent || data.models?.length > 0) && (
+        <div className="text-xs text-zinc-400">
+          {data.parent && <p>Вид: <span className="text-zinc-300">{data.parent.display}</span></p>}
+          {data.models?.length > 0 && (
+            <p>Модели внутри: {data.models.map((m) => `${m.display} (${m.mentions})`).join(', ')}</p>
+          )}
+        </div>
+      )}
       {suggestions.length > 0 && (
         <div>
           <p className="text-xs text-zinc-500 mb-1">Что ищут в Google вокруг темы:</p>
@@ -213,7 +221,9 @@ function TrendRow({ t, kinds }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="min-w-[180px] flex-1">
             <span className="text-zinc-100">{t.display}</span>
-            <span className="ml-2 text-[11px] text-zinc-500">{kinds[t.kind] || t.kind}</span>
+            <span className="ml-2 text-[11px] text-zinc-500">{t.category || kinds[t.kind] || t.kind}</span>
+            {t.parent && <span className="ml-2 text-[11px] text-zinc-600">вид: {t.parent}</span>}
+            {t.models > 0 && <span className="ml-2 text-[11px] text-zinc-600">моделей: {t.models}</span>}
             {t.is_new && <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px]">новое</span>}
           </div>
           <Sparkline weeks={t.weeks} />
@@ -240,7 +250,8 @@ export default function TrendsPage() {
   const [kind, setKind] = useState('');
   const [region, setRegion] = useState('');
   const [sort, setSort] = useState('growth');
-  const qs = new URLSearchParams({ ...(kind && { kind }), ...(region && { region }) }).toString();
+  const [category, setCategory] = useState('');
+  const qs = new URLSearchParams({ ...(kind && { kind }), ...(region && { region }), ...(category && { category }) }).toString();
   const { data, error, isLoading } = useSWR(`/api/channel-trends${qs ? `?${qs}` : ''}`, fetcher, { refreshInterval: 300000 });
   const kinds = data?.kinds || {};
   const sorters = {
@@ -285,9 +296,16 @@ export default function TrendsPage() {
           {view === 'social' ? <SocialFeed kinds={kinds} /> : (<>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {KIND_TABS.map((t) => (
-              <button key={t.key} onClick={() => setKind(t.key)} className={chip(kind === t.key)}>{t.label}</button>
+              <button key={t.key} onClick={() => { setKind(t.key); if (t.key !== 'item') setCategory(''); }} className={chip(kind === t.key)}>{t.label}</button>
             ))}
           </div>
+
+          {kind === 'item' && data?.categories && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button onClick={() => setCategory('')} className={chip(!category)}>любая категория</button>
+              {data.categories.map((c) => <button key={c} onClick={() => setCategory(c)} className={chip(category === c)}>{c}</button>)}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
             <span className="text-zinc-600 mr-1">сортировка:</span>
