@@ -16,6 +16,9 @@ const KINDS = {
   sound: 'звук',
 };
 
+// Категории для вещей: «вещь» — слишком крупный ящик, обувь и сумки живут отдельно
+const CATEGORIES = ['обувь', 'одежда', 'верхняя одежда', 'бельё', 'сумки', 'аксессуары', 'украшения', 'головные уборы', 'очки', 'другое'];
+
 const REGION_TAGS = ['сша', 'британия', 'франция', 'италия', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир'];
 const REGION_BY_FEED = Object.fromEntries(sources.map((s) => [s.name, (s.tags || []).find((t) => REGION_TAGS.includes(t)) || 'мир']));
 
@@ -36,10 +39,15 @@ const EXTRACT_SYSTEM = `Ты аналитик модных трендов. Те�
 - term — канон в нижнем регистре, латиницей: общепринятое английское название («quiet luxury», «balletcore», «leather jacket», «dupe») или имя бренда как он пишется («miu miu», «uniqlo»). Одно явление — всегда один и тот же канон, на каком бы языке ни была заметка: 「レザージャケット」, «кожаная куртка» и «leather jacket» — это один term «leather jacket».
 - display — понятное название по-русски: «Кожаная куртка», «Балеткор», «Тихая роскошь». Исключение — бренды и устойчивые английские ярлыки, которые по-русски не говорят: «Miu Miu», «Quiet luxury», «Barrel jeans».
 - Иероглифов и хангыля в term и display быть не должно, кроме названий брендов.
+- category — только для kind = item: одна из «обувь», «одежда», «верхняя одежда», «бельё», «сумки», «аксессуары», «украшения», «головные уборы», «очки», «другое». Для остальных типов оставь пустым.
+- parent — только для конкретной модели: вид, к которому она относится. «adidas samba jane» → parent «mary jane»; «nike air force 1» → parent «sneakers». Для самого вида parent пустой.
 - term — это само явление, а не его категория: «bra», а не «item»; «suede», а не «material»; «miu miu», а не «brand». Слова item, brand, term, aesthetic, material, color, sound в поле term недопустимы.
 
-Пример ответа для заметки «#12 Calvin Klein launches Perfectly Fit bra»:
-{"id": 12, "entities": [{"term": "bra", "display": "Бюстгальтер", "kind": "item"}, {"term": "calvin klein", "display": "Calvin Klein", "kind": "brand"}]}
+Примеры ответов:
+«#12 Calvin Klein launches Perfectly Fit bra» →
+{"id": 12, "entities": [{"term": "bra", "display": "Бюстгальтер", "kind": "item", "category": "бельё", "parent": ""}, {"term": "calvin klein", "display": "Calvin Klein", "kind": "brand", "category": "", "parent": ""}]}
+«#13 adidas' Samba Mary Jane Is the Leader of the Herd» →
+{"id": 13, "entities": [{"term": "mary jane", "display": "Мэри-джейн", "kind": "item", "category": "обувь", "parent": ""}, {"term": "adidas samba jane", "display": "Adidas Samba Jane", "kind": "item", "category": "обувь", "parent": "mary jane"}, {"term": "adidas", "display": "Adidas", "kind": "brand", "category": "", "parent": ""}]}
 - Не выписывай общие слова (мода, коллекция, бренд, показ, неделя моды, одежда, продажи), людей, города, компании вне моды.
 - Не больше 5 сущностей на заметку. Если в заметке нет модной сущности — пустой список. Это частый ответ.`;
 
@@ -60,8 +68,10 @@ const EXTRACT_SCHEMA = {
                 term: { type: 'string' },
                 display: { type: 'string' },
                 kind: { type: 'string', enum: Object.keys(KINDS) },
+                category: { type: 'string' },
+                parent: { type: 'string' },
               },
-              required: ['term', 'display', 'kind'],
+              required: ['term', 'display', 'kind', 'category', 'parent'],
               additionalProperties: false,
             },
           },
@@ -85,15 +95,26 @@ const JUNK_TERMS = new Set([
 
 const canon = (t) => String(t || '').toLowerCase().replace(/[«»"“”]/g, '').replace(/\s+/g, ' ').trim();
 
-async function upsertTerm({ term, display, kind }) {
+async function upsertTerm({ term, display, kind, category, parent }) {
   const key = canon(term);
   if (!key || key.length < 2 || key.length > 100 || JUNK_TERMS.has(key)) return null;
+  const cat = CATEGORIES.includes(String(category || '').toLowerCase()) ? String(category).toLowerCase() : null;
   const { rows: [row] } = await pool.query(
-    `INSERT INTO trend_terms (term, display, kind) VALUES ($1, $2, $3)
-     ON CONFLICT (term) DO UPDATE SET term = EXCLUDED.term
+    `INSERT INTO trend_terms (term, display, kind, category) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (term) DO UPDATE SET
+       category = COALESCE(trend_terms.category, EXCLUDED.category),
+       -- подпись, созданную автоматически (равна каноническому названию), заменяем нормальной
+       display = CASE WHEN trend_terms.display = trend_terms.term THEN EXCLUDED.display ELSE trend_terms.display END
      RETURNING id`,
-    [key, String(display || term).trim().slice(0, 100), KINDS[kind] ? kind : 'term']
+    [key, String(display || term).trim().slice(0, 100), KINDS[kind] ? kind : 'term', cat]
   );
+
+  // модель обуви или сумки привязываем к её виду: «adidas samba jane» → «mary jane»
+  const parentKey = canon(parent);
+  if (parentKey && parentKey !== key && !JUNK_TERMS.has(parentKey)) {
+    const parentId = await upsertTerm({ term: parentKey, display: parent, kind: 'item', category: cat });
+    if (parentId) await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
+  }
   return row.id;
 }
 
@@ -331,17 +352,79 @@ async function normalizeTerms(limit = 60) {
   return { renamed, merged };
 }
 
+// Разметка уже накопленных вещей: категория (обувь, сумки…) и вид для моделей
+const CLASSIFY_SYSTEM = `Тебе дают темы модных трендов типа «вещь». Для каждой определи:
+- category — одна из: ${CATEGORIES.join(', ')};
+- parent — если это конкретная модель, назови вид, к которому она относится, в нижнем регистре латиницей («adidas samba jane» → «mary jane», «nike air force 1» → «sneakers»). Если это сам вид или что-то общее — пустая строка.
+Отвечай по каждой теме.`;
+
+const CLASSIFY_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, category: { type: 'string' }, parent: { type: 'string' } },
+        required: ['id', 'category', 'parent'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+};
+
+async function classifyItems(limit = 60) {
+  const { rows } = await pool.query(
+    `SELECT id, term, display FROM trend_terms WHERE kind = 'item' AND category IS NULL ORDER BY id LIMIT $1`,
+    [limit]
+  );
+  if (!rows.length) return { classified: 0, linked: 0 };
+
+  const { results } = await call({
+    model: MODELS.cheap,
+    system: CLASSIFY_SYSTEM,
+    user: rows.map((r) => `${r.id}. ${r.display} (${r.term})`).join('\n'),
+    schema: CLASSIFY_SCHEMA,
+    maxTokens: 4000,
+  });
+
+  let classified = 0;
+  let linked = 0;
+  for (const r of results) {
+    const row = rows.find((x) => x.id === r.id);
+    if (!row) continue;
+    const cat = CATEGORIES.includes(String(r.category || '').toLowerCase()) ? String(r.category).toLowerCase() : 'другое';
+    await pool.query('UPDATE trend_terms SET category = $1 WHERE id = $2', [cat, row.id]);
+    classified++;
+
+    const parentKey = canon(r.parent);
+    if (parentKey && parentKey !== row.term && !JUNK_TERMS.has(parentKey)) {
+      const parentId = await upsertTerm({ term: parentKey, display: parentKey, kind: 'item', category: cat });
+      if (parentId && parentId !== row.id) {
+        await pool.query('UPDATE trend_terms SET parent_id = $1 WHERE id = $2 AND parent_id IS NULL', [parentId, row.id]);
+        linked++;
+      }
+    }
+  }
+  console.log(`[trends] размечено вещей: ${classified}, привязано моделей: ${linked}`);
+  return { classified, linked };
+}
+
 // ─── Расчёт трендов ─────────────────────────────────────────────────────────
 
 // Рост: упоминания за последние 7 дней против предыдущих 7; вес — число разных источников
-async function listTrends({ limit = 100, kind = null, region = null } = {}) {
+async function listTrends({ limit = 100, kind = null, region = null, category = null } = {}) {
   const { rows } = await pool.query(
     `WITH m AS (
        SELECT term_id, feed, region, signal, seen_at FROM trend_mentions
        WHERE seen_at > NOW() - INTERVAL '56 days'
          AND ($1::text IS NULL OR region = $1)
      )
-     SELECT t.id, t.term, t.display, t.kind, t.first_seen, t.suggestions,
+     SELECT t.id, t.term, t.display, t.kind, t.category, t.first_seen, t.suggestions,
+            (SELECT p.display FROM trend_terms p WHERE p.id = t.parent_id) AS parent,
+            (SELECT COUNT(*)::int FROM trend_terms c WHERE c.parent_id = t.id) AS models,
             COUNT(*) FILTER (WHERE m.seen_at > NOW() - INTERVAL '7 days')::int AS week,
             COUNT(*) FILTER (WHERE m.seen_at <= NOW() - INTERVAL '7 days' AND m.seen_at > NOW() - INTERVAL '14 days')::int AS prev_week,
             COUNT(*)::int AS total,
@@ -356,9 +439,9 @@ async function listTrends({ limit = 100, kind = null, region = null } = {}) {
               GROUP BY w ORDER BY w DESC
             ) AS weeks
      FROM trend_terms t JOIN m ON m.term_id = t.id
-     WHERE ($2::text IS NULL OR t.kind = $2)
+     WHERE ($2::text IS NULL OR t.kind = $2) AND ($3::text IS NULL OR t.category = $3)
      GROUP BY t.id`,
-    [region, kind]
+    [region, kind, category]
   );
 
   const scored = rows.map((r) => ({
@@ -379,7 +462,7 @@ async function listTrends({ limit = 100, kind = null, region = null } = {}) {
     .sort((a, b) => b.prev_week - a.prev_week)
     .slice(0, 20);
 
-  return { rising, top, fading, kinds: KINDS };
+  return { rising, top, fading, kinds: KINDS, categories: CATEGORIES };
 }
 
 async function termDetail(termId) {
@@ -391,7 +474,16 @@ async function termDetail(termId) {
      WHERE m.term_id = $1 ORDER BY m.seen_at DESC LIMIT 60`,
     [termId]
   );
-  return { term, mentions };
+  const { rows: models } = await pool.query(
+    `SELECT c.id, c.display, COUNT(m.*)::int AS mentions
+     FROM trend_terms c LEFT JOIN trend_mentions m ON m.term_id = c.id
+     WHERE c.parent_id = $1 GROUP BY c.id ORDER BY mentions DESC`,
+    [termId]
+  );
+  const { rows: [parent] } = await pool.query(
+    'SELECT p.id, p.display FROM trend_terms t JOIN trend_terms p ON p.id = t.parent_id WHERE t.id = $1', [termId]
+  );
+  return { term, mentions, models, parent: parent || null };
 }
 
 // Всё за прогон: сущности из новых заметок, Google Trends раз в день, подсказки для растущих
@@ -399,9 +491,10 @@ async function runTrends() {
   const junk = await cleanupJunkTerms().catch((e) => ({ error: e.message }));
   const extracted = await extractTrends();
   const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
+  const classified = await classifyItems().catch((e) => ({ error: e.message }));
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { junk, extracted, normalized, search, suggestions };
+  return { junk, extracted, normalized, classified, search, suggestions };
 }
 
-module.exports = { KINDS, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };

@@ -221,6 +221,7 @@ function startApi() {
           limit: 100,
           kind: url.searchParams.get('kind') || null,
           region: url.searchParams.get('region') || null,
+          category: url.searchParams.get('category') || null,
         }));
       }
       const trendMatch = url.pathname.match(/^\/api\/trends\/(\d+)$/);
