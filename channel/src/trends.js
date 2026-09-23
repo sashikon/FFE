@@ -36,6 +36,10 @@ const EXTRACT_SYSTEM = `Ты аналитик модных трендов. Те�
 - term — канон в нижнем регистре, латиницей: общепринятое английское название («quiet luxury», «balletcore», «leather jacket», «dupe») или имя бренда как он пишется («miu miu», «uniqlo»). Одно явление — всегда один и тот же канон, на каком бы языке ни была заметка: 「レザージャケット」, «кожаная куртка» и «leather jacket» — это один term «leather jacket».
 - display — понятное название по-русски: «Кожаная куртка», «Балеткор», «Тихая роскошь». Исключение — бренды и устойчивые английские ярлыки, которые по-русски не говорят: «Miu Miu», «Quiet luxury», «Barrel jeans».
 - Иероглифов и хангыля в term и display быть не должно, кроме названий брендов.
+- term — это само явление, а не его категория: «bra», а не «item»; «suede», а не «material»; «miu miu», а не «brand». Слова item, brand, term, aesthetic, material, color, sound в поле term недопустимы.
+
+Пример ответа для заметки «#12 Calvin Klein launches Perfectly Fit bra»:
+{"id": 12, "entities": [{"term": "bra", "display": "Бюстгальтер", "kind": "item"}, {"term": "calvin klein", "display": "Calvin Klein", "kind": "brand"}]}
 - Не выписывай общие слова (мода, коллекция, бренд, показ, неделя моды, одежда, продажи), людей, города, компании вне моды.
 - Не больше 5 сущностей на заметку. Если в заметке нет модной сущности — пустой список. Это частый ответ.`;
 
@@ -71,11 +75,19 @@ const EXTRACT_SCHEMA = {
   additionalProperties: false,
 };
 
+// Слова, которые не могут быть темой: названия категорий и общие слова про моду
+const JUNK_TERMS = new Set([
+  ...Object.keys(KINDS),
+  'мода', 'fashion', 'style', 'стиль', 'одежда', 'clothes', 'clothing', 'apparel',
+  'бренд', 'бренды', 'brands', 'тренд', 'тренды', 'trend', 'trends',
+  'коллекция', 'collection', 'образ', 'look', 'аксессуары', 'accessories', 'вещь', 'вещи',
+]);
+
 const canon = (t) => String(t || '').toLowerCase().replace(/[«»"“”]/g, '').replace(/\s+/g, ' ').trim();
 
 async function upsertTerm({ term, display, kind }) {
   const key = canon(term);
-  if (!key || key.length < 2 || key.length > 100) return null;
+  if (!key || key.length < 2 || key.length > 100 || JUNK_TERMS.has(key)) return null;
   const { rows: [row] } = await pool.query(
     `INSERT INTO trend_terms (term, display, kind) VALUES ($1, $2, $3)
      ON CONFLICT (term) DO UPDATE SET term = EXCLUDED.term
@@ -229,6 +241,29 @@ async function refreshSuggestions(limit = 15) {
   return done;
 }
 
+// Темы-категории («item», «brand»), в которые модель слила несвязанные заметки: убираем их,
+// а заметки отправляем на повторный разбор
+async function cleanupJunkTerms() {
+  const junk = [...JUNK_TERMS];
+  const { rows: terms } = await pool.query('SELECT id, term FROM trend_terms WHERE term = ANY($1)', [junk]);
+  if (!terms.length) return { removed: 0, requeued: 0 };
+
+  const ids = terms.map((t) => t.id);
+  const { rows: affected } = await pool.query('SELECT DISTINCT item_id FROM trend_mentions WHERE term_id = ANY($1) AND item_id IS NOT NULL', [ids]);
+  await pool.query('DELETE FROM trend_terms WHERE id = ANY($1)', [ids]); // упоминания уйдут каскадом
+
+  const itemIds = affected.map((a) => a.item_id);
+  let requeued = 0;
+  if (itemIds.length) {
+    // разбираем заново все затронутые заметки: вместо категории у них могла быть настоящая вещь.
+    // Повтор безопасен — уже записанные упоминания не задваиваются
+    const { rowCount } = await pool.query('UPDATE items SET trends_done = FALSE WHERE id = ANY($1)', [itemIds]);
+    requeued = rowCount;
+  }
+  console.log(`[trends] убрано тем-категорий: ${terms.length} (${terms.map((t) => t.term).join(', ')}), на повторный разбор: ${requeued}`);
+  return { removed: terms.length, requeued };
+}
+
 // ─── Приведение старых тем к канону ─────────────────────────────────────────
 // Раньше промпт разрешал оставлять «местные» явления на языке оригинала, и в темах
 // оказались японские и корейские названия обычных вещей. Переименовываем и склеиваем с дублями.
@@ -361,11 +396,12 @@ async function termDetail(termId) {
 
 // Всё за прогон: сущности из новых заметок, Google Trends раз в день, подсказки для растущих
 async function runTrends() {
+  const junk = await cleanupJunkTerms().catch((e) => ({ error: e.message }));
   const extracted = await extractTrends();
   const normalized = await normalizeTerms().catch((e) => ({ error: e.message }));
   const search = await googleTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { extracted, normalized, search, suggestions };
+  return { junk, extracted, normalized, search, suggestions };
 }
 
-module.exports = { KINDS, runTrends, extractTrends, normalizeTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
