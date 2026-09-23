@@ -495,6 +495,104 @@ async function reviseKinds(limit = 120) {
   return { checked, moved };
 }
 
+// ─── Pinterest Trends ───────────────────────────────────────────────────────
+// Эндпоинт /v5/trends/keywords отдаёт верхние поисковые запросы Pinterest по региону.
+// Маркер из панели разработчика живёт 30 дней — истёк даёт 401, об этом пишем в лог явно.
+
+const PINTEREST_REGIONS = { US: 'сша', 'GB+IE': 'британия', FR: 'франция', IT: 'италия', 'DE+AT+CH': 'европа' };
+const PINTEREST_TYPES = ['growing', 'monthly']; // что взлетает и что держится месяц
+const PINTEREST_LIMIT = 25;
+
+const PINTEREST_FILTER_SYSTEM = `Тебе дают верхние поисковые запросы Pinterest по странам. Pinterest — это не только мода: там рецепты, интерьеры, ремонт, свадьбы, маникюр, обои для телефона. Выбери только то, что прямо про одежду, обувь, аксессуары, украшения, стиль, модные бренды или модные явления, и для каждого назови модную сущность по тем же правилам: term — канон в нижнем регистре (для мировых явлений по-английски), display — по-русски, kind.
+Запрос вида «fall outfits 2026» — это про моду, сущность здесь эстетика или вещь, а не сам запрос целиком. Если модных запросов нет — пустой список, это нормальный ответ.`;
+
+async function pinterestKeywords(region, type, token) {
+  // нелатинский символ в переменной иначе падает невнятной ошибкой про ByteString
+  if (!/^[\x21-\x7e]+$/.test(token)) throw new Error('в маркере посторонние символы — похоже, скопировалось лишнее или не то поле');
+  const url = `https://api.pinterest.com/v5/trends/keywords/${encodeURIComponent(region)}/top/${type}?limit=${PINTEREST_LIMIT}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
+  if (res.status === 401) throw new Error('маркер недействителен или истёк (маркер из панели живёт 30 дней) — выпустите новый и обновите PINTEREST_ACCESS_TOKEN');
+  if (res.status === 403) throw new Error('приложению не выдан доступ к трендам (нужен скоуп user_accounts:read и одобренный доступ)');
+  if (res.status === 429) throw new Error('превышен дневной лимит запросов');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return (data.trends || []).map((t) => ({ keyword: String(t.keyword || '').trim(), growth: t.pct_growth_wow ?? null })).filter((t) => t.keyword);
+}
+
+async function pinterestTrending() {
+  const token = (process.env.PINTEREST_ACCESS_TOKEN || '').trim();
+  if (!token) return { skipped: 'нет PINTEREST_ACCESS_TOKEN' };
+  const day = new Date().toISOString().slice(0, 10);
+  if ((await getState('pinterest_day')) === day) return { skipped: true };
+
+  const queries = [];
+  const failures = [];
+  for (const [region, tag] of Object.entries(PINTEREST_REGIONS)) {
+    for (const type of PINTEREST_TYPES) {
+      try {
+        for (const k of await pinterestKeywords(region, type, token)) queries.push({ ...k, region, tag, type });
+      } catch (e) {
+        failures.push(`${region}/${type}: ${e.message}`);
+      }
+    }
+  }
+  if (failures.length) console.warn(`[trends] Pinterest: ${failures[0]}${failures.length > 1 ? ` (и ещё ${failures.length - 1})` : ''}`);
+  if (!queries.length) return { queries: 0, fashion: 0, error: failures[0] || null };
+
+  // одно слово может быть в нескольких странах — спрашиваем модель про каждое один раз,
+  // а упоминание ставим по каждой стране, иначе тема теряет географию
+  const unique = [...new Map(queries.map((q) => [canon(q.keyword), q])).values()];
+  const list = unique.map((q) => q.keyword).join('\n');
+  const { results } = await call({ model: MODELS.cheap, system: PINTEREST_FILTER_SYSTEM, user: list, schema: SEARCH_SCHEMA, maxTokens: 4000 });
+  const byKeyword = new Map(results.map((r) => [canon(r.query).replace(/^[a-z+]{2,10}:\s*/i, ''), r]));
+
+  let saved = 0;
+  const seen = new Set();
+  for (const q of queries) {
+    const entity = byKeyword.get(canon(q.keyword));
+    // «растущее» и «месячное» по одной стране — это один сигнал, а не два
+    const ref = `pinterest:${q.region}:${day}:${canon(q.keyword)}`;
+    if (!entity || seen.has(ref)) continue;
+    seen.add(ref);
+    const termId = await upsertTerm(entity);
+    if (!termId) continue;
+    await addMention(termId, { signal: 'pinterest', ref, feed: 'Pinterest Trends', region: q.tag });
+    saved++;
+  }
+  await setState('pinterest_day', day);
+  console.log(`[trends] Pinterest: запросов ${queries.length}, про моду ${saved}`);
+  return { queries: queries.length, fashion: saved, failures: failures.length };
+}
+
+// Живая проверка внешних сигналов: молчаливый пропуск из-за опечатки в переменной
+// или истёкшего маркера иначе выглядит так же, как «трендов пока нет»
+async function checkSignals() {
+  const out = { pinterest: {}, google: {} };
+  const token = (process.env.PINTEREST_ACCESS_TOKEN || '').trim();
+  out.pinterest.lastRun = await getState('pinterest_day');
+  if (!token) {
+    out.pinterest.problem = 'PINTEREST_ACCESS_TOKEN не задан';
+  } else {
+    try {
+      const keywords = await pinterestKeywords('US', 'growing', token);
+      out.pinterest.ok = true;
+      out.pinterest.sample = keywords.slice(0, 3).map((k) => k.keyword);
+    } catch (e) {
+      out.pinterest.problem = e.message;
+    }
+  }
+
+  out.google.lastRun = await getState('gtrends_day');
+  try {
+    const feed = await parser.parseURL('https://trends.google.com/trending/rss?geo=US');
+    out.google.ok = true;
+    out.google.sample = (feed.items || []).slice(0, 3).map((e) => String(e.title || '').trim());
+  } catch (e) {
+    out.google.problem = e.message;
+  }
+  return out;
+}
+
 // ─── Расчёт трендов ─────────────────────────────────────────────────────────
 
 // Рост: упоминания за последние 7 дней против предыдущих 7; вес — число разных источников
@@ -531,12 +629,12 @@ async function listTrends({ limit = 100, kind = null, region = null, category = 
     ...r,
     growth: (r.week + 1) / (r.prev_week + 1),
     // растущие: заметный рост и хотя бы два источника или поисковый сигнал
-    score: ((r.week + 1) / (r.prev_week + 1)) * Math.log2(1 + r.feeds) * (r.signals.includes('search') ? 1.5 : 1),
+    score: ((r.week + 1) / (r.prev_week + 1)) * Math.log2(1 + r.feeds) * (r.signals.some((x) => ['search', 'pinterest'].includes(x)) ? 1.5 : 1),
     is_new: Date.now() - new Date(r.first_seen).getTime() < 7 * 24 * 3600e3,
   }));
 
   const rising = scored
-    .filter((r) => r.week >= 2 && (r.feeds >= 2 || r.signals.some((x) => ['search', 'screenshot', 'video'].includes(x))) && r.week > r.prev_week)
+    .filter((r) => r.week >= 2 && (r.feeds >= 2 || r.signals.some((x) => ['search', 'pinterest', 'screenshot', 'video'].includes(x))) && r.week > r.prev_week)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
   const top = [...scored].sort((a, b) => b.week - a.week || b.total - a.total).slice(0, limit);
@@ -605,8 +703,9 @@ async function runTrends() {
   const revised = await reviseKinds().catch((e) => ({ error: e.message }));
   const classified = await classifyItems().catch((e) => ({ error: e.message }));
   const search = await googleTrending().catch((e) => ({ error: e.message }));
+  const pinterest = await pinterestTrending().catch((e) => ({ error: e.message }));
   const suggestions = await refreshSuggestions().catch(() => 0);
-  return { junk, extracted, normalized, revised, classified, search, suggestions };
+  return { junk, extracted, normalized, revised, classified, search, pinterest, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };

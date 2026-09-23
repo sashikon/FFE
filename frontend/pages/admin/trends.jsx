@@ -35,7 +35,7 @@ const KIND_TABS = [
   { key: 'sound', label: '🎵 Звуки' },
 ];
 
-const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', screenshot: '📱 скриншоты', video: '🎬 видео' };
+const SIGNAL_LABEL = { news: '📰 пресса', search: '🔎 Google', pinterest: '📌 Pinterest', screenshot: '📱 скриншоты', video: '🎬 видео' };
 const REGIONS = ['сша', 'британия', 'франция', 'италия', 'европа', 'россия', 'корея', 'япония', 'китай', 'индия', 'мир', 'соцсети'];
 
 const chip = (active) => `px-2 py-1 rounded-lg text-xs transition-colors ${active ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`;
