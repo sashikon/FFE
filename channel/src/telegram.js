@@ -92,7 +92,8 @@ function reviewKeyboard(postId, hasImage) {
 
 async function sendReview(postId) {
   const { rows: [p] } = await pool.query(
-    `SELECT p.text, p.format, p.image_url, i.lens, i.thesis, c.score
+    `SELECT p.text, p.format, p.image_url, i.lens, i.thesis, c.score,
+            i.data->'research'->'sources' AS research_sources
      FROM posts p JOIN insights i ON i.id = p.insight_id JOIN clusters c ON c.id = i.cluster_id
      WHERE p.id = $1`,
     [postId]
@@ -102,7 +103,12 @@ async function sendReview(postId) {
   const slopLine = slop.length
     ? `\n⚠️ шаблоны: ${slop.slice(0, 5).map((h) => `«${escapeHtml(h.match)}»`).join(', ')}${slop.length > 5 ? ` и ещё ${slop.length - 5}` : ''}`
     : '';
-  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}${slopLine}</i>`;
+  // откуда взялись даты и имена в посте — чтобы их можно было проверить до публикации
+  const sources = Array.isArray(p.research_sources) ? p.research_sources.slice(0, 3) : [];
+  const researchLine = sources.length
+    ? `\nсправка: ${sources.map((u, i) => `<a href="${escapeHtml(u)}">${i + 1}</a>`).join(' · ')}`
+    : '';
+  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}${slopLine}${researchLine}</i>`;
   const msg = await sendHtml(OWNER, withSignature(p.text) + meta, {
     reply_markup: reviewKeyboard(postId, Boolean(p.image_url)),
     ...previewFor(p.image_url),

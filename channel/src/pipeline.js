@@ -8,6 +8,7 @@ const { refreshLibrary, pickImage } = require('./library');
 const { activeRules } = require('./learn');
 const { withBrandLogo } = require('./brand');
 const { runTrends } = require('./trends');
+const { researchOrigin } = require('./research');
 const { cleanInvisible, findSlop, describeSlop } = require('./slop');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
@@ -71,10 +72,15 @@ async function makeInsight(clusterId, format, force = false) {
   const { rows: memory } = await pool.query(
     `SELECT thesis FROM insights ORDER BY created_at DESC LIMIT 40`
   );
+  // истоки вещи ищем в вебе: своей памяти модели на даты и имена доверять нельзя
+  const research = await researchOrigin(items).catch((e) => {
+    console.warn(`[research] справка не собралась: ${e.message}`);
+    return null;
+  });
   const insight = await call({
     model: MODELS.smart,
     system: P.INSIGHT_SYSTEM,
-    user: P.insightUser(items, memory.map((m) => m.thesis), format),
+    user: P.insightUser(items, memory.map((m) => m.thesis), format, research),
     schema: P.INSIGHT_SCHEMA,
   });
 
@@ -90,7 +96,7 @@ async function makeInsight(clusterId, format, force = false) {
 
   const { rows: [row] } = await pool.query(
     `INSERT INTO insights (cluster_id, data, thesis, lens, format) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [clusterId, JSON.stringify(insight), insight.thesis, insight.lens, format.key]
+    [clusterId, JSON.stringify({ ...insight, research: research || undefined }), insight.thesis, insight.lens, format.key]
   );
   await pool.query(`UPDATE clusters SET status = 'insight' WHERE id = $1`, [clusterId]);
   return row.id;

@@ -56,4 +56,25 @@ async function call({ model, system, user, schema, maxTokens = 16000, cache = fa
   }
 }
 
-module.exports = { call, MODELS };
+// Поиск по вебу серверным инструментом Anthropic: модель сама ищет и возвращает текст
+// со ссылками на источники. Отдельным вызовом, а не внутри разбора, — со структурным
+// ответом инструменты не совмещаются, да и справку потом видно отдельно.
+const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 };
+
+async function callWithSearch({ model, system, user, maxTokens = 4000, maxSearches = 5 }) {
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content: user }],
+    tools: [{ ...WEB_SEARCH_TOOL, max_uses: maxSearches }],
+  });
+  const text = textOf(response);
+  const sources = [...new Set(
+    response.content.flatMap((b) => (b.citations || []).map((c) => c.url)).filter(Boolean)
+  )];
+  const searches = response.content.filter((b) => b.type === 'server_tool_use').length;
+  return { text, sources, searches };
+}
+
+module.exports = { call, callWithSearch, MODELS };
