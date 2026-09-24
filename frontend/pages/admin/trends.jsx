@@ -58,11 +58,38 @@ function Sparkline({ weeks }) {
 
 function Detail({ id }) {
   const { data, error } = useSWR(`/api/channel-trends/${id}`, fetcher);
+  const [drafting, setDrafting] = useState(null);
   if (error) return <p className="text-xs text-rose-400">Не удалось загрузить: {error.message}</p>;
   if (!data) return <p className="text-xs text-zinc-500">Загружаю…</p>;
   const suggestions = data.term.suggestions || [];
+  // писать можно только из заметок ленты: у темы из поиска текста под рукой нет
+  const fromFeed = data.mentions.filter((m) => m.url && m.url.startsWith('http')).length;
+
+  const draft = async () => {
+    setDrafting('…');
+    const r = await fetch(`/api/channel-trends/draft?id=${id}`, { method: 'POST' });
+    const body = await r.json().catch(() => ({}));
+    setDrafting(r.ok
+      ? `Пишется по ${body.items} заметкам — придёт в бот и во вкладку «Канал» через пару минут`
+      : body.error || 'Не получилось');
+  };
+
   return (
     <div className="mt-3 pt-3 border-t border-zinc-800 space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={draft}
+          disabled={Boolean(drafting) || !fromFeed}
+          className="px-3 py-1.5 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:hover:bg-zinc-800 transition-colors"
+        >
+          ✍️ Сделать пост из темы
+        </button>
+        <span className="text-xs text-zinc-500">
+          {drafting || (fromFeed
+            ? `возьмёт ${fromFeed === 1 ? 'одну заметку' : `${Math.min(fromFeed, 8)} заметок`} и напишет об общем в них`
+            : 'нет заметок из ленты — тема держится на поиске или соцсетях')}
+        </span>
+      </div>
       {(data.parent || data.models?.length > 0) && (
         <div className="text-xs text-zinc-400">
           {data.parent && <p>Вид: <span className="text-zinc-300">{data.parent.display}</span></p>}

@@ -207,6 +207,46 @@ async function draftFromSource({ title, summary, url, source, layer = 'culture' 
 }
 
 // Черновик из уже сохранённой заметки (например, разобранного скриншота соцсети)
+// Пост из темы трендов: берём заметки, в которых тема всплывала, и делаем из них
+// один сюжет — так пишется текст не про одну новость, а про то, что за ними общего
+const TREND_ITEMS = 8;
+
+async function draftFromTrend(termId) {
+  const { rows: [term] } = await pool.query('SELECT display FROM trend_terms WHERE id = $1', [termId]);
+  if (!term) return { skipped: 'темы нет' };
+
+  const { rows } = await pool.query(
+    `SELECT item_id FROM (
+       SELECT item_id, MAX(seen_at) AS seen FROM trend_mentions
+       WHERE term_id = $1 AND item_id IS NOT NULL GROUP BY item_id
+     ) s ORDER BY seen DESC LIMIT $2`,
+    [termId, TREND_ITEMS]
+  );
+  const ids = rows.map((r) => r.item_id);
+  // тема может держаться только на поиске и соцсетях — писать тогда не из чего
+  if (!ids.length) return { skipped: 'у темы нет заметок из ленты' };
+
+  const { rows: [cluster] } = await pool.query(
+    `INSERT INTO clusters (status, score, lens, score_reason) VALUES ('scored', 5, 'sign', $1) RETURNING id`,
+    [`тема «${term.display}» из трендов`]
+  );
+  await pool.query('UPDATE items SET cluster_id = $1 WHERE id = ANY($2)', [cluster.id, ids]);
+
+  const format = formatForNextSlot();
+  const insight = await makeInsight(cluster.id, format, true);
+  if (!insight) return { skipped: true, format: format.title };
+  return { postId: await draftPost(insight), format: format.title, items: ids.length };
+}
+
+// Сколько заметок ленты стоит за темой — чтобы кнопка могла сказать это до запуска
+async function trendItemCount(termId) {
+  const { rows: [r] } = await pool.query(
+    `SELECT COUNT(DISTINCT item_id)::int AS n FROM trend_mentions WHERE term_id = $1 AND item_id IS NOT NULL`,
+    [termId]
+  );
+  return r.n;
+}
+
 async function draftFromItem(itemId) {
   const { rows: [cluster] } = await pool.query(
     `INSERT INTO clusters (status, score, lens, score_reason) VALUES ('scored', 5, 'sign', 'прислано вручную') RETURNING id`
@@ -286,4 +326,4 @@ async function runPipelineInner(onStage) {
   }
 }
 
-module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, draftFromTrend, trendItemCount, scoreNew, __draftPost: draftPost };
