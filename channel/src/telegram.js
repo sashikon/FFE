@@ -2,6 +2,8 @@ const { pool } = require('./db');
 const { formatByKey } = require('./formats');
 const { findSlop } = require('./slop');
 
+const { CHANGES } = require('./prompts');
+
 const MOVEMENT_RU = { deductive: 'дедукция: мысль сразу', inductive: 'индукция: вывод в конце' };
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -115,7 +117,9 @@ async function sendReview(postId) {
   const sk = p.skeleton;
   const skeletonLine = sk
     ? `\n\n<b>Скелет</b> · ${MOVEMENT_RU[sk.movement] || sk.movement}\n`
-      + `<i>Вопрос:</i> ${escapeHtml(sk.question)}\n<i>Ответ:</i> ${escapeHtml(sk.answer)}\n`
+      + `<i>Вопрос:</i> ${escapeHtml(sk.question)}\n`
+      + (sk.change ? `<i>Что изменилось:</i> ${escapeHtml(CHANGES[sk.change] || sk.change)}\n` : '')
+      + `<i>Ответ:</i> ${escapeHtml(sk.answer)}\n`
       + (sk.pillars || []).map((x, i) => `<i>${i + 1}.</i> ${escapeHtml(x.claim)}`).join('\n')
       + (sk.gaps ? `\n⚠️ не хватает: ${escapeHtml(sk.gaps)}` : '')
     : '';
