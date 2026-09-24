@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const r = await fetch(`${base.replace(/\/$/, '')}/api/trends/${req.query.id}/draft`, {
       method: 'POST',
       headers: { 'x-channel-token': token, 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ format: req.body?.format || null }),
       signal: AbortSignal.timeout(20000),
     });
     return res.status(r.status).json(await r.json().catch(() => ({})));

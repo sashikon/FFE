@@ -263,8 +263,9 @@ function startApi() {
         const termId = Number(trendDraft[1]);
         const items = await trendItemCount(termId);
         if (!items) return send(res, 400, { error: 'У темы нет заметок из ленты — она держится на поиске или соцсетях, писать не из чего' });
+        const { format = null } = await readJson(req).catch(() => ({}));
         // текст пишется 1–2 минуты — отвечаем сразу, черновик придёт в бот
-        draftFromTrend(termId).catch((e) => console.error('[api] trend draft failed', e));
+        draftFromTrend(termId, { format }).catch((e) => console.error('[api] trend draft failed', e));
         return send(res, 202, { ok: true, pending: true, items });
       }
       const trendMatch = url.pathname.match(/^\/api\/trends\/(\d+)$/);
