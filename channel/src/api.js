@@ -30,15 +30,20 @@ function authorized(req) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
-async function listPosts(status) {
+async function listPosts(status, q = '') {
+  // поиск идёт по всем статусам: ищут конкретный пост, а не пост в текущей вкладке.
+  // «#12» и «12» — это номер поста, остальное ищем в тексте и в тезисе
+  const needle = q.trim();
+  const byId = /^#?\d+$/.test(needle) ? Number(needle.replace('#', '')) : null;
   const { rows } = await pool.query(
     `SELECT p.id, p.status, p.format, p.text, p.image_url, p.created_at, p.approved_at, p.published_at,
             p.channel_message_id, i.thesis, i.lens
      FROM posts p JOIN insights i ON i.id = p.insight_id
-     WHERE p.status = ANY($1)
+     WHERE ($2::text = '' AND p.status = ANY($1))
+        OR ($2::text <> '' AND (p.id = $3 OR p.text ILIKE '%' || $2 || '%' OR i.thesis ILIKE '%' || $2 || '%'))
      ORDER BY COALESCE(p.published_at, p.approved_at, p.created_at) DESC
      LIMIT 200`,
-    [STATUSES[status] || STATUSES.all]
+    [STATUSES[status] || STATUSES.all, needle, byId]
   );
   const { rows: counts } = await pool.query(`SELECT status, COUNT(*)::int AS n FROM posts GROUP BY status`);
   return {
@@ -220,7 +225,10 @@ function startApi() {
 
       if (!authorized(req)) return send(res, 401, { error: 'Unauthorized' });
       if (req.method === 'GET' && url.pathname === '/api/posts') {
-        return send(res, 200, await listPosts(url.searchParams.get('status') || 'all'));
+        return send(res, 200, await listPosts(
+          url.searchParams.get('status') || 'all',
+          url.searchParams.get('q') || ''
+        ));
       }
       if (req.method === 'GET' && url.pathname === '/api/library') {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));

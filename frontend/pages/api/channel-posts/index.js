@@ -17,7 +17,9 @@ export default async function handler(req, res) {
 
   const status = ['all', 'draft', 'approved', 'published', 'deferred'].includes(req.query.status) ? req.query.status : 'all';
   try {
-    const r = await fetch(`${base.replace(/\/$/, '')}/api/posts?status=${status}`, {
+    const qs = new URLSearchParams({ status });
+    if (req.query.q) qs.set('q', String(req.query.q).slice(0, 200));
+    const r = await fetch(`${base.replace(/\/$/, '')}/api/posts?${qs}`, {
       headers: { 'x-channel-token': token },
       signal: AbortSignal.timeout(15000),
     });
