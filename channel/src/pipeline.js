@@ -112,14 +112,32 @@ function sourcesFooter(items) {
   return links.length ? `\n\n<i>По материалам: ${links.join(', ')}</i>` : '';
 }
 
+// Чем начинались и кончались последние посты: повтор приёма заметнее повтора темы
+async function recentShapes(limit = 5) {
+  const { rows } = await pool.query(
+    `SELECT text FROM posts ORDER BY id DESC LIMIT $1`, [limit]
+  );
+  return rows.map((r) => {
+    const lines = r.text
+      .replace(/\n\n<i>По материалам:[\s\S]*$/, '')
+      .replace(/<[^>]+>/g, '')
+      .split('\n').map((l) => l.trim()).filter(Boolean);
+    return {
+      opening: (lines[0] || '').slice(0, 90),
+      ending: (lines[lines.length - 1] || '').slice(0, 90),
+    };
+  }).filter((r) => r.opening);
+}
+
 async function draftPost(insightId, previous = null) {
   const { rows: [ins] } = await pool.query('SELECT cluster_id, data, format FROM insights WHERE id = $1', [insightId]);
   const format = formatByKey(ins.format) || FORMATS[0];
   const rules = await activeRules();
+  const recent = await recentShapes().catch(() => []);
   const draft = await call({
     model: MODELS.smart,
     system: P.writeSystem(format, rules),
-    user: P.writeUser(ins.data, previous),
+    user: P.writeUser(ins.data, previous, recent),
     cache: true,
   });
   // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
@@ -211,7 +229,26 @@ async function draftFromSource({ title, summary, url, source, layer = 'culture' 
 // один сюжет — так пишется текст не про одну новость, а про то, что за ними общего
 const TREND_ITEMS = 8;
 
-async function draftFromTrend(termId) {
+// Формат под материал: у ручного черновика нет причин брать формат сегодняшнего дня
+async function pickFormat(items) {
+  const notes = items.map((it, i) => `[${i + 1}] ${it.source}\n${it.title}${it.summary ? `\n${it.summary.slice(0, 300)}` : ''}`).join('\n\n');
+  const res = await call({
+    model: MODELS.cheap,
+    system: P.formatPickSystem(FORMATS),
+    user: notes,
+    schema: {
+      type: 'object',
+      properties: { format: { type: 'string', enum: FORMATS.map((f) => f.key) }, reason: { type: 'string' } },
+      required: ['format', 'reason'],
+      additionalProperties: false,
+    },
+  });
+  const format = formatByKey(res.format);
+  if (format) console.log(`[pipeline] формат по материалу: «${format.title}» — ${res.reason}`);
+  return format || formatForNextSlot();
+}
+
+async function draftFromTrend(termId, { format: formatKey = null } = {}) {
   const { rows: [term] } = await pool.query('SELECT display FROM trend_terms WHERE id = $1', [termId]);
   if (!term) return { skipped: 'темы нет' };
 
@@ -232,7 +269,8 @@ async function draftFromTrend(termId) {
   );
   await pool.query('UPDATE items SET cluster_id = $1 WHERE id = ANY($2)', [cluster.id, ids]);
 
-  const format = formatForNextSlot();
+  const chosen = formatKey && formatKey !== 'auto' ? formatByKey(formatKey) : null;
+  const format = chosen || await pickFormat(await clusterItems(cluster.id));
   const insight = await makeInsight(cluster.id, format, true);
   if (!insight) return { skipped: true, format: format.title };
   return { postId: await draftPost(insight), format: format.title, items: ids.length };
@@ -326,4 +364,4 @@ async function runPipelineInner(onStage) {
   }
 }
 
-module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, draftFromTrend, trendItemCount, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, draftFromTrend, trendItemCount, pickFormat, scoreNew, __draftPost: draftPost };

@@ -59,6 +59,8 @@ function Sparkline({ weeks }) {
 function Detail({ id }) {
   const { data, error } = useSWR(`/api/channel-trends/${id}`, fetcher);
   const [drafting, setDrafting] = useState(null);
+  const [format, setFormat] = useState('auto');
+  const { data: formatData } = useSWR('/api/channel-formats', fetcher);
   if (error) return <p className="text-xs text-rose-400">Не удалось загрузить: {error.message}</p>;
   if (!data) return <p className="text-xs text-zinc-500">Загружаю…</p>;
   const suggestions = data.term.suggestions || [];
@@ -67,7 +69,11 @@ function Detail({ id }) {
 
   const draft = async () => {
     setDrafting('…');
-    const r = await fetch(`/api/channel-trends/draft?id=${id}`, { method: 'POST' });
+    const r = await fetch(`/api/channel-trends/draft?id=${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format }),
+    });
     const body = await r.json().catch(() => ({}));
     setDrafting(r.ok
       ? `Пишется по ${body.items} заметкам — придёт в бот и во вкладку «Канал» через пару минут`
@@ -84,6 +90,15 @@ function Detail({ id }) {
         >
           ✍️ Сделать пост из темы
         </button>
+        <select
+          value={format}
+          onChange={(e) => setFormat(e.target.value)}
+          disabled={Boolean(drafting)}
+          className="px-2 py-1.5 rounded-lg text-xs bg-zinc-900 border border-zinc-800 text-zinc-300"
+        >
+          <option value="auto">формат — по материалу</option>
+          {(formatData?.formats || []).map((f) => <option key={f.key} value={f.key}>{f.title}</option>)}
+        </select>
         <span className="text-xs text-zinc-500">
           {drafting || (fromFeed
             ? `возьмёт ${fromFeed === 1 ? 'одну заметку' : `${Math.min(fromFeed, 8)} заметок`} и напишет об общем в них`
