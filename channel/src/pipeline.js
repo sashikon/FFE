@@ -67,6 +67,27 @@ async function selectCandidates(limit) {
 // ─── Шаг 4: смысл ────────────────────────────────────────────────────────────
 
 // force — сюжет прислан автором вручную: слабый или повторяющийся разбор не отбрасываем
+// Ход предыдущих постов: дедукция и индукция должны чередоваться, а не выпадать случайно
+async function recentMovements(limit = 3) {
+  const { rows } = await pool.query(
+    `SELECT data->'skeleton'->>'movement' AS movement FROM insights
+     WHERE data->'skeleton'->>'movement' IS NOT NULL ORDER BY id DESC LIMIT $1`,
+    [limit]
+  );
+  return rows.map((r) => r.movement);
+}
+
+async function buildSkeleton(items, research) {
+  const skeleton = await call({
+    model: MODELS.smart,
+    system: P.SKELETON_SYSTEM,
+    user: P.skeletonUser(items, research, await recentMovements()),
+    schema: P.SKELETON_SCHEMA,
+  });
+  console.log(`[skeleton] ${skeleton.movement}: ${skeleton.answer} (опор ${skeleton.pillars.length}${skeleton.gaps ? ', есть дыры' : ''})`);
+  return skeleton;
+}
+
 async function makeInsight(clusterId, format, force = false) {
   const items = await clusterItems(clusterId);
   const { rows: memory } = await pool.query(
@@ -77,10 +98,16 @@ async function makeInsight(clusterId, format, force = false) {
     console.warn(`[research] справка не собралась: ${e.message}`);
     return null;
   });
+  // Скелет по Минто: держится ли мысль и каким ходом её разворачивать.
+  // Считается до разбора — разбор на нём стоит, а не наоборот
+  const skeleton = await buildSkeleton(items, research).catch((e) => {
+    console.warn(`[skeleton] не собрался: ${e.message}`);
+    return null;
+  });
   const insight = await call({
     model: MODELS.smart,
     system: P.INSIGHT_SYSTEM,
-    user: P.insightUser(items, memory.map((m) => m.thesis), format, research),
+    user: P.insightUser(items, memory.map((m) => m.thesis), format, research, skeleton),
     schema: P.INSIGHT_SCHEMA,
   });
 
@@ -96,7 +123,7 @@ async function makeInsight(clusterId, format, force = false) {
 
   const { rows: [row] } = await pool.query(
     `INSERT INTO insights (cluster_id, data, thesis, lens, format) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [clusterId, JSON.stringify({ ...insight, research: research || undefined }), insight.thesis, insight.lens, format.key]
+    [clusterId, JSON.stringify({ ...insight, research: research || undefined, skeleton: skeleton || undefined }), insight.thesis, insight.lens, format.key]
   );
   await pool.query(`UPDATE clusters SET status = 'insight' WHERE id = $1`, [clusterId]);
   return row.id;
@@ -140,10 +167,11 @@ async function draftPost(insightId, previous = null) {
   const format = formatByKey(ins.format) || FORMATS[0];
   const rules = await activeRules();
   const recent = await recentShapes().catch(() => []);
+  const skeleton = ins.data.skeleton || null;
   const draft = await call({
     model: MODELS.smart,
-    system: P.writeSystem(format, rules),
-    user: P.writeUser(ins.data, previous, recent),
+    system: P.writeSystem(format, rules, skeleton?.movement),
+    user: P.writeUser(ins.data, previous, recent, skeleton),
     cache: true,
   });
   // Отдельный проход литредактора: грамматика, пунктуация, кальки, приметы машинного текста
