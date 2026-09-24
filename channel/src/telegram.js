@@ -2,6 +2,10 @@ const { pool } = require('./db');
 const { formatByKey } = require('./formats');
 const { findSlop } = require('./slop');
 
+const { CHANGES } = require('./prompts');
+
+const MOVEMENT_RU = { deductive: 'дедукция: мысль сразу', inductive: 'индукция: вывод в конце' };
+
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER = process.env.TELEGRAM_OWNER_CHAT_ID;
 // В значение легко попадает тире вместо минуса или пробелы — приводим к виду, который понимает Telegram
@@ -93,7 +97,8 @@ function reviewKeyboard(postId, hasImage) {
 async function sendReview(postId) {
   const { rows: [p] } = await pool.query(
     `SELECT p.text, p.format, p.image_url, i.lens, i.thesis, c.score,
-            i.data->'research'->'sources' AS research_sources
+            i.data->'research'->'sources' AS research_sources,
+            i.data->'skeleton' AS skeleton
      FROM posts p JOIN insights i ON i.id = p.insight_id JOIN clusters c ON c.id = i.cluster_id
      WHERE p.id = $1`,
     [postId]
@@ -108,7 +113,17 @@ async function sendReview(postId) {
   const researchLine = sources.length
     ? `\nсправка: ${sources.map((u, i) => `<a href="${escapeHtml(u)}">${i + 1}</a>`).join(' · ')}`
     : '';
-  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}${slopLine}${researchLine}</i>`;
+  // Скелет под текстом: видно, держится ли логика, не вчитываясь в сам пост
+  const sk = p.skeleton;
+  const skeletonLine = sk
+    ? `\n\n<b>Скелет</b> · ${MOVEMENT_RU[sk.movement] || sk.movement}\n`
+      + `<i>Вопрос:</i> ${escapeHtml(sk.question)}\n`
+      + (sk.change ? `<i>Что изменилось:</i> ${escapeHtml(CHANGES[sk.change] || sk.change)}\n` : '')
+      + `<i>Ответ:</i> ${escapeHtml(sk.answer)}\n`
+      + (sk.pillars || []).map((x, i) => `<i>${i + 1}.</i> ${escapeHtml(x.claim)}`).join('\n')
+      + (sk.gaps ? `\n⚠️ не хватает: ${escapeHtml(sk.gaps)}` : '')
+    : '';
+  const meta = `\n\n———\n<i>#${postId} · ${formatTitle} · ${p.lens} · оценка ${p.score}\n${escapeHtml(p.thesis)}${slopLine}${researchLine}</i>${skeletonLine}`;
   const msg = await sendHtml(OWNER, withSignature(p.text) + meta, {
     reply_markup: reviewKeyboard(postId, Boolean(p.image_url)),
     ...previewFor(p.image_url),
