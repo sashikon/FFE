@@ -719,6 +719,7 @@ function PostCard({ post, onChanged, highlighted }) {
 export default function ChannelPage() {
   const [tab, setTab] = useState('draft');
   const [highlight, setHighlight] = useState(null);
+  const [search, setSearch] = useState('');
 
   // переход из календаря к тексту поста
   const openPost = (id, status) => {
@@ -735,8 +736,13 @@ export default function ChannelPage() {
     }
   });
 
+  // поиск ищет по всем статусам: человек ищет конкретный пост, а не пост во вкладке
+  const query = search.trim();
   const { data, error, isLoading, mutate } = useSWR(
-    tab === 'calendar' ? null : `/api/channel-posts?status=${tab}`, fetcher, { refreshInterval: 30000 }
+    tab === 'calendar' && !query ? null
+      : `/api/channel-posts?status=${query ? 'all' : tab}${query ? `&q=${encodeURIComponent(query)}` : ''}`,
+    fetcher,
+    { refreshInterval: query ? 0 : 30000 }
   );
   const counts = data?.counts || {};
 
@@ -764,7 +770,22 @@ export default function ChannelPage() {
 
           <BulkFormats posts={data?.posts} onChanged={() => mutate()} />
 
-          <nav className="flex flex-wrap gap-2 mb-8">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Найти пост — по тексту, тезису или номеру"
+              className="w-full sm:w-96 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            />
+            {query && (
+              <span className="text-xs text-zinc-500">
+                найдено {data?.posts?.length ?? '…'} по всем статусам ·{' '}
+                <button onClick={() => setSearch('')} className="underline hover:text-zinc-300">сбросить</button>
+              </span>
+            )}
+          </div>
+
+          <nav className={`flex flex-wrap gap-2 mb-8 ${query ? 'opacity-40 pointer-events-none' : ''}`}>
             {TABS.map((t) => {
               const n = t.key === 'all'
                 ? ['draft', 'approved', 'published', 'deferred'].reduce((s, k) => s + (counts[k] || 0), 0)
@@ -781,16 +802,18 @@ export default function ChannelPage() {
             })}
           </nav>
 
-          {tab === 'calendar' && <Calendar onOpenPost={openPost} />}
+          {tab === 'calendar' && !query && <Calendar onOpenPost={openPost} />}
 
-          {tab !== 'calendar' && isLoading && (
+          {(tab !== 'calendar' || query) && isLoading && (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-48 bg-zinc-900 rounded-xl animate-pulse" />)}
             </div>
           )}
-          {tab !== 'calendar' && error && <p className="text-rose-400 text-sm">Не удалось загрузить посты: {error.message}</p>}
-          {tab !== 'calendar' && data?.posts?.length === 0 && <p className="text-zinc-500 text-center py-20">Здесь пока пусто</p>}
-          {tab !== 'calendar' && data?.posts?.length > 0 && (
+          {(tab !== 'calendar' || query) && error && <p className="text-rose-400 text-sm">Не удалось загрузить посты: {error.message}</p>}
+          {(tab !== 'calendar' || query) && data?.posts?.length === 0 && (
+            <p className="text-zinc-500 text-center py-20">{query ? `По запросу «${query}» ничего не нашлось` : 'Здесь пока пусто'}</p>
+          )}
+          {(tab !== 'calendar' || query) && data?.posts?.length > 0 && (
             <div className="space-y-4">
               {data.posts.map((p) => (
                 <PostCard key={`${p.id}-${p.status}`} post={p} onChanged={() => mutate()} highlighted={p.id === highlight} />
