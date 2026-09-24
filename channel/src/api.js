@@ -5,7 +5,7 @@ const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
 const trends = require('./trends');
-const { draftFromItem } = require('./pipeline');
+const { draftFromItem, draftFromTrend, trendItemCount } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
@@ -257,6 +257,15 @@ function startApi() {
           region: url.searchParams.get('region') || null,
           category: url.searchParams.get('category') || null,
         }));
+      }
+      const trendDraft = url.pathname.match(/^\/api\/trends\/(\d+)\/draft$/);
+      if (req.method === 'POST' && trendDraft) {
+        const termId = Number(trendDraft[1]);
+        const items = await trendItemCount(termId);
+        if (!items) return send(res, 400, { error: 'У темы нет заметок из ленты — она держится на поиске или соцсетях, писать не из чего' });
+        // текст пишется 1–2 минуты — отвечаем сразу, черновик придёт в бот
+        draftFromTrend(termId).catch((e) => console.error('[api] trend draft failed', e));
+        return send(res, 202, { ok: true, pending: true, items });
       }
       const trendMatch = url.pathname.match(/^\/api\/trends\/(\d+)$/);
       if (req.method === 'GET' && trendMatch) {
