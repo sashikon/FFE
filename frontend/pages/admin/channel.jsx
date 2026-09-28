@@ -19,6 +19,15 @@ const TABS = [
   { key: 'all', label: 'Все' },
 ];
 
+const MOVEMENT_RU = { deductive: 'дедукция — мысль сразу', inductive: 'индукция — вывод в конце' };
+const CHANGE_RU = {
+  recombination: 'новая комбинация известных элементов',
+  meaning_shift: 'сдвиг значения у прежней вещи',
+  new_practice: 'новая практика',
+  revival: 'возвращение забытого',
+  scale: 'изменился масштаб',
+};
+
 const STATUS = {
   draft: { label: 'не утверждён', cls: 'bg-amber-500/15 text-amber-300' },
   approved: { label: 'в очереди', cls: 'bg-emerald-500/15 text-emerald-300' },
@@ -562,6 +571,7 @@ function PostCard({ post, onChanged, highlighted }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null); // { kind: 'ok' | 'error', text }
 
+  const [showBones, setShowBones] = useState(false);
   const status = STATUS[post.status] || { label: post.status, cls: 'bg-zinc-800 text-zinc-300' };
   const when = post.status === 'published' ? `вышел ${fmtDate(post.published_at)}`
     : post.status === 'approved' ? `одобрен ${fmtDate(post.approved_at)}`
@@ -593,6 +603,9 @@ function PostCard({ post, onChanged, highlighted }) {
     if (CONFIRM[action] && !window.confirm(CONFIRM[action])) return;
     run(() => postAction(post.id, 'action', { action }), 'Готово');
   };
+
+  const sk = post.skeleton;
+  const sources = Array.isArray(post.research_sources) ? post.research_sources : [];
 
   return (
     <article id={`post-${post.id}`} className={`bg-zinc-900 rounded-xl border p-5 transition-colors ${highlighted ? 'border-zinc-100' : 'border-zinc-800'}`}>
@@ -631,9 +644,51 @@ function PostCard({ post, onChanged, highlighted }) {
         )}
       </div>
 
-      {(post.thesis || post.slop?.length > 0) && (
+      {(post.thesis || post.slop?.length > 0 || sk) && (
         <div className="mt-4 pt-3 border-t border-zinc-800 text-xs space-y-1">
           {post.thesis && <p className="text-zinc-500">Тезис: <span className="text-zinc-400">{post.thesis}</span></p>}
+          {(sk || sources.length > 0 || post.origin) && (
+            <button onClick={() => setShowBones(!showBones)} className="text-zinc-500 hover:text-zinc-300 underline">
+              {showBones ? 'Скрыть' : 'Как собран'}
+            </button>
+          )}
+          {showBones && (
+            <div className="mt-2 space-y-2 text-zinc-400">
+              <p className="text-zinc-500">
+                Формат: <span className="text-zinc-300">{post.format_title || '—'}</span>
+                {sk?.movement && <> · ход: <span className="text-zinc-300">{MOVEMENT_RU[sk.movement] || sk.movement}</span></>}
+                {post.lens && <> · линза: <span className="text-zinc-300">{post.lens}</span></>}
+              </p>
+              {sk && (
+                <div className="pl-3 border-l border-zinc-800 space-y-1">
+                  <p>Вопрос: <span className="text-zinc-300">{sk.question}</span></p>
+                  {sk.change && <p>Что изменилось: <span className="text-zinc-300">{CHANGE_RU[sk.change] || sk.change}</span></p>}
+                  <p>Ответ: <span className="text-zinc-300">{sk.answer}</span></p>
+                  {sk.pillars?.length > 0 && (
+                    <ol className="list-decimal list-inside space-y-0.5">
+                      {sk.pillars.map((x, i) => (
+                        <li key={i}><span className="text-zinc-300">{x.claim}</span>{x.evidence ? <span className="text-zinc-600"> — {x.evidence}</span> : null}</li>
+                      ))}
+                    </ol>
+                  )}
+                  {sk.gaps && <p className="text-amber-400">не хватает: {sk.gaps}</p>}
+                </div>
+              )}
+              {post.origin && <p>Истоки: <span className="text-zinc-300">{post.origin}</span></p>}
+              {sources.length > 0 && (
+                <p>
+                  Справка:{' '}
+                  {sources.map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:underline mr-2">{i + 1}</a>
+                  ))}
+                  <a href="/admin/assembly" className="text-zinc-600 hover:text-zinc-400 underline ml-1">как это собирается</a>
+                </p>
+              )}
+              {sources.length === 0 && (
+                <a href="/admin/assembly" className="text-zinc-600 hover:text-zinc-400 underline">как это собирается</a>
+              )}
+            </div>
+          )}
           {post.slop?.length > 0 && (
             <p className="text-amber-400">⚠️ шаблоны: {post.slop.map((s) => `«${s}»`).join(', ')}</p>
           )}
@@ -760,6 +815,7 @@ export default function ChannelPage() {
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
+            <a href="/admin/assembly" className="text-sm text-zinc-400 hover:text-white transition-colors">Как собирается</a>
           </div>
         </header>
 

@@ -37,7 +37,10 @@ async function listPosts(status, q = '') {
   const byId = /^#?\d+$/.test(needle) ? Number(needle.replace('#', '')) : null;
   const { rows } = await pool.query(
     `SELECT p.id, p.status, p.format, p.text, p.image_url, p.created_at, p.approved_at, p.published_at,
-            p.channel_message_id, i.thesis, i.lens
+            p.channel_message_id, i.thesis, i.lens,
+            i.data->'skeleton' AS skeleton,
+            i.data->'research'->'sources' AS research_sources,
+            i.data->>'origin' AS origin
      FROM posts p JOIN insights i ON i.id = p.insight_id
      WHERE ($2::text = '' AND p.status = ANY($1))
         OR ($2::text <> '' AND (p.id = $3 OR p.text ILIKE '%' || $2 || '%' OR i.thesis ILIKE '%' || $2 || '%'))
@@ -286,6 +289,11 @@ function startApi() {
       }
       if (req.method === 'POST' && url.pathname === '/api/posts/format-all') {
         return send(res, 200, { ok: true, ...(await actions.detectMissingFormats()) });
+      }
+      // Из чего собирается пост: шаги конвейера и переменные — прямо из кода
+      if (req.method === 'GET' && url.pathname === '/api/assembly') {
+        const { STEPS, VARIABLES } = require('./assembly');
+        return send(res, 200, { steps: STEPS, variables: VARIABLES });
       }
       if (req.method === 'GET' && url.pathname === '/api/formats') {
         return send(res, 200, { formats: require('./formats').FORMATS.map(({ key, title, week, day, idea }) => ({ key, title, week, day, idea })) });
