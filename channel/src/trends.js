@@ -237,30 +237,116 @@ async function googleTrending() {
 }
 
 // Поисковые подсказки Google: что люди ищут вокруг темы («quiet luxury» → brands, bags, dupes…)
-async function fetchSuggestions(term) {
-  const hl = /[а-яё]/i.test(term) ? 'ru' : 'en';
-  const url = `https://suggestqueries.google.com/complete/search?client=firefox&hl=${hl}&q=${encodeURIComponent(term)}`;
+// Подсказки Google подбираются по началу строки, поэтому короткое слово тянет что попало:
+// «bra» → «brawl stars», «pump» → «pumpkin», «skirt» → «skirt steak». Спасают две вещи:
+// якорь «trend» у английского канона и запрос по русской подписи — по-русски омонимов меньше
+async function suggestQuery(q, hl) {
+  const url = `https://suggestqueries.google.com/complete/search?client=firefox&hl=${hl}&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`suggest ${res.status}`);
   const [, list] = JSON.parse(await res.text());
-  return (list || []).filter((s) => canon(s) !== canon(term)).slice(0, 10);
+  return list || [];
+}
+
+// Страховка до модели: слова, которых в модном запросе не бывает. Ловит самое стыдное
+// независимо от того, ошибётся модель или нет
+const OFF_TOPIC = /(?:^|\W)(?:steak|recipe|recipes|soup|calor\p{L}*|рецепт\p{L}*|minecraft|roblox|fortnite|brawl|crossword|meaning|definition|lyrics|apk|download|torrent|mod\s|донат|скачать|donkey|deer|pumpkin|stock\s|ticker)(?:\W|$)/iu;
+
+async function fetchSuggestions(term, display = '') {
+  const queries = [[`${term} trend`, 'en'], [term, 'en']];
+  // русская подпись отличается от канона — спрашиваем и её: «юбка плиссе», «мюли на каблуке»
+  if (display && /[а-яё]/i.test(display) && canon(display) !== canon(term)) queries.push([display, 'ru']);
+
+  const seen = new Set([canon(term), canon(display)]);
+  const out = [];
+  for (const [q, hl] of queries) {
+    const list = await suggestQuery(q, hl).catch(() => []);
+    for (const item of list) {
+      const key = canon(item);
+      if (seen.has(key) || OFF_TOPIC.test(item)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+  }
+  return out.slice(0, 14);
+}
+
+// Даже с якорем остаётся мусор вроде «skirt style crossword clue» и «mule minecraft».
+// Отбираем моделью: одним вызовом на весь прогон, по всем темам сразу
+const SUGGEST_FILTER_SYSTEM = `Тебе дают модные темы и поисковые запросы, которые Google подсказывает вокруг каждой. Подсказки подбираются по началу строки, поэтому в список попадает постороннее: еда («skirt steak»), игры («mule minecraft»), имена, софт, кроссворды, магазины и маркетплейсы вообще.
+
+Для каждой темы оставь только те запросы, которые правда про эту вещь в моде: как её носят, с чем сочетают, какие бывают фасоны, что сейчас модно, где купить именно её. Омонимы («mule donkey», «bra brawl stars», «pump pumpkin») выбрось.
+
+Если по теме не осталось ничего — пустой список, это нормальный ответ. Ничего не переписывай и не придумывай: только выбирай из данного.`;
+
+const SUGGEST_FILTER_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, keep: { type: 'array', items: { type: 'string' } } },
+        required: ['id', 'keep'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+};
+
+async function filterSuggestions(collected) {
+  if (!collected.length) return new Map();
+  const user = collected
+    .map((c) => `#${c.id} «${c.display}» (${c.term}):\n${c.list.map((x) => `- ${x}`).join('\n')}`)
+    .join('\n\n');
+  const { results } = await call({
+    model: MODELS.cheap,
+    system: SUGGEST_FILTER_SYSTEM,
+    user,
+    schema: SUGGEST_FILTER_SCHEMA,
+    maxTokens: 4000,
+  });
+  const kept = new Map();
+  for (const r of results) {
+    const source = collected.find((c) => c.id === r.id);
+    if (!source) continue;
+    // модель могла переписать запрос — берём только то, что действительно было в списке
+    const allowed = new Set(source.list.map(canon));
+    kept.set(r.id, r.keep.filter((x) => allowed.has(canon(x))).slice(0, 10));
+  }
+  return kept;
 }
 
 async function refreshSuggestions(limit = 15) {
   const { rising } = await listTrends({ limit });
-  let done = 0;
+  const collected = [];
   for (const t of rising) {
     const { rows: [row] } = await pool.query('SELECT suggestions_at FROM trend_terms WHERE id = $1', [t.id]);
     if (row?.suggestions_at && Date.now() - new Date(row.suggestions_at).getTime() < 24 * 3600e3) continue;
     try {
-      const list = await fetchSuggestions(t.term);
-      await pool.query('UPDATE trend_terms SET suggestions = $1, suggestions_at = NOW() WHERE id = $2', [JSON.stringify(list), t.id]);
-      done++;
+      const list = await fetchSuggestions(t.term, t.display);
+      if (list.length) collected.push({ id: t.id, term: t.term, display: t.display, list });
     } catch (e) {
       console.warn(`[trends] подсказки «${t.term}»: ${e.message}`);
     }
   }
-  return done;
+  if (!collected.length) return 0;
+
+  // фильтр не прошёл — лучше сохранить как есть, чем потерять подсказки совсем
+  const kept = await filterSuggestions(collected).catch((e) => {
+    console.warn(`[trends] отбор подсказок не удался: ${e.message}`);
+    return new Map();
+  });
+  let dropped = 0;
+  for (const c of collected) {
+    const list = kept.has(c.id) ? kept.get(c.id) : c.list.slice(0, 10);
+    dropped += c.list.length - list.length;
+    await pool.query('UPDATE trend_terms SET suggestions = $1, suggestions_at = NOW() WHERE id = $2', [JSON.stringify(list), c.id]);
+  }
+  console.log(`[trends] подсказки: тем ${collected.length}, отсеяно запросов ${dropped}`);
+  return collected.length;
 }
 
 // Темы-категории («item», «brand»), в которые модель слила несвязанные заметки: убираем их,
@@ -805,4 +891,4 @@ async function runTrends({ onStage = () => {} } = {}) {
   return { junk, extracted, normalized, plurals, revised, classified, search, pinterest, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, mergePlurals, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, mergePlurals, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, filterSuggestions, canon };
