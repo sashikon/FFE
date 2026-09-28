@@ -1129,11 +1129,16 @@ router.post('/pinterest/fetch-sketch-analytics', async (req, res, next) => {
 router.patch('/outfit/:id/sketch-pin-id', async (req, res, next) => {
   try {
     const { sketch_pin_id } = req.body;
+    const pinId = sketch_pin_id || null;
+    // Пин сменился или снят — прежняя статистика к нему уже не относится и уходит вместе с ним
     await pool.query(
-      'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
-      [sketch_pin_id || null, req.params.id]
+      `UPDATE outfits SET sketch_pin_id = $1,
+              sketch_pin_analytics = CASE WHEN $1::text IS DISTINCT FROM sketch_pin_id THEN NULL ELSE sketch_pin_analytics END,
+              sketch_pin_analytics_updated_at = CASE WHEN $1::text IS DISTINCT FROM sketch_pin_id THEN NULL ELSE sketch_pin_analytics_updated_at END
+       WHERE id = $2`,
+      [pinId, req.params.id]
     );
-    res.json({ ok: true, sketch_pin_id });
+    res.json({ ok: true, sketch_pin_id: pinId });
   } catch (err) {
     next(err);
   }
@@ -1143,11 +1148,15 @@ router.patch('/outfit/:id/sketch-pin-id', async (req, res, next) => {
 router.patch('/render/:id/pin-id', async (req, res, next) => {
   try {
     const { pinterest_pin_id } = req.body;
+    const pinId = pinterest_pin_id || null;
     await pool.query(
-      'UPDATE outfit_renders SET pinterest_pin_id = $1 WHERE id = $2',
-      [pinterest_pin_id || null, req.params.id]
+      `UPDATE outfit_renders SET pinterest_pin_id = $1,
+              pinterest_analytics = CASE WHEN $1::text IS DISTINCT FROM pinterest_pin_id THEN NULL ELSE pinterest_analytics END,
+              pinterest_analytics_updated_at = CASE WHEN $1::text IS DISTINCT FROM pinterest_pin_id THEN NULL ELSE pinterest_analytics_updated_at END
+       WHERE id = $2`,
+      [pinId, req.params.id]
     );
-    res.json({ ok: true, pinterest_pin_id });
+    res.json({ ok: true, pinterest_pin_id: pinId });
   } catch (err) {
     next(err);
   }
