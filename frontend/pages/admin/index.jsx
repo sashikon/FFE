@@ -1604,6 +1604,21 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
     }
   };
 
+  // Раньше крестик стирал ссылку только на экране: в базе она оставалась и возвращалась
+  // после обновления страницы. Снимаем привязку на сервере, вместе со статистикой пина
+  const handleUnlinkPinId = async () => {
+    if (!window.confirm(t('Unlink this pin? Its analytics will be cleared too.', 'Отвязать пин? Статистика по нему тоже очистится.'))) return;
+    setSavingPinId(true);
+    try {
+      await apiPatch(`/api/admin/render/${render.id}/pin-id`, { pinterest_pin_id: null });
+      setCurrentPinId('');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setSavingPinId(false);
+    }
+  };
+
   const handlePinterestToggle = async (e) => {
     e.stopPropagation();
     const next = !pExported;
@@ -1722,7 +1737,7 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
         {currentPinId ? (
           <div className="flex items-center justify-between">
             <a href={`https://www.pinterest.com/pin/${currentPinId}/`} target="_blank" rel="noreferrer" className="text-[9px] text-rose-400 hover:text-rose-300 truncate">pin/{currentPinId.slice(-6)}</a>
-            <button onClick={() => setCurrentPinId('')} className="text-[9px] text-zinc-600 hover:text-zinc-400 ml-1 shrink-0">×</button>
+            <button onClick={handleUnlinkPinId} disabled={savingPinId} className="text-[9px] text-zinc-600 hover:text-zinc-400 ml-1 shrink-0" title={t('unlink pin','отвязать пин')}>{savingPinId ? '…' : '×'}</button>
           </div>
         ) : (
           <div className="flex items-center gap-1">
@@ -2016,10 +2031,23 @@ function SketchPinField({ outfitId, initialPinId }) {
     }
   };
 
+  const handleUnlink = async () => {
+    if (!window.confirm(t('Unlink this pin? Its analytics will be cleared too.', 'Отвязать пин? Статистика по нему тоже очистится.'))) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/api/admin/outfit/${outfitId}/sketch-pin-id`, { sketch_pin_id: null });
+      setPinId('');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (pinId) return (
     <span className="flex items-center gap-1">
       <a href={`https://www.pinterest.com/pin/${pinId}/`} target="_blank" rel="noreferrer" className="text-[10px] text-rose-500 hover:text-rose-400">{t('sketch↗','эскиз↗')}</a>
-      <button onClick={() => setPinId('')} className="text-[10px] text-zinc-700 hover:text-zinc-400">×</button>
+      <button onClick={handleUnlink} disabled={saving} className="text-[10px] text-zinc-700 hover:text-zinc-400" title={t('unlink pin','отвязать пин')}>{saving ? '…' : '×'}</button>
     </span>
   );
 
