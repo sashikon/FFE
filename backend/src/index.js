@@ -7,6 +7,7 @@ const pool = require('./db');
 const runMigrations = require('./db/migrate');
 
 const outfitsRouter = require('./routes/outfits');
+const feedRouter = require('./routes/feed');
 const uploadRouter = require('./routes/upload');
 const adminRouter = require('./routes/admin');
 const statsRouter = require('./routes/stats');
@@ -31,6 +32,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use('/api', outfitsRouter);
+app.use('/api', feedRouter);
 app.use('/api', uploadRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', statsRouter);
