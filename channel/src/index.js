@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { pool, runMigrations, getState, setState } = require('./db');
 const { runPipeline } = require('./pipeline');
-const { mergePlurals } = require('./trends');
+const { mergePlurals, cleanupSuggestions } = require('./trends');
 const { publish, sendHtml, escapeHtml, resendUndelivered, checkTelegram, checkChannel, OWNER } = require('./telegram');
 const { poll, setupMenu } = require('./bot');
 const { startApi } = require('./api');
@@ -110,6 +110,7 @@ async function start() {
   // Склейка чисел — чистая арифметика по базе, без обращений к модели: делаем сразу
   // после миграций, чтобы правка доезжала с деплоем, а не ждала прогона через 12 часов
   await mergePlurals().catch((e) => console.warn(`[trends] склейка чисел не удалась: ${e.message}`));
+  await cleanupSuggestions().catch((e) => console.warn(`[trends] чистка подсказок не удалась: ${e.message}`));
 
   // прогон, оборванный деплоем или падением, иначе исчезает молча — а человек ждёт ответа
   const interrupted = await getState('run_started').catch(() => null);

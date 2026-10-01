@@ -319,6 +319,32 @@ async function filterSuggestions(collected) {
   return kept;
 }
 
+// Уже сохранённые подсказки собирались до того, как появился отбор, и в них висит
+// «skirt steak». Обновляются они только у растущих тем, поэтому у темы, переставшей
+// расти, мусор остался бы навсегда. Чистим по тому же списку слов — без модели и сети
+async function cleanupSuggestions() {
+  const { rows } = await pool.query(
+    `SELECT id, term, suggestions FROM trend_terms
+     WHERE suggestions IS NOT NULL AND jsonb_array_length(suggestions) > 0`
+  );
+  let terms = 0;
+  let dropped = 0;
+  for (const row of rows) {
+    const list = Array.isArray(row.suggestions) ? row.suggestions : [];
+    const keep = list.filter((s) => !OFF_TOPIC.test(String(s)));
+    if (keep.length === list.length) continue;
+    dropped += list.length - keep.length;
+    terms++;
+    // suggestions_at обнуляем: пусть тема соберёт подсказки заново, когда снова попадёт в растущие
+    await pool.query(
+      'UPDATE trend_terms SET suggestions = $1, suggestions_at = NULL WHERE id = $2',
+      [JSON.stringify(keep), row.id]
+    );
+  }
+  if (terms) console.log(`[trends] подсказки почищены: тем ${terms}, убрано запросов ${dropped}`);
+  return { terms, dropped };
+}
+
 async function refreshSuggestions(limit = 15) {
   const { rising } = await listTrends({ limit });
   const collected = [];
@@ -891,4 +917,4 @@ async function runTrends({ onStage = () => {} } = {}) {
   return { junk, extracted, normalized, plurals, revised, classified, search, pinterest, suggestions };
 }
 
-module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, mergePlurals, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, filterSuggestions, canon };
+module.exports = { KINDS, CATEGORIES, JUNK_TERMS, runTrends, extractTrends, normalizeTerms, mergePlurals, cleanupJunkTerms, classifyItems, reviseKinds, searchTerms, googleTrending, pinterestTrending, checkSignals, listTrends, termDetail, saveEntities, upsertTerm, addMention, fetchSuggestions, filterSuggestions, cleanupSuggestions, canon };
