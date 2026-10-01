@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import { useTranslation } from 'next-i18next/pages';
 import { serverSideTranslations } from 'next-i18next/pages/serverSideTranslations';
 import { fetcher } from '../lib/api';
+import { SITE_URL } from '../lib/site';
 
 export default function GalleryPage() {
   const { t, i18n } = useTranslation('common');
@@ -56,7 +57,7 @@ export default function GalleryPage() {
   };
 
   const isRu = i18n.language === 'ru';
-  const siteUrl = 'https://ffe-blush.vercel.app';
+  const siteUrl = SITE_URL;
 
   const meta = isRu
     ? {
