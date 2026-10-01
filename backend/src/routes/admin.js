@@ -9,6 +9,7 @@ const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
 const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, createPin, exchangeCodeForToken } = require('../pinterest');
+const { getSettings, saveSettings } = require('../settings');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
@@ -536,7 +537,8 @@ router.get('/pinterest-preview', async (req, res, next) => {
 router.get('/pinterest-export', async (req, res, next) => {
   try {
     const lang  = req.query.lang  || 'en';
-    const board = req.query.board || 'FFE';
+    const { export_board: exportBoard } = await getSettings('pinterest');
+    const board = req.query.board || exportBoard;
     const BASE_URL = 'https://ffe-blush.vercel.app';
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
@@ -1170,16 +1172,17 @@ router.post('/pinterest/import-pins', async (req, res, next) => {
     const { pins } = req.body;
     if (!Array.isArray(pins)) return res.status(400).json({ error: 'pins array required' });
 
+    const { sketch_board: sketchBoard, collage_board: collageBoard } = await getSettings('pinterest');
     let sketchUpdated = 0, renderUpdated = 0;
 
     for (const pin of pins) {
-      if (pin.board === 'Fashion sketch') {
+      if (pin.board === sketchBoard) {
         const r = await pool.query(
           'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
           [pin.pin_id, pin.outfit_id]
         );
         if (r.rowCount > 0) sketchUpdated++;
-      } else if (pin.board !== 'Collage Item Pins') {
+      } else if (pin.board !== collageBoard) {
         const r = await pool.query(
           `UPDATE outfit_renders SET pinterest_pin_id = $1
            WHERE id = (SELECT id FROM outfit_renders WHERE outfit_id = $2 ORDER BY created_at DESC LIMIT 1)`,
@@ -1278,6 +1281,24 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
     }
 
     res.json({ ok: true, total: rows.length, updated, last_error: lastError });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/settings/pinterest — названия досок нового аккаунта
+router.get('/settings/pinterest', requireAdminToken, async (_req, res, next) => {
+  try {
+    res.json({ settings: await getSettings('pinterest') });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/settings/pinterest — { export_board, sketch_board, collage_board }
+router.put('/settings/pinterest', requireAdminToken, async (req, res, next) => {
+  try {
+    res.json({ settings: await saveSettings('pinterest', req.body || {}) });
   } catch (err) {
     next(err);
   }
