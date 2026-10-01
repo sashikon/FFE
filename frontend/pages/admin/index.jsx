@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, createContext, useContext } from 'react';
 import Head from 'next/head';
 import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid, Camera } from 'lucide-react';
-import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
+import { adminFetcher, apiPost, apiPatch, apiDelete, apiPut } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 
 const UiLangCtx = createContext('en');
@@ -795,6 +795,77 @@ function RendersSection({ outfitId, initialRenders }) {
   );
 }
 
+// Названия досок нового аккаунта Pinterest: подставляются в CSV-выгрузку и в разбор импорта
+function PinterestBoardSettings({ boards }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!open || form) return;
+    adminFetcher('/api/admin/settings/pinterest')
+      .then((d) => setForm(d.settings))
+      .catch((e) => alert('Settings load error: ' + e.message));
+  }, [open, form]);
+
+  const save = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const d = await apiPut('/api/admin/settings/pinterest', form);
+      setForm(d.settings);
+      setSaved(true);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = (key, label, hint) => (
+    <label className="block">
+      <span className="block text-[11px] text-zinc-500 mb-1">{label}</span>
+      <input
+        value={form[key] || ''}
+        list="pinterest-board-names"
+        onChange={(e) => { setForm({ ...form, [key]: e.target.value }); setSaved(false); }}
+        className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-zinc-500"
+      />
+      <span className="block text-[11px] text-zinc-600 mt-1">{hint}</span>
+    </label>
+  );
+
+  return (
+    <div className="border-t border-zinc-800 pt-3">
+      <button onClick={() => setOpen(!open)} className="text-xs text-zinc-400 hover:text-white transition-colors">
+        {open ? '▾' : '▸'} {t('Board names', 'Названия досок')}
+      </button>
+
+      {open && (form ? (
+        <div className="mt-3 space-y-3">
+          <datalist id="pinterest-board-names">
+            {(boards || []).map((b) => <option key={b.id} value={b.name} />)}
+          </datalist>
+          {field('export_board', t('Board in CSV export', 'Доска в CSV-выгрузке'), t('Goes to the «Pinterest board» column', 'Попадает в колонку «Pinterest board»'))}
+          {field('sketch_board', t('Sketches board', 'Доска с эскизами'), t('Pins from it are matched to sketches on import', 'Пины с неё при импорте привязываются к эскизам'))}
+          {field('collage_board', t('Collage board', 'Доска с коллажами'), t('Pins from it are skipped on import', 'Пины с неё при импорте пропускаются'))}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+            >{saving ? t('Saving…', 'Сохраняю…') : t('Save', 'Сохранить')}</button>
+            {saved && <span className="text-xs text-emerald-400">{t('Saved', 'Сохранено')}</span>}
+            <span className="text-[11px] text-zinc-600">{t('Empty field resets to default', 'Пустое поле вернёт значение по умолчанию')}</span>
+          </div>
+        </div>
+      ) : <p className="mt-3 text-xs text-zinc-500">{t('Loading…', 'Загружаю…')}</p>)}
+    </div>
+  );
+}
+
 function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported }) {
   const t = useT();
   const [items, setItems] = useState(null); // null = loading
@@ -817,7 +888,6 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
 
   // Load boards for direct posting
   useEffect(() => {
-    if (!rendersOnly) return;
     adminFetcher('/api/admin/pinterest-boards')
       .then((data) => {
         setBoards(data.boards || []);
@@ -871,7 +941,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
       const ids = [...selected].join(',');
-      const params = new URLSearchParams({ lang, board: 'FFE', ids, ...(rendersOnly ? { renders: 'true' } : {}) });
+      const params = new URLSearchParams({ lang, ids, ...(rendersOnly ? { renders: 'true' } : {}) });
       const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });
@@ -1028,6 +1098,8 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                 )}
               </div>
             )}
+
+            <PinterestBoardSettings boards={boards} />
 
             {/* Progress after posting */}
             {postProgress && (
@@ -2652,7 +2724,7 @@ export default function AdminPage() {
       setCsvExporting(true);
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
-      const params = new URLSearchParams({ lang, board: 'FFE', ...(onlyNew ? { new: 'true' } : {}) });
+      const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}) });
       const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });

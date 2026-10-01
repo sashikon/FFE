@@ -45,6 +45,20 @@ export const apiPatch = (url, body) =>
     return r.json();
   });
 
+export const apiPut = (url, body) =>
+  fetch(`${BASE}${url}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    headers: { ...adminHeaders(), 'Content-Type': 'application/json' },
+  }).then(async (r) => {
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); msg = j.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return r.json();
+  });
+
 export const apiDelete = (url) =>
   fetch(`${BASE}${url}`, { method: 'DELETE', headers: adminHeaders() }).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
