@@ -97,6 +97,13 @@ async function fetchPinById(pinId) {
 }
 
 /**
+ * Pinterest account: нужен username, чтобы собрать ссылку на доску.
+ */
+async function getUserAccount(token) {
+  return pinterestGet('/user_account', token);
+}
+
+/**
  * Get user's boards.
  */
 async function getBoards(token) {
@@ -172,6 +179,6 @@ async function refreshAccessToken(refreshToken) {
 module.exports = {
   sendPinterestEvents,
   fetchAllPins, fetchPinById, fetchPinAnalytics,
-  getBoards, createPin,
+  getBoards, getUserAccount, createPin,
   exchangeCodeForToken, refreshAccessToken,
 };

@@ -6,7 +6,8 @@ const DEFAULTS = {
   pinterest: {
     export_board: 'FFE',               // название доски в CSV-выгрузке
     sketch_board: 'Fashion sketch',    // доска с эскизами — по ней импорт узнаёт пины эскизов
-    collage_board: 'Collage Item Pins' // доска-коллаж — её пины при импорте пропускаются
+    collage_board: 'Collage Item Pins', // доска-коллаж — её пины при импорте пропускаются
+    profile: '', // имя профиля Pinterest для ссылок на доски; пусто — берём из API
   },
 };
 

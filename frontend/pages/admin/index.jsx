@@ -875,6 +875,8 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
   const [postProgress, setPostProgress] = useState(null); // { done, total, failed }
   const [boards, setBoards] = useState(null);
   const [boardId, setBoardId] = useState('');
+  const [suggestions, setSuggestions] = useState({}); // renderId → { board_id, board_name, confidence, reason }
+  const [suggesting, setSuggesting] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}) });
@@ -896,6 +898,24 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       .catch(() => setBoards([]));
   }, [rendersOnly]);
 
+  const handleSuggest = async () => {
+    if (!selected.size) return;
+    setSuggesting(true);
+    try {
+      const data = await apiPost('/api/admin/pinterest/suggest-boards', { ids: [...selected] });
+      const map = {};
+      for (const s of data.suggestions || []) map[s.id] = s;
+      setSuggestions(map);
+      if (data.analyzed < data.total) {
+        alert(`${data.total - data.analyzed} ${t('renders have no analysis — the suggestion for them is weaker','рендеров без разбора — для них подсказка слабее')}`);
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   const handlePost = async () => {
     if (!selected.size || !boardId) return;
     setPosting(true);
@@ -906,7 +926,12 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       const res = await fetch(`${BASE}/api/admin/pinterest-post-renders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { 'x-admin-token': token } : {}) },
-        body: JSON.stringify({ ids: [...selected], board_id: boardId, lang }),
+        body: JSON.stringify({
+          ids: [...selected],
+          board_id: boardId,
+          boards: Object.fromEntries(Object.entries(suggestions).map(([id, sug]) => [id, sug.board_id])),
+          lang,
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -1068,6 +1093,16 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                       <span className={`flex-1 min-w-0 text-xs truncate ${outfit.pin_title ? 'text-zinc-300' : 'text-zinc-500 italic'}`}>
                         {outfit.pin_title || (lang === 'en' ? (outfit.title_en || outfit.title) : outfit.title) || outfit.id}
                       </span>
+
+                      {/* Подобранная доска */}
+                      {suggestions[outfit.id] && (
+                        <span
+                          title={`${suggestions[outfit.id].reason} · ${t('confidence','уверенность')} ${suggestions[outfit.id].confidence}`}
+                          className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full ${suggestions[outfit.id].confidence >= 60 ? 'bg-violet-500/15 text-violet-300' : 'bg-zinc-700 text-zinc-400'}`}
+                        >
+                          🤖 {suggestions[outfit.id].board_name}
+                        </span>
+                      )}
                     </label>
                   );
                 })}
@@ -1081,20 +1116,47 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
           <div className="px-5 py-4 border-t border-zinc-800 shrink-0 space-y-3">
             {/* Board selector for direct posting */}
             {rendersOnly && boards !== null && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500 shrink-0">{t('Board:','Доска:')}</span>
-                {boards.length === 0 ? (
-                  <span className="text-xs text-zinc-600">{t('No boards','Нет досок')} · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">{t('Authorize','Авторизоваться')}</a></span>
-                ) : (
-                  <select
-                    value={boardId}
-                    onChange={(e) => setBoardId(e.target.value)}
-                    className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
-                  >
-                    {boards.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500 shrink-0">{t('Board:','Доска:')}</span>
+                  {boards.length === 0 ? (
+                    <span className="text-xs text-zinc-600">{t('No boards','Нет досок')} · <a href="/api/admin/pinterest-auth" target="_blank" className="text-rose-400 underline">{t('Authorize','Авторизоваться')}</a></span>
+                  ) : (
+                    <>
+                      <select
+                        value={boardId}
+                        onChange={(e) => setBoardId(e.target.value)}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                      >
+                        {boards.map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                      {boards.find((b) => b.id === boardId)?.url && (
+                        <a
+                          href={boards.find((b) => b.id === boardId).url}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-sky-300 hover:text-sky-200 shrink-0"
+                        >{t('open ↗','открыть ↗')}</a>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {boards.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSuggest}
+                      disabled={suggesting || !selected.size}
+                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs rounded-lg transition-colors disabled:opacity-50"
+                    >{suggesting ? t('Matching…','Подбираю…') : `🤖 ${t('Suggest boards','Подобрать доски')} (${selected.size})`}</button>
+                    {Object.keys(suggestions).length > 0 && (
+                      <>
+                        <span className="text-xs text-zinc-500">{t('Suggested:','Подобрано:')} {Object.keys(suggestions).length}</span>
+                        <button onClick={() => setSuggestions({})} className="text-xs text-zinc-500 hover:text-white">{t('reset','сбросить')}</button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             )}

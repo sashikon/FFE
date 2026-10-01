@@ -8,7 +8,8 @@ const { analyzeAesthetics, analyzeModel } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, createPin, exchangeCodeForToken } = require('../pinterest');
+const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, getUserAccount, createPin, exchangeCodeForToken } = require('../pinterest');
+const { suggestBoards } = require('../llm/board');
 const { getSettings, saveSettings } = require('../settings');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 
@@ -1286,6 +1287,33 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/pinterest/suggest-boards — { ids: [renderId, ...] }
+// Подбирает доску каждому рендеру по его разбору: эстетики, описание модели, текст пина
+router.post('/pinterest/suggest-boards', requireAdminToken, async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+    if (!ids.length) return res.status(400).json({ error: 'ids required' });
+
+    const { rows: renders } = await pool.query(
+      `SELECT r.id, r.aesthetics, r.model_appearance, r.pin_title, r.pin_description,
+              COALESCE(o.title_en, o.title) AS title
+       FROM outfit_renders r JOIN outfits o ON o.id = r.outfit_id
+       WHERE r.id = ANY($1)`,
+      [ids]
+    );
+    if (!renders.length) return res.status(404).json({ error: 'renders not found' });
+
+    const boards = await getBoards();
+    if (!boards.length) return res.status(400).json({ error: 'Нет досок: подключите аккаунт Pinterest' });
+
+    const suggestions = await suggestBoards(boards, renders);
+    const analyzed = renders.filter((r) => r.aesthetics).length;
+    res.json({ suggestions, analyzed, total: renders.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/settings/pinterest — названия досок нового аккаунта
 router.get('/settings/pinterest', requireAdminToken, async (_req, res, next) => {
   try {
@@ -1305,10 +1333,27 @@ router.put('/settings/pinterest', requireAdminToken, async (req, res, next) => {
 });
 
 // GET /api/admin/pinterest-boards — list boards
+// Ссылка на доску: Pinterest собирает её из имени профиля и названия доски
+const boardSlug = (name) => String(name || '')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '-')
+  .replace(/^-+|-+$/g, '');
+
 router.get('/pinterest-boards', requireAdminToken, async (req, res, next) => {
   try {
     const boards = await getBoards();
-    res.json({ boards });
+    const { profile } = await getSettings('pinterest');
+    let username = profile;
+    if (!username) {
+      username = await getUserAccount().then((a) => a?.username || '').catch(() => '');
+    }
+    res.json({
+      boards: boards.map((b) => ({
+        ...b,
+        url: username ? `https://www.pinterest.com/${username}/${boardSlug(b.name)}/` : null,
+      })),
+      profile: username || null,
+    });
   } catch (err) {
     next(err);
   }
@@ -1318,9 +1363,10 @@ router.get('/pinterest-boards', requireAdminToken, async (req, res, next) => {
 // body: { ids: [renderUUID, ...], board_id: "...", lang: "en" }
 router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next) => {
   try {
-    const { ids, board_id, lang = 'en' } = req.body;
+    // boards — необязательная карта { renderId: boardId }: каждый рендер уходит на свою доску
+    const { ids, board_id, boards = {}, lang = 'en' } = req.body;
     if (!ids?.length) return res.status(400).json({ error: 'ids required' });
-    if (!board_id)    return res.status(400).json({ error: 'board_id required' });
+    if (!board_id && !Object.keys(boards).length) return res.status(400).json({ error: 'board_id required' });
 
     const BASE_URL = 'https://ffe-blush.vercel.app';
     const TITLE_MAX = 100;
@@ -1346,7 +1392,9 @@ router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next)
         const description = (row.pin_description || '').slice(0, DESC_MAX);
         const link = `${BASE_URL}/outfit/${row.outfit_id}`;
 
-        const pin = await createPin({ boardId: board_id, title, description, imageUrl: row.render_url, link });
+        const boardId = boards[row.render_id] || board_id;
+        if (!boardId) throw new Error('доска не выбрана');
+        const pin = await createPin({ boardId, title, description, imageUrl: row.render_url, link });
 
         await pool.query(
           `UPDATE outfit_renders
