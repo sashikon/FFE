@@ -30,6 +30,17 @@ function authorized(req) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
+// Канал, куда публикуем: название и ссылки. Ответ Telegram кешируем на 10 минут
+let channelCache = { at: 0, value: null };
+async function channelLink() {
+  if (channelCache.value && Date.now() - channelCache.at < 10 * 60 * 1000) return channelCache.value;
+  const info = await tg.channelInfo().catch(() => null);
+  const chat = info?.chat || null;
+  const links = tg.channelLinks(chat);
+  channelCache = { at: Date.now(), value: { title: chat?.title ?? null, username: chat?.username ?? null, url: links.url, post: links.post } };
+  return channelCache.value;
+}
+
 async function listPosts(status, q = '') {
   // поиск идёт по всем статусам: ищут конкретный пост, а не пост в текущей вкладке.
   // «#12» и «12» — это номер поста, остальное ищем в тексте и в тезисе
@@ -49,10 +60,13 @@ async function listPosts(status, q = '') {
     [STATUSES[status] || STATUSES.all, needle, byId]
   );
   const { rows: counts } = await pool.query(`SELECT status, COUNT(*)::int AS n FROM posts GROUP BY status`);
+  const channel = await channelLink();
   return {
+    channel: { title: channel.title, url: channel.url },
     posts: rows.map((p) => ({
       ...p,
       format_title: formatByKey(p.format)?.title ?? null,
+      channel_url: channel.post(p.channel_message_id),
       slop: findSlop(p.text).map((h) => h.match),
     })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
@@ -237,6 +251,10 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (req.method === 'GET' && url.pathname === '/api/channel') {
+        const { title, username, url: link } = await channelLink();
+        return send(res, 200, { channel: { title, username, url: link } });
+      }
       if (req.method === 'GET' && url.pathname === '/api/social') {
         return send(res, 200, await listSocial({ kind: url.searchParams.get('kind') || null, platform: url.searchParams.get('platform') || null }));
       }

@@ -199,6 +199,17 @@ async function channelInfo() {
   return raw;
 }
 
+// Ссылка на канал и на конкретный пост в нём.
+// Публичный канал — t.me/имя/номер, приватный — t.me/c/<id без -100>/номер
+function channelLinks(chat) {
+  if (!chat) return { url: null, post: () => null };
+  if (chat.username) {
+    return { url: `https://t.me/${chat.username}`, post: (msg) => (msg ? `https://t.me/${chat.username}/${msg}` : null) };
+  }
+  const short = String(chat.id).replace(/^-100/, '');
+  return { url: `https://t.me/c/${short}`, post: (msg) => (msg ? `https://t.me/c/${short}/${msg}` : null) };
+}
+
 // Самопроверка канала публикации: находится ли он и может ли бот в нём публиковать.
 // Возвращает { ok, title, problem } — problem человекочитаемо, с подсказкой, как исправить
 async function checkChannel() {
@@ -253,5 +264,5 @@ module.exports = {
   downloadFile,
   downloadBuffer,
   normalizeChannel,
-  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, TelegramError, OWNER,
+  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, channelLinks, TelegramError, OWNER,
 };
