@@ -798,6 +798,10 @@ export default function ChannelPage() {
     }
   });
 
+  // название канала и ссылка на него: во вкладке «Календарь» список постов не грузится,
+  // поэтому берём их отдельным запросом
+  const { data: channelInfo } = useSWR('/api/channel-info', fetcher);
+
   // поиск ищет по всем статусам: человек ищет конкретный пост, а не пост во вкладке
   const query = search.trim();
   const { data, error, isLoading, mutate } = useSWR(
