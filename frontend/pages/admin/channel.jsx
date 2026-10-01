@@ -614,9 +614,16 @@ function PostCard({ post, onChanged, highlighted }) {
         <span className={`px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
         <FormatPicker post={post} onChanged={onChanged} />
         <span className="text-zinc-500">{when}</span>
-        <button onClick={copy} className="ml-auto text-zinc-400 hover:text-white transition-colors">
-          {copied ? 'Скопировано' : 'Копировать текст'}
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          {post.channel_url && (
+            <a href={post.channel_url} target="_blank" rel="noopener noreferrer" className="text-sky-300 hover:text-sky-200 transition-colors">
+              📣 В канале ↗
+            </a>
+          )}
+          <button onClick={copy} className="text-zinc-400 hover:text-white transition-colors">
+            {copied ? 'Скопировано' : 'Копировать текст'}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-5">
@@ -800,6 +807,7 @@ export default function ChannelPage() {
     { refreshInterval: query ? 0 : 30000 }
   );
   const counts = data?.counts || {};
+  const channel = data?.channel || channelInfo?.channel;
 
   return (
     <>
@@ -809,7 +817,14 @@ export default function ChannelPage() {
       </Head>
       <div className="min-h-screen bg-black text-white font-sans">
         <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-serif tracking-wide">Канал о смыслах в моде</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-xl font-serif tracking-wide">Канал о смыслах в моде</h1>
+            {channel?.url && (
+              <a href={channel.url} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-300 hover:text-sky-200 transition-colors">
+                📣 {channel.title || 'Открыть канал'} ↗
+              </a>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
