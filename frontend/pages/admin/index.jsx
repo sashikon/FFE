@@ -4,6 +4,7 @@ import useSWR, { mutate } from 'swr';
 import { Upload, Trash2, RefreshCw, CheckCircle2, XCircle, Clock, ChevronUp, Save, Edit3, Eye, ImagePlus, Sparkles, Loader2, LayoutGrid, Camera } from 'lucide-react';
 import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
+import { SITE_URL } from '../../lib/site';
 
 const UiLangCtx = createContext('en');
 function useT() {
@@ -1988,7 +1989,7 @@ function CopyPinDescButton({ outfit }) {
       layers ? `Layers: ${layers}` : '',
       words.length ? words.join(', ') : '',
       'Find the odd one out. Five rounds. No theory — just reading.',
-      `https://ffe-blush.vercel.app/outfit/${outfit.id}`,
+      `${SITE_URL}/outfit/${outfit.id}`,
     ].filter(Boolean).join('\n');
 
     navigator.clipboard.writeText(desc).then(() => {

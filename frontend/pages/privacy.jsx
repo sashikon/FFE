@@ -1,4 +1,5 @@
 import Head from 'next/head';
+import { SITE_URL } from '../lib/site';
 
 export default function PrivacyPolicy() {
   return (
@@ -16,7 +17,7 @@ export default function PrivacyPolicy() {
 
             <section>
               <h2 className="text-base font-medium text-zinc-200 mb-2">1. About this app</h2>
-              <p>FFE (Fashion Fluency Exercise) is a fashion literacy game at <a href="https://ffe-blush.vercel.app" className="text-zinc-300 underline">ffe-blush.vercel.app</a>. Players decode fashion outfits by identifying the odd word out across five semantic layers. The app is operated by FFE is a Fashion Game for personal and educational use.</p>
+              <p>FFE (Fashion Fluency Exercise) is a fashion literacy game at <a href={SITE_URL} className="text-zinc-300 underline">{SITE_URL.replace(/^https?:\/\//, '')}</a>. Players decode fashion outfits by identifying the odd word out across five semantic layers. The app is operated by FFE is a Fashion Game for personal and educational use.</p>
             </section>
 
             <section>

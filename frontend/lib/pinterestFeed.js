@@ -1,7 +1,7 @@
 // Лента для автопубликации пинов из RSS. Требования Pinterest: RSS 2.0 (не Atom),
 // ссылки — на подтверждённый домен, картинка через <enclosure> или <media:content>,
 // старое публикуется первым, до 200 пинов в сутки.
-const SITE = 'https://ffe-blush.vercel.app';
+import { SITE_URL as SITE } from './site';
 
 const esc = (s = '') => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
