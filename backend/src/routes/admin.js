@@ -12,6 +12,7 @@ const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, getUserAccount
 const { suggestBoards } = require('../llm/board');
 const { getSettings, saveSettings } = require('../settings');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
+const { buildKeywords } = require('../pinterestKeywords');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
 
@@ -555,8 +556,12 @@ router.get('/pinterest-export', async (req, res, next) => {
       const renderFilter = ids && ids.length ? ids : null;
       const result = await pool.query(
         `SELECT r.id AS render_id, r.image_url AS render_url, r.thumb_url AS render_thumb_url,
-                r.pin_title, r.pin_description,
+                r.pin_title, r.pin_description, r.aesthetics,
                 o.id, o.image_url, o.thumb_url, o.title, o.title_en,
+                COALESCE((
+                  SELECT json_agg(json_build_object('label', s.label, 'label_en', s.label_en, 'is_wrong', s.is_wrong) ORDER BY s.sort_order)
+                  FROM outfit_svg_layers s WHERE s.outfit_id = o.id
+                ), '[]') AS svg_layers,
                 t.game_rows, o.pinterest_exported
          FROM outfit_renders r
          JOIN outfits o ON o.id = r.outfit_id
@@ -572,10 +577,16 @@ router.get('/pinterest-export', async (req, res, next) => {
         `SELECT o.id, o.image_url, o.thumb_url, o.title, o.title_en,
                 t.game_rows,
                 o.pinterest_exported,
+                COALESCE((
+                  SELECT json_agg(json_build_object('label', s.label, 'label_en', s.label_en, 'is_wrong', s.is_wrong) ORDER BY s.sort_order)
+                  FROM outfit_svg_layers s WHERE s.outfit_id = o.id
+                ), '[]') AS svg_layers,
                 COALESCE(
                   (SELECT r.image_url FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1),
                   o.image_url
                 ) AS render_url,
+                -- разбор той же картинки, что уходит в пин; у эскиза без рендеров его нет
+                (SELECT r.aesthetics FROM outfit_renders r WHERE r.outfit_id = o.id ORDER BY r.created_at DESC LIMIT 1) AS aesthetics,
                 o.thumb_url AS render_thumb_url
          FROM outfits o
          JOIN outfit_translations t ON t.outfit_id = o.id AND t.lang = $1
@@ -693,68 +704,6 @@ router.get('/pinterest-export', async (req, res, next) => {
       return `${hook} ${themes}`.slice(0, DESC_MAX);
     }
 
-    function buildKeywords(gameRows) {
-      const base = lang === 'ru'
-        ? ['мода', 'образ', 'стиль', 'насмотренность', 'идеи образов', 'эстетика',
-           'что одеть', 'осенняя мода', 'осенние образы', 'стили в одежде']
-        : [
-            // high-frequency discovery
-            'outfit ideas', 'dress to impress', 'aesthetic clothes', 'cute outfit ideas',
-            // style literacy
-            'aesthetic outfits types', 'clothing style names aesthetic', 'style genres', 'fashion style quiz',
-            // fall/seasonal — peaks annually, good to index year-round
-            'fall fashion outfits', 'fall fashion trends', 'neutral palette outfit', 'cream aesthetic',
-            // evergreen
-            'fashion', 'outfit', 'style', 'fashion game', 'fashion literacy',
-          ];
-
-      const words = new Set(base);
-
-      // Collect all option text + themes from game_rows for matching
-      const allText = [];
-      for (const row of (gameRows || [])) {
-        for (const opt of (row.options || [])) {
-          if (opt && opt.length <= 30) {
-            words.add(opt.toLowerCase());
-            allText.push(opt.toLowerCase());
-          }
-        }
-        if (row.theme) allText.push(row.theme.toLowerCase());
-      }
-
-      // Trending 2025 (Pinterest Predicts) — added only when outfit content matches
-      if (lang === 'en') {
-        const trends = [
-          { match: ['rococo', 'baroque', 'ornate', 'embroidered'],           add: ['rococo outfit'] },
-          { match: ['medieval', 'gothic', 'armor', 'chainmail'],             add: ['medieval core'] },
-          { match: ['fisherman', 'nautical', 'maritime', 'sailor'],          add: ['fisherman aesthetic'] },
-          { match: ['moto', 'biker', 'motorcycle'],                          add: ['moto boho', 'moto boots'] },
-          { match: ['boho', 'bohemian', 'festival', 'western'],              add: ['moto boho'] },
-          { match: ['vamp', 'vampire', 'noir', 'dark academia'],             add: ['vamp romantic'] },
-          { match: ['cherry', 'scarlet'],                                    add: ['cherry vibes', 'cherry coded'] },
-          { match: ['sea', 'ocean', 'witchery', 'ethereal', 'mystical'],     add: ['sea witchery'] },
-          { match: ['korea', 'korean', 'hanbok'],                            add: ['korean casual outfits'] },
-          { match: ['baggy', 'wide-leg', 'wide leg'],                        add: ['baggy outfit ideas', 'baggy pants outfit'] },
-          { match: ['y2k', 'retro', '2000s'],                                add: ['y2k winter jacket'] },
-          { match: ['fur', 'shearling', 'teddy coat'],                       add: ['fur coat vintage'] },
-          { match: ['vintage', 'thrift', 'secondhand'],                      add: ['dream thrift finds', 'vintage fall aesthetic'] },
-          { match: ['preppy', 'ivy league', 'collegiate'],                   add: ["women's preppy outfits"] },
-          { match: ['camel', 'tan', 'coffee', 'mocha', 'brown'],            add: ['coffee brown pants outfit'] },
-          { match: ['puff sleeve', 'bubble', 'balloon sleeve'],              add: ['puff skirt outfit'] },
-          { match: ['lace', 'corset'],                                       add: ['lace corset outfit'] },
-          { match: ['leopard', 'animal print', 'cheetah'],                   add: ['leopard print jeans'] },
-        ];
-
-        for (const { match, add } of trends) {
-          if (match.some(m => allText.some(t => t.includes(m)))) {
-            for (const kw of add) words.add(kw);
-          }
-        }
-      }
-
-      return [...words].join(', ');
-    }
-
     // Pinterest requires exact English column names regardless of interface language.
     // Thumbnail is only relevant for video pins — leave empty for image pins.
     const header = ['Title', 'Pinterest board', 'Media URL', 'Thumbnail', 'Description', 'Link', 'Publish date', 'Keywords'];
@@ -793,7 +742,7 @@ router.get('/pinterest-export', async (req, res, next) => {
         ? (outfit.render_url || outfit.image_url)   // specific render image
         : (outfit.render_url || outfit.image_url);  // best render or sketch
       const description = outfit.pin_description || buildDescription(gameRows);
-      const keywords    = buildKeywords(gameRows);
+      const keywords    = buildKeywords({ lang, gameRows, layers: outfit.svg_layers, aesthetics: outfit.aesthetics }).join(', ');
       const seen        = (linkSeen.get(outfit.id) || 0) + 1;
       linkSeen.set(outfit.id, seen);
       const link        = seen > 1 ? `${BASE_URL}/outfit/${outfit.id}?v=${seen}` : `${BASE_URL}/outfit/${outfit.id}`;
