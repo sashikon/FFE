@@ -43,6 +43,8 @@
 
 Доступ — GitHub через next-auth; пускает только логины из `ADMIN_GITHUB_LOGIN` (Vercel). Страницы под `getServerSideProps` с `withAuth(ctx)` — это **проверка внутри `getServerSideProps`, не обёртка компонента**. Запросы к каналу идут через прокси `frontend/pages/api/channel-*`, которые держат `CHANNEL_API_TOKEN` на сервере; в браузер он не попадает. **Добавляя параметр в API канала, не забудь провести его через прокси** — на этом уже ловились: фильтр категорий молча не работал, потому что прокси не передавал `category`.
 
+**Перед PR, затрагивающим `frontend/` или `channel/src/api.js`, — `npm --prefix frontend run check:admin`** (после сборки). `next build` не видит ошибок отрисовки страниц под `getServerSideProps`: так `/admin/channel` отдавала 500 при зелёной сборке. Проверка (`frontend/scripts/check-admin/`) открывает каждую страницу админки в браузере на подставных данных, нажимает вкладки и сверяет, что каждый прокси передаёт все параметры, которые читает API канала. Ключи и база не нужны. Поменяли форму ответа API — поправьте `fixtures.mjs`; добавили вкладку — `CLICKS` в `index.mjs`.
+
 ## Грабли, на которые уже наступали
 
 - **Браузерный User-Agent ломает ленты.** Полный Chrome-подобный `User-Agent` включает защиту у Launchmetrics, Just Style и Who What Wear. Нужен короткий `Mozilla/5.0`.
@@ -57,6 +59,7 @@
 
 ```bash
 npm --prefix frontend run build      # проверить сборку админки и публичных страниц
+npm --prefix frontend run check:admin  # после сборки: страницы админки в браузере + прокси к каналу
 node --check channel/src/<файл>.js   # быстрая проверка синтаксиса
 cd channel && npm run collect        # собрать ленту (нужен DATABASE_URL)
 cd channel && npm run run-once       # один прогон конвейера
