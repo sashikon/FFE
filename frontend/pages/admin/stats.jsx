@@ -31,6 +31,7 @@ export default function StatsPage() {
           <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
           <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
           <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
+          <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>
           <a href="/" className="text-sm text-zinc-400 hover:text-white transition-colors">← Галерея</a>
         </div>
       </header>

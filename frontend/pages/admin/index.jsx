@@ -2853,6 +2853,7 @@ export default function AdminPage() {
           <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">{t('Channel','Канал')}</a>
           <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
           <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
+          <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>
           <div className="flex items-center gap-1 flex-wrap">
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: true, rendersOnly: false })}
