@@ -30,9 +30,18 @@ const text = (v, max) => String(v ?? '').trim().slice(0, max);
 router.get('/admin/visuals', requireAdminToken, async (req, res, next) => {
   try {
     const composition = text(req.query.composition, 80).toLowerCase();
-    const { rows } = composition
-      ? await pool.query('SELECT * FROM visuals WHERE $1 = ANY(compositions) ORDER BY created_at DESC', [composition])
-      : await pool.query('SELECT * FROM visuals ORDER BY created_at DESC');
+    // Название образа нужно, чтобы на карточке было видно, откуда взят эскиз или рендер
+    const { rows } = await pool.query(
+      `SELECT v.*, COALESCE(o.title, ro.title) AS outfit_title,
+              CASE WHEN v.render_id IS NOT NULL THEN 'render' WHEN v.outfit_id IS NOT NULL THEN 'sketch' ELSE 'upload' END AS origin
+       FROM visuals v
+       LEFT JOIN outfits o ON o.id = v.outfit_id
+       LEFT JOIN outfit_renders r ON r.id = v.render_id
+       LEFT JOIN outfits ro ON ro.id = r.outfit_id
+       WHERE $1 = '' OR $1 = ANY(v.compositions)
+       ORDER BY v.created_at DESC`,
+      [composition]
+    );
     const counts = await pool.query(`
       SELECT c AS name, COUNT(*)::int AS count
       FROM visuals, unnest(compositions) AS c
@@ -45,7 +54,34 @@ router.get('/admin/visuals', requireAdminToken, async (req, res, next) => {
   }
 });
 
-// POST /api/admin/visuals — файлы (multipart, поле image) или { url } в JSON
+// Взять в коллекцию уже имеющиеся эскизы образов и рендеры, не загружая картинки заново.
+// picks: [{ outfit_id }] — эскиз образа, [{ render_id }] — рендер
+async function addPicks(picks, compositions, note) {
+  const results = [];
+  for (const pick of picks.slice(0, 100)) {
+    const renderId = pick?.render_id ? String(pick.render_id) : null;
+    const outfitId = !renderId && pick?.outfit_id ? String(pick.outfit_id) : null;
+    if (!renderId && !outfitId) continue;
+    const src = renderId
+      ? await pool.query('SELECT id, outfit_id, image_url, COALESCE(thumb_url, image_url) AS thumb_url FROM outfit_renders WHERE id::text = $1', [renderId])
+      : await pool.query('SELECT id, image_url, COALESCE(thumb_url, image_url) AS thumb_url FROM outfits WHERE id::text = $1', [outfitId]);
+    if (!src.rows.length) { results.push({ missing: true, render_id: renderId, outfit_id: outfitId }); continue; }
+    const row = src.rows[0];
+    const existing = renderId
+      ? await pool.query('SELECT id FROM visuals WHERE render_id = $1', [row.id])
+      : await pool.query('SELECT id FROM visuals WHERE outfit_id = $1 AND render_id IS NULL', [row.id]);
+    if (existing.rows.length) { results.push({ duplicate: true, id: existing.rows[0].id }); continue; }
+    const { rows } = await pool.query(
+      `INSERT INTO visuals (image_url, thumb_url, outfit_id, render_id, compositions, note)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [row.image_url, row.thumb_url, renderId ? row.outfit_id : row.id, renderId ? row.id : null, compositions, note]
+    );
+    results.push({ duplicate: false, visual: rows[0] });
+  }
+  return results;
+}
+
+// POST /api/admin/visuals — файлы (multipart, поле image), { url } или { picks } в JSON
 router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), async (req, res, next) => {
   try {
     const compositions = parseCompositions(req.body.compositions);
@@ -53,6 +89,11 @@ router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), asyn
     const sourceUrl = text(req.body.source_url, 1000);
     const files = req.files || [];
     const url = text(req.body.url, 2000);
+
+    if (Array.isArray(req.body.picks)) {
+      if (!req.body.picks.length) return res.status(400).json({ error: 'Ничего не выбрано' });
+      return res.status(201).json({ results: await addPicks(req.body.picks, compositions, note) });
+    }
 
     if (!files.length && !url) return res.status(400).json({ error: 'Нужен файл или ссылка на картинку' });
     if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'Ссылка должна начинаться с http' });
