@@ -474,7 +474,7 @@ export default function CompositionsPage() {
         )}
 
         {collage && (
-          <CollageMaker visuals={picked} onClose={() => setCollage(false)} onSave={saveCollage} />
+          <CollageMaker visuals={picked} library={all?.visuals || []} onClose={() => setCollage(false)} onSave={saveCollage} />
         )}
 
         {open && (
