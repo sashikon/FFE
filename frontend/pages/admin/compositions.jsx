@@ -325,6 +325,16 @@ function VisualCard({ v, known, onChanged, onOpen, picked, onPick, strategy }) {
                 <span className="text-zinc-600">{(v.seo_lang || '').toUpperCase()} · </span>{v.seo_title}
               </p>
             )}
+            {v.overlay?.puzzle && (
+              <p className="text-[11px] text-amber-500">
+                загадка «найди лишнее»{v.overlay.puzzle.odd ? ` · лишний №${v.overlay.puzzle.odd}` : ''}
+              </p>
+            )}
+            {(v.pinterest_exported_at || v.clicks > 0) && (
+              <p className="text-[11px] text-zinc-400" title={v.last_click_at ? `последний переход ${new Date(v.last_click_at).toLocaleString('ru-RU')}` : ''}>
+                переходов на сайт: {v.clicks || 0}{v.clicks_pinterest ? ` (из Pinterest: ${v.clicks_pinterest})` : ''}
+              </p>
+            )}
             {v.pinterest_exported_at && (
               <p className="text-[11px] text-emerald-600">
                 в CSV Pinterest {new Date(v.pinterest_exported_at).toLocaleDateString('ru-RU')}
@@ -419,13 +429,15 @@ export default function CompositionsPage() {
   });
 
   // Готовый коллаж ложится в коллекцию как обычный загруженный визуал с типами исходных картинок
-  const saveCollage = async (blob, order) => {
+  const saveCollage = async (blob, order, overlay = {}) => {
     const form = new FormData();
     form.append('image', blob, 'collage.jpg');
     form.append('compositions', JSON.stringify([...new Set(order.flatMap((v) => v.compositions))]));
     form.append('note', `Коллаж из ${order.length}`);
     // Из чего собран коллаж — пригодится ИИ при SEO-разметке; файлы с компьютера в коллекции нет
     form.append('collage_of', JSON.stringify(order.filter((v) => !v.local).map((v) => v.id)));
+    // Текст на картинке и загадка: нужны ИИ для SEO, чтобы описание совпадало с картинкой
+    if (Object.keys(overlay).length) form.append('overlay', JSON.stringify(overlay));
     const res = await apiPost(API, form);
     refresh();
     const r = res.results?.[0];
