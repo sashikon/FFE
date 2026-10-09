@@ -29,6 +29,16 @@ const RULES = {
 - Do not invent anything that is not in the image or the data: brands, show seasons, names.`,
 };
 
+// Пин-загадка «Найди лишнее»: описание зовёт угадать и не выдаёт ответ
+function puzzleBlock(overlay, lang) {
+  const pz = overlay?.puzzle;
+  if (!pz) return '';
+  const odd = pz.odd ? (lang === 'ru' ? ` Правильный ответ — №${pz.odd}; он нужен тебе, чтобы не написать ничего, что противоречит ответу, но в тексте его НЕ называй и не намекай на него.` : ` The correct answer is #${pz.odd}; use it only to avoid contradicting it — do NOT state or hint at it.`) : '';
+  return lang === 'ru'
+    ? `\n\nЭто пин-загадка «Найди лишнее»: на картинке пронумерованы ${pz.count || 'несколько'} образов, один из них лишний.${odd}\n- title: вопрос-загадка или интрига (можно в духе «Какой образ здесь лишний?», но не дословно повторяй текст на картинке).\n- title_alt: другой вариант вопроса.\n- description: подскажи, по какому признаку искать (композиция, силуэт, эстетика), не раскрывая ответа; позови написать номер в комментариях и проверить себя в игре на сайте.`
+    : `\n\nThis is an "odd one out" puzzle pin: ${pz.count || 'several'} looks are numbered, one does not belong.${odd}\n- title: a puzzle question or teaser (in the spirit of "Which look is the odd one out?", but do not copy the on-image text verbatim).\n- title_alt: another phrasing of the question.\n- description: hint at what to look at (composition, silhouette, aesthetic) without revealing the answer; invite people to comment the number and test themselves in the game on the site.`;
+}
+
 function strategyBlock(strategy, lang) {
   if (!strategy) return '';
   const keywords = (strategy.top_keywords || []).slice(0, 12).map((k) => k.keyword).filter(Boolean).join(', ');
@@ -47,6 +57,8 @@ function contextBlock(visual, sources, lang) {
   const lines = [];
   if (visual.compositions?.length) lines.push(`${ru ? 'Типы композиции' : 'Composition types'}: ${visual.compositions.join(', ')}`);
   if (visual.note) lines.push(`${ru ? 'Заметка автора' : 'Author note'}: ${visual.note}`);
+  const ov = visual.overlay || {};
+  if (ov.text) lines.push(`${ru ? 'Текст, написанный на самой картинке' : 'Text printed on the image'}: «${ov.text}»`);
   if (sources.length) {
     lines.push(ru ? 'Это коллаж. Части, о которых есть данные (на картинке их может быть больше):' : 'This is a collage. Parts we have data on (the image may contain more):');
     sources.forEach((s, i) => {
@@ -71,6 +83,7 @@ async function generateVisualSeo({ visual, sources = [], strategy = null, lang =
     : `You are a Pinterest pin SEO editor for a project about meaning in fashion. Write a title, an alternative title and a pin description for this image.\n\nWhat we know about the image:\n`)
     + contextBlock(visual, sources, L)
     + `\n\n${RULES[L]}`
+    + puzzleBlock(visual.overlay, L)
     + strategyBlock(strategy, L);
 
   const msg = await client.messages.create(

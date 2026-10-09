@@ -39,6 +39,24 @@ function parseIds(raw) {
   return [...new Set(list.map(String).filter((id) => UUID_RE.test(id)))].slice(0, 20);
 }
 
+// Текст на картинке и загадка из сборщика коллажа: только известные поля и разумной длины
+function parseOverlay(raw) {
+  let o = raw;
+  if (typeof raw === 'string') {
+    try { o = JSON.parse(raw); } catch { return null; }
+  }
+  if (!o || typeof o !== 'object') return null;
+  const out = {};
+  const t = text(o.text, 120);
+  if (t) { out.text = t; out.position = o.position === 'bottom' ? 'bottom' : 'top'; }
+  if (o.puzzle && typeof o.puzzle === 'object') {
+    const count = Math.min(Math.max(parseInt(o.puzzle.count, 10) || 0, 0), 20);
+    const odd = parseInt(o.puzzle.odd, 10);
+    out.puzzle = { count, odd: odd >= 1 && odd <= count ? odd : null };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 // Загруженная SEO-стратегия (сводка по CSV аналитики Pinterest), если она есть
 async function loadStrategy() {
   try {
@@ -60,6 +78,9 @@ router.get('/admin/visuals', requireAdminToken, async (req, res, next) => {
     // Название образа нужно, чтобы на карточке было видно, откуда взят эскиз или рендер
     const { rows } = await pool.query(
       `SELECT v.*, COALESCE(o.title, ro.title) AS outfit_title,
+              (SELECT COUNT(*)::int FROM visual_clicks k WHERE k.visual_id = v.id) AS clicks,
+              (SELECT COUNT(*)::int FROM visual_clicks k WHERE k.visual_id = v.id AND k.from_pinterest) AS clicks_pinterest,
+              (SELECT MAX(k.created_at) FROM visual_clicks k WHERE k.visual_id = v.id) AS last_click_at,
               CASE WHEN v.render_id IS NOT NULL THEN 'render' WHEN v.outfit_id IS NOT NULL THEN 'sketch' ELSE 'upload' END AS origin
        FROM visuals v
        LEFT JOIN outfits o ON o.id = v.outfit_id
@@ -123,6 +144,7 @@ router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), asyn
     const files = req.files || [];
     const url = text(req.body.url, 2000);
     const collageOf = parseIds(req.body.collage_of);
+    const overlay = parseOverlay(req.body.overlay);
 
     if (Array.isArray(req.body.picks)) {
       if (!req.body.picks.length) return res.status(400).json({ error: 'Ничего не выбрано' });
@@ -134,9 +156,9 @@ router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), asyn
 
     const insert = async (img, hash) => {
       const { rows } = await pool.query(
-        `INSERT INTO visuals (image_url, thumb_url, public_id, file_hash, compositions, note, source_url, collage_of)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [img.imageUrl, img.thumbUrl, img.publicId, hash, compositions, note, sourceUrl || (url && !files.length ? url : ''), collageOf.length ? collageOf : null]
+        `INSERT INTO visuals (image_url, thumb_url, public_id, file_hash, compositions, note, source_url, collage_of, overlay)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [img.imageUrl, img.thumbUrl, img.publicId, hash, compositions, note, sourceUrl || (url && !files.length ? url : ''), collageOf.length ? collageOf : null, overlay]
       );
       return rows[0];
     };

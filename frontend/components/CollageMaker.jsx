@@ -60,6 +60,69 @@ function drawInto(ctx, img, cell, fit) {
 }
 
 const COLLAGE_MAX = 12;
+const SERIF = 'Georgia, "Times New Roman", serif';
+const SANS = '-apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+const PUZZLE_QUESTION = 'Какой образ здесь лишний?';
+
+// Перенос текста по словам под ширину плашки
+function wrapLines(ctx, text, maxW) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (ctx.measureText(next).width <= maxW || !line) line = next;
+    else { lines.push(line); line = w; }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Плашка с текстом: подбираем кегль так, чтобы влезло не больше трёх строк.
+// Возвращает высоту плашки и функцию, которая её рисует
+function captionBand(ctx, text, W, theme) {
+  const pad = Math.round(W * 0.05);
+  let size = Math.round(W * 0.056);
+  let lines = [];
+  for (; size >= Math.round(W * 0.036); size -= 2) {
+    ctx.font = `${size}px ${SERIF}`;
+    lines = wrapLines(ctx, text, W - pad * 2);
+    if (lines.length <= 3) break;
+  }
+  if (lines.length > 3) { lines = lines.slice(0, 3); lines[2] = `${lines[2].replace(/\s*\S*$/, '')}…`; }
+  const lineH = Math.round(size * 1.25);
+  const height = pad * 2 + lineH * lines.length - Math.round(size * 0.25);
+  const draw = (y) => {
+    ctx.fillStyle = theme === 'dark' ? '#111111' : '#ffffff';
+    ctx.fillRect(0, y, W, height);
+    ctx.fillStyle = theme === 'dark' ? '#ffffff' : '#111111';
+    ctx.font = `${size}px ${SERIF}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, y + pad + i * lineH));
+  };
+  return { height, draw };
+}
+
+// Номер ячейки для загадки: одинаковые кружки, чтобы ответ не угадывался по оформлению
+function drawNumber(ctx, cell, n, W) {
+  const r = Math.round(W * 0.034);
+  const x = cell.x + r + Math.round(W * 0.015);
+  const y = cell.y + r + Math.round(W * 0.015);
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = Math.round(r * 0.4);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#111111';
+  ctx.font = `bold ${Math.round(r * 1.1)}px ${SANS}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), x, y + 1);
+}
 
 // Добавить в коллаж ещё визуал: из коллекции (с фильтром по типу композиции) или файл с компьютера.
 // Файл с компьютера идёт только в коллаж, в коллекцию он не сохраняется
@@ -100,6 +163,12 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
   const [fit, setFit] = useState('cover');
   const [gap, setGap] = useState(12);
   const [bg, setBg] = useState('#ffffff');
+  // Текст на картинке и режим загадки «Найди лишнее»
+  const [caption, setCaption] = useState('');
+  const [captionPos, setCaptionPos] = useState('top');
+  const [captionTheme, setCaptionTheme] = useState('light');
+  const [puzzle, setPuzzle] = useState(false);
+  const [oddId, setOddId] = useState('');
   const [images, setImages] = useState({});
   const [failed, setFailed] = useState({});
   const [adding, setAdding] = useState(false);
@@ -108,7 +177,7 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
   // Сохранённый коллаж: после сохранения его можно сразу разметить SEO
   const [saved, setSaved] = useState(null);
   // Коллаж поменяли после сохранения — SEO прежнего варианта больше не про то, что на экране
-  useEffect(() => { setSaved(null); }, [order, format, layout, fit, gap, bg]);
+  useEffect(() => { setSaved(null); }, [order, format, layout, fit, gap, bg, caption, captionPos, captionTheme, puzzle, oddId]);
   const canvasRef = useRef(null);
 
   // Догружаем картинки тех визуалов, что появились в коллаже; уже загруженные не трогаем
@@ -143,6 +212,14 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
   };
   const remove = (i) => setOrder(order.filter((_, j) => j !== i));
 
+  const togglePuzzle = (on) => {
+    setPuzzle(on);
+    if (on && !caption.trim()) setCaption(PUZZLE_QUESTION);
+    if (on && captionPos === 'none') setCaptionPos('top');
+  };
+  const oddIndex = order.findIndex((v) => v.id === oddId);
+  const showCaption = captionPos !== 'none' && caption.trim();
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !ready) return;
@@ -153,8 +230,15 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
     const scaledGap = Math.round((gap * w) / 1000);
-    cells(order.length, layout, w, h, scaledGap).forEach((cell, i) => drawInto(ctx, images[order[i].id], cell, fit));
-  }, [ready, order, images, format, layout, fit, gap, bg]);
+    // Плашка с текстом занимает свою полосу, картинки раскладываются в оставшейся части
+    const band = showCaption ? captionBand(ctx, caption.trim(), w, captionTheme) : null;
+    const top = band && captionPos === 'top' ? band.height : 0;
+    const areaH = h - (band ? band.height : 0);
+    const placed = cells(order.length, layout, w, areaH, scaledGap).map((c) => ({ ...c, y: c.y + top }));
+    placed.forEach((cell, i) => drawInto(ctx, images[order[i].id], cell, fit));
+    if (puzzle) placed.forEach((cell, i) => drawNumber(ctx, cell, i + 1, w));
+    if (band) band.draw(captionPos === 'top' ? 0 : h - band.height);
+  }, [ready, order, images, format, layout, fit, gap, bg, showCaption, caption, captionPos, captionTheme, puzzle]);
 
   const move = (i, d) => {
     const j = i + d;
@@ -179,7 +263,11 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
     setBusy(true);
     setMessage('');
     try {
-      const v = await onSave(await toBlob(), order);
+      const overlay = {
+        ...(showCaption ? { text: caption.trim(), position: captionPos } : {}),
+        ...(puzzle ? { puzzle: { count: order.length, odd: oddIndex >= 0 ? oddIndex + 1 : null } } : {}),
+      };
+      const v = await onSave(await toBlob(), order, overlay);
       setSaved(v && !v.duplicate ? v : null);
       setMessage(v?.duplicate ? 'Такой коллаж уже есть в коллекции — SEO можно разметить на его карточке' : 'Коллаж сохранён в коллекцию');
     } catch (e) {
@@ -238,13 +326,56 @@ export default function CollageMaker({ visuals, library = [], strategy = null, o
               <button type="button" onClick={() => setBg('#000000')} className="text-zinc-500 hover:text-white">чёрный</button>
             </label>
 
-            <div className="space-y-1">
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <label className="flex items-center gap-2 text-zinc-300">
+                <input type="checkbox" checked={puzzle} onChange={(e) => togglePuzzle(e.target.checked)} />
+                Загадка «Найди лишнее»
+              </label>
+              {puzzle && (
+                <>
+                  <p className="text-zinc-600">На ячейках появятся номера. Ответ на картинке не виден — ИИ напишет описание, которое зовёт угадать и сыграть.</p>
+                  <label className="block space-y-1">
+                    <span className="text-zinc-500">Какой лишний</span>
+                    <select value={oddIndex >= 0 ? oddId : ''} onChange={(e) => setOddId(e.target.value)} className={`${select} w-full`}>
+                      <option value="">не указывать</option>
+                      {order.map((v, i) => <option key={v.id} value={v.id}>№{i + 1} · {v.outfit_title || v.compositions.join(', ') || 'визуал'}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <span className="text-zinc-500">Текст на картинке</span>
+              <textarea
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                rows={2}
+                maxLength={120}
+                placeholder="например: 4 образа с диагональной композицией"
+                className="w-full bg-black border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
+              />
+              <div className="flex flex-wrap gap-2">
+                <select value={captionPos} onChange={(e) => setCaptionPos(e.target.value)} className={select}>
+                  <option value="top">сверху</option>
+                  <option value="bottom">снизу</option>
+                  <option value="none">без текста</option>
+                </select>
+                <select value={captionTheme} onChange={(e) => setCaptionTheme(e.target.value)} className={select}>
+                  <option value="light">светлая плашка</option>
+                  <option value="dark">тёмная плашка</option>
+                </select>
+              </div>
+              <p className="text-zinc-600">Короткий текст читается в ленте лучше длинного: до 3 строк, кегль подбирается сам.</p>
+            </div>
+
+            <div className="space-y-1 border-t border-zinc-800 pt-3">
               <span className="text-zinc-500">Порядок (сверху вниз, слева направо)</span>
               {order.map((v, i) => (
                 <div key={v.id} className="flex items-center gap-2">
                   <img src={v.thumb_url} alt="" className={`w-8 h-10 object-cover rounded bg-zinc-900 ${failed[v.id] ? 'opacity-30' : ''}`} />
                   <span className={`flex-1 truncate ${failed[v.id] ? 'text-rose-400' : 'text-zinc-400'}`}>
-                    {i + 1}. {v.outfit_title || v.compositions.join(', ') || 'визуал'}{v.local ? ' · с компьютера' : ''}
+                    {i + 1}. {v.outfit_title || v.compositions.join(', ') || 'визуал'}{v.local ? ' · с компьютера' : ''}{puzzle && v.id === oddId ? ' · лишний' : ''}
                   </span>
                   <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-1 text-zinc-400 hover:text-white disabled:opacity-20">↑</button>
                   <button type="button" onClick={() => move(i, 1)} disabled={i === order.length - 1} className="px-1 text-zinc-400 hover:text-white disabled:opacity-20">↓</button>
