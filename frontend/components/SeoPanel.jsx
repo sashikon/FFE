@@ -22,8 +22,9 @@ function Field({ label, value, onChange, max, rows = 1 }) {
 
 // SEO-разметка визуала под пин: ИИ предлагает заголовок, запасной заголовок и описание,
 // по желанию — с учётом загруженной SEO-стратегии; всё можно поправить руками
-export default function SeoPanel({ visual, strategy, onChanged }) {
-  const [lang, setLang] = useState(visual.seo_lang || 'ru');
+export default function SeoPanel({ visual, strategy, onChanged, defaultLang }) {
+  // Язык по умолчанию — как у прошлой разметки, иначе как у надписи на картинке
+  const [lang, setLang] = useState(visual.seo_lang || defaultLang || visual.overlay?.lang || 'ru');
   const [useStrategy, setUseStrategy] = useState(Boolean(strategy) && visual.seo_with_strategy !== false);
   const [title, setTitle] = useState(visual.seo_title || '');
   const [titleAlt, setTitleAlt] = useState(visual.seo_title_alt || '');

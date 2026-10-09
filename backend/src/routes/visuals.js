@@ -48,7 +48,7 @@ function parseOverlay(raw) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   const t = text(o.text, 120);
-  if (t) { out.text = t; out.position = o.position === 'bottom' ? 'bottom' : 'top'; }
+  if (t) { out.text = t; out.position = o.position === 'bottom' ? 'bottom' : 'top'; out.lang = o.lang === 'en' ? 'en' : 'ru'; }
   if (o.puzzle && typeof o.puzzle === 'object') {
     const count = Math.min(Math.max(parseInt(o.puzzle.count, 10) || 0, 0), 20);
     const odd = parseInt(o.puzzle.odd, 10);
