@@ -3,6 +3,9 @@ import useSWR from 'swr';
 import Head from 'next/head';
 import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
+import CollageMaker from '../../components/CollageMaker';
+
+const COLLAGE_MAX = 12;
 
 // Стартовый набор типов. Это подсказки, а не закрытый список: можно вписать свой тип,
 // и он появится в фильтре, как только на него будет помечен хотя бы один визуал
@@ -261,7 +264,7 @@ function AddForm({ known, taken, onAdded }) {
   );
 }
 
-function VisualCard({ v, known, onChanged, onOpen }) {
+function VisualCard({ v, known, onChanged, onOpen, picked, onPick }) {
   const [editing, setEditing] = useState(false);
   const [compositions, setCompositions] = useState(v.compositions);
   const [note, setNote] = useState(v.note);
@@ -292,10 +295,16 @@ function VisualCard({ v, known, onChanged, onOpen }) {
   };
 
   return (
-    <div className="break-inside-avoid mb-4 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
+    <div className={`relative break-inside-avoid mb-4 bg-zinc-950 border rounded-xl overflow-hidden ${picked ? 'border-zinc-100' : 'border-zinc-800'}`}>
       <button type="button" onClick={() => onOpen(v)} className="block w-full">
         <img src={v.thumb_url} alt={v.note || v.compositions.join(', ')} loading="lazy" className="w-full h-auto bg-zinc-900" />
       </button>
+      <button
+        type="button"
+        onClick={onPick}
+        title={picked ? 'Убрать из коллажа' : 'Взять в коллаж'}
+        className={`absolute top-2 right-2 min-w-[1.75rem] h-7 px-2 rounded-full text-xs font-medium transition-colors ${picked ? 'bg-zinc-100 text-zinc-900' : 'bg-black/60 text-zinc-300 hover:bg-black/80'}`}
+      >{picked ? picked : '+ в коллаж'}</button>
       <div className="p-3 space-y-2">
         {!editing && (
           <>
@@ -355,6 +364,9 @@ function VisualCard({ v, known, onChanged, onOpen }) {
 export default function CompositionsPage() {
   const [active, setActive] = useState('');
   const [open, setOpen] = useState(null);
+  // Визуалы для коллажа в порядке, в котором их отметили; выбор сохраняется при смене фильтра
+  const [picked, setPicked] = useState([]);
+  const [collage, setCollage] = useState(false);
   const key = active ? `${API}?composition=${encodeURIComponent(active)}` : API;
   const { data, error, isLoading, mutate } = useSWR(key, adminFetcher);
   // Счётчики по типам берём из общего списка, чтобы фильтр не схлопывался при выборе типа
@@ -367,6 +379,29 @@ export default function CompositionsPage() {
   // Что из образов и рендеров уже в коллекции — в выборе такие картинки неактивны
   const taken = new Set((all?.visuals || []).flatMap((v) =>
     v.render_id ? [`r:${v.render_id}`] : v.outfit_id ? [`o:${v.outfit_id}`] : []));
+
+  // Удалённые визуалы выпадают из выбора, а правки (типы, заметка) подтягиваются из свежего списка
+  if (all?.visuals) {
+    const fresh = new Map(all.visuals.map((v) => [v.id, v]));
+    const live = picked.filter((p) => fresh.has(p.id)).map((p) => fresh.get(p.id));
+    if (live.length !== picked.length || live.some((v, i) => v !== picked[i])) setPicked(live);
+  }
+
+  const togglePick = (v) => setPicked((p) => {
+    if (p.some((x) => x.id === v.id)) return p.filter((x) => x.id !== v.id);
+    if (p.length >= COLLAGE_MAX) { alert(`В коллаж помещается до ${COLLAGE_MAX} визуалов`); return p; }
+    return [...p, v];
+  });
+
+  // Готовый коллаж ложится в коллекцию как обычный загруженный визуал с типами исходных картинок
+  const saveCollage = async (blob, order) => {
+    const form = new FormData();
+    form.append('image', blob, 'collage.jpg');
+    form.append('compositions', JSON.stringify([...new Set(order.flatMap((v) => v.compositions))]));
+    form.append('note', `Коллаж из ${order.length}`);
+    await apiPost(API, form);
+    refresh();
+  };
 
   return (
     <>
@@ -385,7 +420,7 @@ export default function CompositionsPage() {
           </div>
         </header>
 
-        <main className="max-w-6xl mx-auto px-6 py-8">
+        <main className="max-w-6xl mx-auto px-6 py-8 pb-24">
           <AddForm known={known} taken={taken} onAdded={refresh} />
 
           <div className="flex flex-wrap gap-1.5 mb-6">
@@ -410,10 +445,37 @@ export default function CompositionsPage() {
 
           <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
             {visuals.map((v) => (
-              <VisualCard key={`${v.id}-${v.compositions.join('|')}-${v.note}`} v={v} known={known} onChanged={refresh} onOpen={setOpen} />
+              <VisualCard
+                key={`${v.id}-${v.compositions.join('|')}-${v.note}`}
+                v={v}
+                known={known}
+                onChanged={refresh}
+                onOpen={setOpen}
+                picked={picked.findIndex((x) => x.id === v.id) + 1}
+                onPick={() => togglePick(v)}
+              />
             ))}
           </div>
         </main>
+
+        {picked.length > 0 && !collage && (
+          <div className="fixed bottom-0 inset-x-0 z-40 bg-zinc-950/95 border-t border-zinc-800">
+            <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-4">
+              <span className="text-sm text-zinc-300">В коллаж: {picked.length}</span>
+              <button
+                onClick={() => setCollage(true)}
+                disabled={picked.length < 2}
+                className="px-4 py-1.5 rounded-lg text-sm bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-40"
+              >Собрать коллаж</button>
+              {picked.length < 2 && <span className="text-xs text-zinc-500">отметьте хотя бы два</span>}
+              <button onClick={() => setPicked([])} className="text-xs text-zinc-500 hover:text-white ml-auto">снять выбор</button>
+            </div>
+          </div>
+        )}
+
+        {collage && (
+          <CollageMaker visuals={picked} onClose={() => setCollage(false)} onSave={saveCollage} />
+        )}
 
         {open && (
           <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6" onClick={() => setOpen(null)}>
