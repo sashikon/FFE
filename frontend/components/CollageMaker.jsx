@@ -58,7 +58,41 @@ function drawInto(ctx, img, cell, fit) {
   }
 }
 
-export default function CollageMaker({ visuals, onClose, onSave }) {
+const COLLAGE_MAX = 12;
+
+// Добавить в коллаж ещё визуал: из коллекции (с фильтром по типу композиции) или файл с компьютера.
+// Файл с компьютера идёт только в коллаж, в коллекцию он не сохраняется
+function AddMore({ library, used, onAdd, onFiles, onClose }) {
+  const [type, setType] = useState('');
+  const types = [...new Set(library.flatMap((v) => v.compositions))].sort();
+  const list = library.filter((v) => !used.has(v.id) && (!type || v.compositions.includes(type)));
+  return (
+    <div className="border border-zinc-800 rounded-lg p-3 space-y-2 bg-zinc-950">
+      <div className="flex items-center justify-between">
+        <span className="text-zinc-400">Добавить визуал</span>
+        <button type="button" onClick={onClose} className="text-zinc-500 hover:text-white">готово</button>
+      </div>
+      <label className="block">
+        <span className="inline-block px-2 py-1 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 cursor-pointer">файл с компьютера…</span>
+        <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { onFiles(Array.from(e.target.files || [])); e.target.value = ''; }} />
+      </label>
+      <select value={type} onChange={(e) => setType(e.target.value)} className="w-full bg-black border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-200">
+        <option value="">из коллекции: все типы</option>
+        {types.map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <div className="grid grid-cols-4 gap-1.5 max-h-60 overflow-y-auto">
+        {list.map((v) => (
+          <button key={v.id} type="button" onClick={() => onAdd(v)} title={v.outfit_title || v.compositions.join(', ')} className="rounded overflow-hidden border border-transparent hover:border-zinc-300">
+            <img src={v.thumb_url} alt="" loading="lazy" className="w-full h-16 object-cover bg-zinc-900" />
+          </button>
+        ))}
+      </div>
+      {list.length === 0 && <p className="text-zinc-600">В коллекции больше нечего добавить</p>}
+    </div>
+  );
+}
+
+export default function CollageMaker({ visuals, library = [], onClose, onSave }) {
   const [order, setOrder] = useState(visuals);
   const [format, setFormat] = useState('2:3');
   const [layout, setLayout] = useState('auto');
@@ -66,22 +100,43 @@ export default function CollageMaker({ visuals, onClose, onSave }) {
   const [gap, setGap] = useState(12);
   const [bg, setBg] = useState('#ffffff');
   const [images, setImages] = useState({});
-  const [error, setError] = useState('');
+  const [failed, setFailed] = useState({});
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const canvasRef = useRef(null);
 
+  // Догружаем картинки тех визуалов, что появились в коллаже; уже загруженные не трогаем
+  const requested = useRef(new Set());
   useEffect(() => {
-    let alive = true;
-    visuals.forEach((v) => {
-      loadImage(proxied(v.image_url))
-        .then((img) => alive && setImages((m) => ({ ...m, [v.id]: img })))
-        .catch(() => alive && setError('Часть картинок не загрузилась — попробуйте открыть сборщик ещё раз'));
+    order.forEach((v) => {
+      if (requested.current.has(v.id)) return;
+      requested.current.add(v.id);
+      loadImage(v.local ? v.image_url : proxied(v.image_url))
+        .then((img) => setImages((m) => ({ ...m, [v.id]: img })))
+        .catch(() => setFailed((m) => ({ ...m, [v.id]: true })));
     });
-    return () => { alive = false; };
-  }, [visuals]);
+  }, [order]);
 
-  const ready = order.every((v) => images[v.id]);
+  // Адреса файлов с компьютера живут, пока открыт сборщик
+  const localUrls = useRef([]);
+  useEffect(() => () => localUrls.current.forEach((u) => URL.revokeObjectURL(u)), []);
+
+  const broken = order.filter((v) => failed[v.id]);
+  const ready = order.length > 0 && order.every((v) => images[v.id]);
+  const loaded = order.filter((v) => images[v.id]).length;
+
+  const room = COLLAGE_MAX - order.length;
+  const add = (v) => { if (room > 0 && !order.some((x) => x.id === v.id)) setOrder([...order, v]); };
+  const addFiles = (files) => {
+    const items = files.filter((f) => f.type.startsWith('image/')).slice(0, room).map((f, i) => {
+      const url = URL.createObjectURL(f);
+      localUrls.current.push(url);
+      return { id: `file:${Date.now()}:${i}`, local: true, image_url: url, thumb_url: url, compositions: [], outfit_title: f.name };
+    });
+    if (items.length) setOrder([...order, ...items]);
+  };
+  const remove = (i) => setOrder(order.filter((_, j) => j !== i));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -134,14 +189,15 @@ export default function CollageMaker({ visuals, onClose, onSave }) {
     <div className="fixed inset-0 z-50 bg-black/90 overflow-y-auto">
       <div className="max-w-5xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-serif">Коллаж из {order.length} визуалов</h2>
+          <h2 className="text-lg font-serif">Коллаж · {order.length}</h2>
           <button onClick={onClose} className="text-sm text-zinc-400 hover:text-white">закрыть ✕</button>
         </div>
 
         <div className="grid gap-8 md:grid-cols-[1fr_18rem]">
           <div className="flex justify-center">
-            {!ready && !error && <p className="text-zinc-500 text-sm py-20">Загружаю картинки… {Object.keys(images).length} из {order.length}</p>}
-            {error && <p className="text-rose-400 text-sm py-20">{error}</p>}
+            {order.length === 0 && <p className="text-zinc-500 text-sm py-20">В коллаже пусто — добавьте визуалы справа</p>}
+            {order.length > 0 && !ready && !broken.length && <p className="text-zinc-500 text-sm py-20">Загружаю картинки… {loaded} из {order.length}</p>}
+            {broken.length > 0 && <p className="text-rose-400 text-sm py-20">Не загрузились: {broken.length}. Уберите их из списка справа (✕) или закройте сборщик и откройте снова.</p>}
             <canvas ref={canvasRef} className={`max-h-[75vh] w-auto max-w-full border border-zinc-800 ${ready ? '' : 'hidden'}`} />
           </div>
 
@@ -180,13 +236,34 @@ export default function CollageMaker({ visuals, onClose, onSave }) {
               <span className="text-zinc-500">Порядок (сверху вниз, слева направо)</span>
               {order.map((v, i) => (
                 <div key={v.id} className="flex items-center gap-2">
-                  <img src={v.thumb_url} alt="" className="w-8 h-10 object-cover rounded bg-zinc-900" />
-                  <span className="flex-1 truncate text-zinc-400">{i + 1}. {v.outfit_title || v.compositions.join(', ') || 'визуал'}</span>
+                  <img src={v.thumb_url} alt="" className={`w-8 h-10 object-cover rounded bg-zinc-900 ${failed[v.id] ? 'opacity-30' : ''}`} />
+                  <span className={`flex-1 truncate ${failed[v.id] ? 'text-rose-400' : 'text-zinc-400'}`}>
+                    {i + 1}. {v.outfit_title || v.compositions.join(', ') || 'визуал'}{v.local ? ' · с компьютера' : ''}
+                  </span>
                   <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-1 text-zinc-400 hover:text-white disabled:opacity-20">↑</button>
                   <button type="button" onClick={() => move(i, 1)} disabled={i === order.length - 1} className="px-1 text-zinc-400 hover:text-white disabled:opacity-20">↓</button>
+                  <button type="button" onClick={() => remove(i)} title="Убрать из коллажа" className="px-1 text-zinc-500 hover:text-rose-400">✕</button>
                 </div>
               ))}
+              {!adding && (
+                <button
+                  type="button"
+                  onClick={() => setAdding(true)}
+                  disabled={room <= 0}
+                  className="mt-1 px-2 py-1 rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+                >{room > 0 ? '+ добавить визуал' : `не больше ${COLLAGE_MAX}`}</button>
+              )}
             </div>
+
+            {adding && (
+              <AddMore
+                library={library}
+                used={new Set(order.map((v) => v.id))}
+                onAdd={add}
+                onFiles={addFiles}
+                onClose={() => setAdding(false)}
+              />
+            )}
 
             <div className="flex flex-wrap gap-2 pt-2">
               <button onClick={download} disabled={!ready} className="px-3 py-1.5 rounded-lg text-sm bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-40">Скачать JPG</button>
