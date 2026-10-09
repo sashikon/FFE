@@ -878,6 +878,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, o
   const [suggestions, setSuggestions] = useState({}); // renderId → { board_id, board_name, confidence, reason }
   const [suggesting, setSuggesting] = useState(false);
   const [otherLang, setOtherLang] = useState(0); // коллажи, размеченные на другом языке
+  const [csvBoard, setCsvBoard] = useState(''); // доска в CSV коллажей
 
   useEffect(() => {
     const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}), ...(collages ? { collages: 'true' } : {}) });
@@ -885,6 +886,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, o
       .then((data) => {
         setItems(data.outfits || []);
         setOtherLang(data.other_lang || 0);
+        if (collages) setCsvBoard(data.default_board || '');
         setSelected(new Set((data.outfits || []).map((o) => o.id)));
       })
       .catch((e) => alert('Preview load error: ' + e.message));
@@ -968,7 +970,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, o
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
       const ids = [...selected].join(',');
-      const params = new URLSearchParams({ lang, ids, ...(rendersOnly ? { renders: 'true' } : {}), ...(collages ? { collages: 'true' } : {}) });
+      const params = new URLSearchParams({ lang, ids, ...(rendersOnly ? { renders: 'true' } : {}), ...(collages ? { collages: 'true', ...(csvBoard.trim() ? { board: csvBoard.trim() } : {}) } : {}) });
       const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });
@@ -1182,6 +1184,27 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, o
               </div>
             )}
 
+            {collages && (
+              <label className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500 shrink-0">{t('Board in CSV:','Доска в CSV:')}</span>
+                <input
+                  value={csvBoard}
+                  onChange={(e) => setCsvBoard(e.target.value)}
+                  list="collage-csv-boards"
+                  placeholder={t('board name','название доски')}
+                  className="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-zinc-500"
+                />
+                <datalist id="collage-csv-boards">
+                  {(boards || []).map((b) => <option key={b.id} value={b.name} />)}
+                </datalist>
+                {boards?.find((b) => b.name === csvBoard.trim())?.url ? (
+                  <a href={boards.find((b) => b.name === csvBoard.trim()).url} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-300 hover:text-sky-200 shrink-0">{t('open ↗','открыть ↗')}</a>
+                ) : csvBoard.trim() && boards?.length > 0 ? (
+                  <span className="text-[11px] text-amber-400 shrink-0">{t('not in your boards — check the name','нет в списке досок — проверьте название')}</span>
+                ) : null}
+              </label>
+            )}
+
             <PinterestBoardSettings boards={boards} />
 
             {/* Progress after posting */}
@@ -1205,7 +1228,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, o
                 </button>
                 <button
                   onClick={handleExport}
-                  disabled={exporting || !selected.size}
+                  disabled={exporting || !selected.size || (collages && !csvBoard.trim())}
                   className="flex items-center gap-1.5 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
                 >
                   <Upload size={12} />

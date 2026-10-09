@@ -502,7 +502,12 @@ router.get('/pinterest-preview', async (req, res, next) => {
 
     // Коллажи и другие визуалы из «Композиций» с SEO-разметкой на этом языке
     if (req.query.collages === 'true') {
-      return res.json({ outfits: await previewVisuals(lang), other_lang: await otherLangCount(lang) });
+      const { export_board: exportBoard, collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      return res.json({
+        outfits: await previewVisuals(lang),
+        other_lang: await otherLangCount(lang),
+        default_board: collageCsvBoard || exportBoard,
+      });
     }
 
     if (rendersOnly) {
@@ -556,7 +561,14 @@ router.get('/pinterest-export', async (req, res, next) => {
 
     // Коллажи из «Композиций»: те же колонки, своя выборка и своя отметка о выгрузке
     if (req.query.collages === 'true') {
-      const result = await exportVisualsCsv({ lang, ids: req.query.ids, board });
+      // Доска для коллажей: выбранная в окне экспорта, иначе прошлый выбор, иначе общая доска выгрузки
+      const { collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      const chosen = String(req.query.board || '').trim().slice(0, 100);
+      const collageBoard = chosen || collageCsvBoard || exportBoard;
+      const result = await exportVisualsCsv({ lang, ids: req.query.ids, board: collageBoard });
+      if (result && chosen && chosen !== collageCsvBoard) {
+        await saveSettings('pinterest', { collage_csv_board: chosen }).catch((e) => console.error('save collage board', e));
+      }
       if (!result) return res.status(404).json({ error: `Нет коллажей с SEO-разметкой на языке ${lang.toUpperCase()}` });
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="pinterest_${lang}_collages_${new Date().toISOString().slice(0, 10)}.csv"`);
