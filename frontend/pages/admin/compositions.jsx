@@ -60,7 +60,91 @@ function CompositionPicker({ value, onChange, known }) {
   );
 }
 
-function AddForm({ known, onAdded }) {
+// Выбор из того, что уже есть в игре: эскизы образов и рендеры. Картинки не загружаются заново —
+// визуал ссылается на образ или рендер
+function LibraryPicker({ selected, onChange, taken }) {
+  const { data, error, isLoading } = useSWR('/api/admin/outfits', adminFetcher);
+  const [kind, setKind] = useState('all');
+  const [q, setQ] = useState('');
+
+  const keyOf = (p) => (p.render_id ? `r:${p.render_id}` : `o:${p.outfit_id}`);
+  const isSelected = (p) => selected.some((s) => keyOf(s) === keyOf(p));
+  const toggle = (p) => onChange(isSelected(p) ? selected.filter((s) => keyOf(s) !== keyOf(p)) : [...selected, p]);
+
+  const query = q.trim().toLowerCase();
+  const outfits = (data?.outfits || []).filter((o) =>
+    !query || `${o.title || ''} ${o.title_en || ''}`.toLowerCase().includes(query));
+
+  const tile = (pick, thumb, label) => {
+    const inCollection = taken.has(keyOf(pick));
+    const on = isSelected(pick);
+    return (
+      <button
+        key={keyOf(pick)}
+        type="button"
+        disabled={inCollection}
+        onClick={() => toggle(pick)}
+        title={inCollection ? 'Уже в коллекции' : label}
+        className={`relative w-24 shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${on ? 'border-zinc-100' : 'border-transparent hover:border-zinc-600'} ${inCollection ? 'opacity-30 cursor-not-allowed' : ''}`}
+      >
+        <img src={thumb} alt={label} loading="lazy" className="w-24 h-32 object-cover bg-zinc-900" />
+        <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[10px] text-zinc-300 px-1 py-0.5 truncate">
+          {inCollection ? 'уже есть' : label}
+        </span>
+        {on && <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-zinc-100 text-zinc-900 text-xs flex items-center justify-center">✓</span>}
+      </button>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {[['all', 'всё'], ['sketch', 'эскизы образов'], ['render', 'рендеры']].map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={`px-2 py-1 rounded-lg text-xs transition-colors ${kind === k ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`}
+          >{label}</button>
+        ))}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="поиск по названию образа"
+          className="flex-1 min-w-[10rem] bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
+        />
+        {selected.length > 0 && (
+          <button type="button" onClick={() => onChange([])} className="text-xs text-zinc-500 hover:text-white">снять выбор ({selected.length})</button>
+        )}
+      </div>
+
+      {isLoading && <p className="text-xs text-zinc-500">Загружаю образы…</p>}
+      {error && <p className="text-xs text-rose-400">Не удалось загрузить образы: {error.message}</p>}
+
+      <div className="max-h-[28rem] overflow-y-auto space-y-3 pr-1">
+        {outfits.map((o) => {
+          const renders = kind === 'sketch' ? [] : o.renders || [];
+          const showSketch = kind !== 'render';
+          if (!showSketch && !renders.length) return null;
+          return (
+            <div key={o.id}>
+              <p className="text-xs text-zinc-400 mb-1 truncate">{o.title || 'Без названия'}</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {showSketch && tile({ outfit_id: o.id }, o.thumb_url || o.image_url, 'эскиз')}
+                {renders.map((r, i) => tile({ render_id: r.id }, r.thumb_url || r.image_url, `рендер ${i + 1}`))}
+              </div>
+            </div>
+          );
+        })}
+        {data && outfits.length === 0 && <p className="text-xs text-zinc-500">Ничего не нашлось</p>}
+      </div>
+    </div>
+  );
+}
+
+function AddForm({ known, taken, onAdded }) {
+  const [mode, setMode] = useState('upload');
+  const [picks, setPicks] = useState([]);
   const [files, setFiles] = useState([]);
   const [url, setUrl] = useState('');
   const [compositions, setCompositions] = useState([]);
@@ -71,12 +155,15 @@ function AddForm({ known, onAdded }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!files.length && !url.trim()) { setMessage('Выберите файлы или вставьте ссылку на картинку'); return; }
+    if (mode === 'library' && !picks.length) { setMessage('Выберите эскизы или рендеры'); return; }
+    if (mode === 'upload' && !files.length && !url.trim()) { setMessage('Выберите файлы или вставьте ссылку на картинку'); return; }
     setBusy(true);
     setMessage('');
     try {
       let res;
-      if (files.length) {
+      if (mode === 'library') {
+        res = await apiPost(API, { picks, compositions, note });
+      } else if (files.length) {
         const form = new FormData();
         files.forEach((f) => form.append('image', f));
         form.append('compositions', JSON.stringify(compositions));
@@ -86,10 +173,12 @@ function AddForm({ known, onAdded }) {
       } else {
         res = await apiPost(API, { url: url.trim(), compositions, note, source_url: sourceUrl });
       }
-      const added = res.results.filter((r) => !r.duplicate).length;
-      const dups = res.results.length - added;
-      setMessage(`Добавлено: ${added}${dups ? `, уже были в коллекции: ${dups}` : ''}`);
+      const added = res.results.filter((r) => r.visual).length;
+      const dups = res.results.filter((r) => r.duplicate).length;
+      const missing = res.results.filter((r) => r.missing).length;
+      setMessage(`Добавлено: ${added}${dups ? `, уже были в коллекции: ${dups}` : ''}${missing ? `, не найдено (образ удалён?): ${missing}` : ''}`);
       setFiles([]);
+      setPicks([]);
       setUrl('');
       setNote('');
       setSourceUrl('');
@@ -104,7 +193,21 @@ function AddForm({ known, onAdded }) {
 
   return (
     <form onSubmit={submit} className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 mb-8 space-y-4">
-      <h2 className="text-sm text-zinc-300">Добавить визуал</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-sm text-zinc-300">Добавить визуал</h2>
+        <div className="flex gap-1">
+          {[['upload', 'загрузить'], ['library', 'из образов и рендеров']].map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => { setMode(k); setMessage(''); }}
+              className={`px-2 py-1 rounded-lg text-xs transition-colors ${mode === k ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+      {mode === 'library' && <LibraryPicker selected={picks} onChange={setPicks} taken={taken} />}
+      {mode === 'upload' && (
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="text-xs text-zinc-500">Файлы (до 20 за раз)</span>
@@ -127,23 +230,24 @@ function AddForm({ known, onAdded }) {
           />
         </label>
       </div>
+      )}
       <div>
         <span className="text-xs text-zinc-500 block mb-1.5">Композиция (можно несколько)</span>
         <CompositionPicker value={compositions} onChange={setCompositions} known={known} />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className={`grid gap-3 ${mode === 'upload' ? 'sm:grid-cols-2' : ''}`}>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="заметка: что здесь работает"
           className="bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
         />
-        <input
+        {mode === 'upload' && <input
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
           placeholder="откуда (ссылка на страницу, пин, съёмку)"
           className="bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
-        />
+        />}
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -178,7 +282,7 @@ function VisualCard({ v, known, onChanged, onOpen }) {
   };
 
   const remove = async () => {
-    if (!confirm('Удалить визуал из коллекции?')) return;
+    if (!confirm(v.origin === 'upload' ? 'Удалить визуал из коллекции?' : 'Убрать из коллекции? Сам образ и рендер останутся в игре.')) return;
     try {
       await apiDelete(`${API}/${v.id}`);
       onChanged();
@@ -205,6 +309,11 @@ function VisualCard({ v, known, onChanged, onOpen }) {
               <p className="text-[11px] text-amber-500">без типа композиции</p>
             )}
             {v.note && <p className="text-xs text-zinc-400">{v.note}</p>}
+            {v.origin !== 'upload' && (
+              <p className="text-[11px] text-zinc-500 truncate">
+                {v.origin === 'render' ? 'рендер' : 'эскиз'} · {v.outfit_title || 'образ без названия'}
+              </p>
+            )}
             <div className="flex items-center gap-3 text-[11px]">
               {v.source_url && (
                 <a href={v.source_url} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-300 underline truncate max-w-[50%]">источник</a>
@@ -255,6 +364,9 @@ export default function CompositionsPage() {
   const counts = all?.compositions || [];
   const known = counts.map((c) => c.name);
   const visuals = data?.visuals || [];
+  // Что из образов и рендеров уже в коллекции — в выборе такие картинки неактивны
+  const taken = new Set((all?.visuals || []).flatMap((v) =>
+    v.render_id ? [`r:${v.render_id}`] : v.outfit_id ? [`o:${v.outfit_id}`] : []));
 
   return (
     <>
@@ -274,7 +386,7 @@ export default function CompositionsPage() {
         </header>
 
         <main className="max-w-6xl mx-auto px-6 py-8">
-          <AddForm known={known} onAdded={refresh} />
+          <AddForm known={known} taken={taken} onAdded={refresh} />
 
           <div className="flex flex-wrap gap-1.5 mb-6">
             <button
