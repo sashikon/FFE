@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import SeoPanel from './SeoPanel';
 
 // Вертикальные форматы. Пиксели — под соцсети: Pinterest 2:3, лента Instagram 4:5, сторис 9:16
 const FORMATS = {
@@ -92,7 +93,7 @@ function AddMore({ library, used, onAdd, onFiles, onClose }) {
   );
 }
 
-export default function CollageMaker({ visuals, library = [], onClose, onSave }) {
+export default function CollageMaker({ visuals, library = [], strategy = null, onClose, onSave, onSeoChanged }) {
   const [order, setOrder] = useState(visuals);
   const [format, setFormat] = useState('2:3');
   const [layout, setLayout] = useState('auto');
@@ -104,6 +105,10 @@ export default function CollageMaker({ visuals, library = [], onClose, onSave })
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // Сохранённый коллаж: после сохранения его можно сразу разметить SEO
+  const [saved, setSaved] = useState(null);
+  // Коллаж поменяли после сохранения — SEO прежнего варианта больше не про то, что на экране
+  useEffect(() => { setSaved(null); }, [order, format, layout, fit, gap, bg]);
   const canvasRef = useRef(null);
 
   // Догружаем картинки тех визуалов, что появились в коллаже; уже загруженные не трогаем
@@ -174,8 +179,9 @@ export default function CollageMaker({ visuals, library = [], onClose, onSave })
     setBusy(true);
     setMessage('');
     try {
-      await onSave(await toBlob(), order);
-      setMessage('Коллаж сохранён в коллекцию');
+      const v = await onSave(await toBlob(), order);
+      setSaved(v && !v.duplicate ? v : null);
+      setMessage(v?.duplicate ? 'Такой коллаж уже есть в коллекции — SEO можно разметить на его карточке' : 'Коллаж сохранён в коллекцию');
     } catch (e) {
       setMessage(`Не сохранилось: ${e.message}`);
     } finally {
@@ -272,6 +278,12 @@ export default function CollageMaker({ visuals, library = [], onClose, onSave })
               </button>
             </div>
             {message && <p className="text-zinc-400">{message}</p>}
+            {saved && (
+              <div className="border border-zinc-800 rounded-lg p-3 bg-zinc-950 space-y-2">
+                <p className="text-zinc-300">SEO для пина</p>
+                <SeoPanel key={saved.id} visual={saved} strategy={strategy} onChanged={onSeoChanged} />
+              </div>
+            )}
           </div>
         </div>
       </div>

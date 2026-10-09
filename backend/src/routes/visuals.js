@@ -5,6 +5,7 @@ const fs = require('fs');
 const pool = require('../db');
 const { uploadVisual, deleteImage } = require('../storage/cloudinary');
 const { requireAdminToken } = require('../middleware/auth');
+const { generateVisualSeo } = require('../llm/visualSeo');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/ffe-uploads/' });
@@ -25,6 +26,32 @@ function parseCompositions(raw) {
 }
 
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Из каких визуалов собран коллаж: строка JSON из формы, только настоящие id
+function parseIds(raw) {
+  let list = raw;
+  if (typeof raw === 'string') {
+    try { list = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map(String).filter((id) => UUID_RE.test(id)))].slice(0, 20);
+}
+
+// Загруженная SEO-стратегия (сводка по CSV аналитики Pinterest), если она есть
+async function loadStrategy() {
+  try {
+    const { rows } = await pool.query(
+      'SELECT updated_at, report_count, top_keywords, prompt_injection FROM pinterest_seo_strategy WHERE id = 1'
+    );
+    const st = rows[0];
+    if (!st || (!st.prompt_injection && !(st.top_keywords || []).length)) return null;
+    return st;
+  } catch {
+    return null; // таблицы может не быть на свежей базе
+  }
+}
 
 // GET /api/admin/visuals?composition=диагональ — визуалы и счётчики по типам
 router.get('/admin/visuals', requireAdminToken, async (req, res, next) => {
@@ -48,7 +75,13 @@ router.get('/admin/visuals', requireAdminToken, async (req, res, next) => {
       GROUP BY c ORDER BY count DESC, c
     `);
     const total = await pool.query('SELECT COUNT(*)::int AS n FROM visuals');
-    res.json({ visuals: rows, compositions: counts.rows, total: total.rows[0].n });
+    const strategy = await loadStrategy();
+    res.json({
+      visuals: rows,
+      compositions: counts.rows,
+      total: total.rows[0].n,
+      seo_strategy: strategy ? { updated_at: strategy.updated_at, report_count: strategy.report_count } : null,
+    });
   } catch (err) {
     next(err);
   }
@@ -89,6 +122,7 @@ router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), asyn
     const sourceUrl = text(req.body.source_url, 1000);
     const files = req.files || [];
     const url = text(req.body.url, 2000);
+    const collageOf = parseIds(req.body.collage_of);
 
     if (Array.isArray(req.body.picks)) {
       if (!req.body.picks.length) return res.status(400).json({ error: 'Ничего не выбрано' });
@@ -100,9 +134,9 @@ router.post('/admin/visuals', requireAdminToken, upload.array('image', 20), asyn
 
     const insert = async (img, hash) => {
       const { rows } = await pool.query(
-        `INSERT INTO visuals (image_url, thumb_url, public_id, file_hash, compositions, note, source_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [img.imageUrl, img.thumbUrl, img.publicId, hash, compositions, note, sourceUrl || (url && !files.length ? url : '')]
+        `INSERT INTO visuals (image_url, thumb_url, public_id, file_hash, compositions, note, source_url, collage_of)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [img.imageUrl, img.thumbUrl, img.publicId, hash, compositions, note, sourceUrl || (url && !files.length ? url : ''), collageOf.length ? collageOf : null]
       );
       return rows[0];
     };
@@ -153,6 +187,9 @@ router.patch('/admin/visuals/:id', requireAdminToken, async (req, res, next) => 
     if (req.body.compositions !== undefined) { vals.push(parseCompositions(req.body.compositions)); sets.push(`compositions = $${vals.length}`); }
     if (req.body.note !== undefined) { vals.push(text(req.body.note, 2000)); sets.push(`note = $${vals.length}`); }
     if (req.body.source_url !== undefined) { vals.push(text(req.body.source_url, 1000)); sets.push(`source_url = $${vals.length}`); }
+    if (req.body.seo_title !== undefined) { vals.push(text(req.body.seo_title, 100)); sets.push(`seo_title = $${vals.length}`); }
+    if (req.body.seo_title_alt !== undefined) { vals.push(text(req.body.seo_title_alt, 100)); sets.push(`seo_title_alt = $${vals.length}`); }
+    if (req.body.seo_description !== undefined) { vals.push(text(req.body.seo_description, 500)); sets.push(`seo_description = $${vals.length}`); }
     if (!sets.length) return res.status(400).json({ error: 'Нечего менять' });
     vals.push(req.params.id);
     const { rows } = await pool.query(
@@ -160,6 +197,61 @@ router.patch('/admin/visuals/:id', requireAdminToken, async (req, res, next) => 
     );
     if (!rows.length) return res.status(404).json({ error: 'Визуал не найден' });
     res.json({ visual: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/visuals/:id/generate-seo { lang: 'ru'|'en', use_strategy: bool }
+// ИИ составляет заголовок, запасной заголовок и описание пина; результат сразу сохраняется
+router.post('/admin/visuals/:id/generate-seo', requireAdminToken, async (req, res, next) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Визуал не найден' });
+    const lang = req.body.lang === 'en' ? 'en' : 'ru';
+    const { rows } = await pool.query('SELECT * FROM visuals WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Визуал не найден' });
+    const visual = rows[0];
+
+    // Что внутри коллажа: названия образов и эстетики рендеров помогают точнее назвать вещи
+    let sources = [];
+    if (visual.collage_of?.length) {
+      const src = await pool.query(
+        `SELECT v.id, v.compositions, v.note,
+                CASE WHEN v.render_id IS NOT NULL THEN 'render' WHEN v.outfit_id IS NOT NULL THEN 'sketch' ELSE 'upload' END AS origin,
+                COALESCE(o.title, ro.title) AS outfit_title, r.aesthetics
+         FROM visuals v
+         LEFT JOIN outfits o ON o.id = v.outfit_id
+         LEFT JOIN outfit_renders r ON r.id = v.render_id
+         LEFT JOIN outfits ro ON ro.id = r.outfit_id
+         WHERE v.id = ANY($1)`,
+        [visual.collage_of]
+      );
+      const byId = new Map(src.rows.map((r) => [r.id, r]));
+      sources = visual.collage_of.map((id) => byId.get(id)).filter(Boolean).map((r) => ({
+        ...r,
+        aesthetics: r.aesthetics?.top?.slice(0, 3).map((a) => a.name).join(', ') || '',
+      }));
+    }
+
+    let strategy = null;
+    if (req.body.use_strategy) {
+      strategy = await loadStrategy();
+      if (!strategy) return res.status(400).json({ error: 'SEO-стратегия не загружена: сначала загрузите CSV аналитики Pinterest на вкладке «SEO» в разделе «Образы»' });
+    }
+
+    let seo;
+    try {
+      seo = await generateVisualSeo({ visual, sources, strategy, lang });
+    } catch (err) {
+      return res.status(502).json({ error: err.message });
+    }
+
+    const upd = await pool.query(
+      `UPDATE visuals SET seo_title = $1, seo_title_alt = $2, seo_description = $3, seo_lang = $4, seo_with_strategy = $5
+       WHERE id = $6 RETURNING *`,
+      [seo.title, seo.title_alt, seo.description, lang, Boolean(strategy), visual.id]
+    );
+    res.json({ visual: upd.rows[0] });
   } catch (err) {
     next(err);
   }

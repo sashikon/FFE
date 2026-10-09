@@ -4,6 +4,7 @@ import Head from 'next/head';
 import { adminFetcher, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import { withAuth } from '../../lib/withAuth';
 import CollageMaker from '../../components/CollageMaker';
+import SeoPanel from '../../components/SeoPanel';
 
 const COLLAGE_MAX = 12;
 
@@ -264,8 +265,9 @@ function AddForm({ known, taken, onAdded }) {
   );
 }
 
-function VisualCard({ v, known, onChanged, onOpen, picked, onPick }) {
+function VisualCard({ v, known, onChanged, onOpen, picked, onPick, strategy }) {
   const [editing, setEditing] = useState(false);
+  const [seo, setSeo] = useState(false);
   const [compositions, setCompositions] = useState(v.compositions);
   const [note, setNote] = useState(v.note);
   const [sourceUrl, setSourceUrl] = useState(v.source_url);
@@ -328,8 +330,16 @@ function VisualCard({ v, known, onChanged, onOpen, picked, onPick }) {
                 <a href={v.source_url} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-300 underline truncate max-w-[50%]">источник</a>
               )}
               <button onClick={() => setEditing(true)} className="text-zinc-500 hover:text-white">править</button>
+              <button onClick={() => setSeo(!seo)} className={v.seo_title ? 'text-emerald-500 hover:text-emerald-300' : 'text-zinc-500 hover:text-white'}>
+                {v.seo_title ? 'SEO ✓' : 'SEO'}
+              </button>
               <button onClick={remove} className="text-zinc-600 hover:text-rose-400 ml-auto">удалить</button>
             </div>
+            {seo && (
+              <div className="pt-2 border-t border-zinc-800">
+                <SeoPanel visual={v} strategy={strategy} onChanged={onChanged} />
+              </div>
+            )}
           </>
         )}
         {editing && (
@@ -399,8 +409,12 @@ export default function CompositionsPage() {
     form.append('image', blob, 'collage.jpg');
     form.append('compositions', JSON.stringify([...new Set(order.flatMap((v) => v.compositions))]));
     form.append('note', `Коллаж из ${order.length}`);
-    await apiPost(API, form);
+    // Из чего собран коллаж — пригодится ИИ при SEO-разметке; файлы с компьютера в коллекции нет
+    form.append('collage_of', JSON.stringify(order.filter((v) => !v.local).map((v) => v.id)));
+    const res = await apiPost(API, form);
     refresh();
+    const r = res.results?.[0];
+    return r?.visual || (r?.duplicate ? { id: r.id, duplicate: true } : null);
   };
 
   return (
@@ -453,6 +467,7 @@ export default function CompositionsPage() {
                 onOpen={setOpen}
                 picked={picked.findIndex((x) => x.id === v.id) + 1}
                 onPick={() => togglePick(v)}
+                strategy={all?.seo_strategy || null}
               />
             ))}
           </div>
@@ -474,7 +489,7 @@ export default function CompositionsPage() {
         )}
 
         {collage && (
-          <CollageMaker visuals={picked} library={all?.visuals || []} onClose={() => setCollage(false)} onSave={saveCollage} />
+          <CollageMaker visuals={picked} library={all?.visuals || []} strategy={all?.seo_strategy || null} onClose={() => setCollage(false)} onSave={saveCollage} onSeoChanged={refresh} />
         )}
 
         {open && (
