@@ -866,7 +866,7 @@ function PinterestBoardSettings({ boards }) {
   );
 }
 
-function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported }) {
+function PinterestExportModal({ lang, onlyNew, rendersOnly, collages, onClose, onExported }) {
   const t = useT();
   const [items, setItems] = useState(null); // null = loading
   const [selected, setSelected] = useState(new Set());
@@ -877,16 +877,18 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
   const [boardId, setBoardId] = useState('');
   const [suggestions, setSuggestions] = useState({}); // renderId → { board_id, board_name, confidence, reason }
   const [suggesting, setSuggesting] = useState(false);
+  const [otherLang, setOtherLang] = useState(0); // коллажи, размеченные на другом языке
 
   useEffect(() => {
-    const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}) });
+    const params = new URLSearchParams({ lang, ...(onlyNew ? { new: 'true' } : {}), ...(rendersOnly ? { renders: 'true' } : {}), ...(collages ? { collages: 'true' } : {}) });
     adminFetcher(`/api/admin/pinterest-preview?${params}`)
       .then((data) => {
         setItems(data.outfits || []);
+        setOtherLang(data.other_lang || 0);
         setSelected(new Set((data.outfits || []).map((o) => o.id)));
       })
       .catch((e) => alert('Preview load error: ' + e.message));
-  }, [lang, onlyNew, rendersOnly]);
+  }, [lang, onlyNew, rendersOnly, collages]);
 
   // Load boards for direct posting
   useEffect(() => {
@@ -966,7 +968,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       const BASE = process.env.NEXT_PUBLIC_API_URL || '';
       const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
       const ids = [...selected].join(',');
-      const params = new URLSearchParams({ lang, ids, ...(rendersOnly ? { renders: 'true' } : {}) });
+      const params = new URLSearchParams({ lang, ids, ...(rendersOnly ? { renders: 'true' } : {}), ...(collages ? { collages: 'true' } : {}) });
       const res = await fetch(`${BASE}/api/admin/pinterest-export?${params}`, {
         headers: token ? { 'x-admin-token': token } : {},
       });
@@ -975,7 +977,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pinterest_${lang}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `pinterest_${lang}${collages ? '_collages' : ''}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       onExported();
@@ -1001,6 +1003,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
               {t('Pinterest Export','Экспорт Pinterest')} · {lang.toUpperCase()}
               {onlyNew && <span className="ml-2 text-xs text-emerald-400 border border-emerald-800 rounded px-1.5 py-0.5">{t('new only','только новые')}</span>}
               {rendersOnly && <span className="ml-2 text-xs text-violet-400 border border-violet-800 rounded px-1.5 py-0.5">{t('AI renders','ИИ рендеры')}</span>}
+              {collages && <span className="ml-2 text-xs text-amber-400 border border-amber-800 rounded px-1.5 py-0.5">{t('Collages','Коллажи')}</span>}
             </p>
             {items && (
               <p className="text-xs text-zinc-500 mt-0.5">
@@ -1019,7 +1022,21 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
             </div>
           )}
 
-          {items?.length === 0 && (
+          {collages && items?.length === 0 && (
+            <div className="text-center py-16 text-zinc-600">
+              <p className="text-sm">{t('No collages to export.','Нет коллажей для экспорта.')}</p>
+              <p className="text-xs mt-1">
+                {t(`Only visuals with SEO markup in ${lang.toUpperCase()} that were not exported yet get here.`,`Сюда попадают визуалы из «Композиций» с SEO-разметкой на ${lang.toUpperCase()}, которые ещё не выгружались.`)}
+              </p>
+            </div>
+          )}
+          {collages && otherLang > 0 && (
+            <p className="text-xs text-zinc-500 px-2 pb-2">
+              {t(`${otherLang} more marked up in another language — open that language's export.`,`Ещё ${otherLang} размечено на другом языке — они в экспорте того языка.`)}
+            </p>
+          )}
+
+          {!collages && items?.length === 0 && (
             <div className="text-center py-16 text-zinc-600">
               <p className="text-sm">{t(rendersOnly ? 'No renders to export.' : 'No outfits to export.', rendersOnly ? 'Нет рендеров для экспорта.' : 'Нет образов для экспорта.')}</p>
               <p className="text-xs mt-1">
@@ -1061,6 +1078,9 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                         className="accent-rose-500 shrink-0"
                       />
 
+                      {collages ? (
+                        <img src={outfit.thumb_url || outfit.image_url} alt="" className="w-10 h-12 object-cover rounded-lg bg-zinc-700 border border-amber-700 shrink-0" />
+                      ) : (<>
                       {/* Sketch */}
                       <div className="shrink-0">
                         <img
@@ -1088,6 +1108,7 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
                           </div>
                         )}
                       </div>
+                      </>)}
 
                       {/* Title — same priority as CSV: pin_title → title_en → title */}
                       <span className={`flex-1 min-w-0 text-xs truncate ${outfit.pin_title ? 'text-zinc-300' : 'text-zinc-500 italic'}`}>
@@ -1174,7 +1195,9 @@ function PinterestExportModal({ lang, onlyNew, rendersOnly, onClose, onExported 
 
             <div className="flex items-center justify-between">
               <p className="text-xs text-zinc-600">
-                {rendersOnly ? t('Renders will be marked P after posting','Рендеры получат метку P после публикации') : t(`Outfits will be marked P·${lang.toUpperCase()}`,`Образы получат метку P·${lang.toUpperCase()}`)}
+                {collages
+                  ? t('Collages will be marked as exported','Коллажи получат отметку «выгружено в Pinterest»')
+                  : rendersOnly ? t('Renders will be marked P after posting','Рендеры получат метку P после публикации') : t(`Outfits will be marked P·${lang.toUpperCase()}`,`Образы получат метку P·${lang.toUpperCase()}`)}
               </p>
               <div className="flex gap-2">
                 <button onClick={onClose} className="px-4 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
@@ -2733,7 +2756,12 @@ export default function AdminPage() {
   const [view, setView] = useState('outfits'); // 'outfits' | 'renders' | 'coverage'
   const [sort, setSort] = useState('date'); // 'date' | 'renders'
   const [pinterestFilter, setPinterestFilter] = useState('all'); // 'all' | 'new-en' | 'new-ru' | 'exported'
-  const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew, rendersOnly}
+  const [exportModal, setExportModal] = useState(null); // null | {lang, onlyNew, rendersOnly, collages}
+  // Переход из «Композиций»: /admin?export=collages&lang=ru сразу открывает экспорт коллажей
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('export') === 'collages') setExportModal({ lang: q.get('lang') === 'en' ? 'en' : 'ru', collages: true });
+  }, []);
   const fileRef = useRef(null);
 
   const { data, isLoading } = useSWR('/api/admin/outfits', adminFetcher, {
@@ -2878,6 +2906,16 @@ export default function AdminPage() {
               onClick={() => setExportModal({ lang: 'ru', rendersOnly: true, onlyNew: false })}
               className="px-2 py-1.5 bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 text-xs rounded-lg transition-colors"
               title="AI renders not uploaded to Pinterest — RU"
+            >RU</button>
+            <button
+              onClick={() => setExportModal({ lang: 'en', collages: true })}
+              className="px-3 py-1.5 bg-amber-950 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs rounded-lg transition-colors"
+              title={t('Collages with SEO markup — EN','Коллажи с SEO-разметкой — EN')}
+            >{t('Collages EN','Коллажи EN')}</button>
+            <button
+              onClick={() => setExportModal({ lang: 'ru', collages: true })}
+              className="px-2 py-1.5 bg-amber-950 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs rounded-lg transition-colors"
+              title={t('Collages with SEO markup — RU','Коллажи с SEO-разметкой — RU')}
             >RU</button>
             <button
               onClick={() => setExportModal({ lang: 'en', onlyNew: false, rendersOnly: false })}
@@ -3078,6 +3116,7 @@ export default function AdminPage() {
         lang={exportModal.lang}
         onlyNew={exportModal.onlyNew}
         rendersOnly={exportModal.rendersOnly}
+        collages={exportModal.collages}
         onClose={() => setExportModal(null)}
         onExported={() => mutate('/api/admin/outfits')}
       />
