@@ -189,6 +189,8 @@ router.patch('/admin/visuals/:id', requireAdminToken, async (req, res, next) => 
     if (req.body.source_url !== undefined) { vals.push(text(req.body.source_url, 1000)); sets.push(`source_url = $${vals.length}`); }
     if (req.body.seo_title !== undefined) { vals.push(text(req.body.seo_title, 100)); sets.push(`seo_title = $${vals.length}`); }
     if (req.body.seo_title_alt !== undefined) { vals.push(text(req.body.seo_title_alt, 100)); sets.push(`seo_title_alt = $${vals.length}`); }
+    // Снять отметку «выгружено в Pinterest», чтобы визуал снова попал в экспорт
+    if (req.body.pinterest_exported === false) sets.push('pinterest_exported_at = NULL');
     if (req.body.seo_description !== undefined) { vals.push(text(req.body.seo_description, 500)); sets.push(`seo_description = $${vals.length}`); }
     if (!sets.length) return res.status(400).json({ error: 'Нечего менять' });
     vals.push(req.params.id);

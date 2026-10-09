@@ -320,6 +320,21 @@ function VisualCard({ v, known, onChanged, onOpen, picked, onPick, strategy }) {
               <p className="text-[11px] text-amber-500">без типа композиции</p>
             )}
             {v.note && <p className="text-xs text-zinc-400">{v.note}</p>}
+            {v.seo_title && (
+              <p className="text-[11px] text-zinc-300" title={v.seo_description || ''}>
+                <span className="text-zinc-600">{(v.seo_lang || '').toUpperCase()} · </span>{v.seo_title}
+              </p>
+            )}
+            {v.pinterest_exported_at && (
+              <p className="text-[11px] text-emerald-600">
+                в CSV Pinterest {new Date(v.pinterest_exported_at).toLocaleDateString('ru-RU')}
+                <button
+                  onClick={async () => { await apiPatch(`${API}/${v.id}`, { pinterest_exported: false }); onChanged(); }}
+                  className="ml-2 text-zinc-600 hover:text-white"
+                  title="Снять отметку, чтобы визуал снова попал в экспорт"
+                >снять</button>
+              </p>
+            )}
             {v.origin !== 'upload' && (
               <p className="text-[11px] text-zinc-500 truncate">
                 {v.origin === 'render' ? 'рендер' : 'эскиз'} · {v.outfit_title || 'образ без названия'}
@@ -431,6 +446,11 @@ export default function CompositionsPage() {
             <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
+            <a
+              href="/admin?export=collages&lang=ru"
+              className="px-3 py-1.5 bg-amber-950 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs rounded-lg transition-colors"
+              title="Коллажи с SEO-разметкой — в CSV для Pinterest (откроется окно экспорта в «Образах»)"
+            >Экспорт CSV</a>
           </div>
         </header>
 
