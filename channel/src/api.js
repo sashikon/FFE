@@ -79,8 +79,12 @@ async function listSources() {
     SELECT feed,
            COUNT(*) FILTER (WHERE fetched_at > NOW() - INTERVAL '7 days')::int AS week,
            COUNT(*)::int AS total,
-           MAX(published_at) AS last_published
+           -- у заметок без даты публикации берём время сбора, иначе MAX их не видит
+           MAX(COALESCE(published_at, fetched_at)) AS last_published
     FROM items WHERE feed IS NOT NULL GROUP BY feed`);
+  const { rows: checks } = await pool.query(
+    `SELECT feed, checked_at, ok, error, last_ok_at, seen, too_old, filtered, dup, added, newest_seen
+     FROM source_checks`);
   const { rows: used } = await pool.query(`
     SELECT i.feed, COUNT(DISTINCT p.id)::int AS posts
     FROM items i
@@ -89,6 +93,7 @@ async function listSources() {
     WHERE i.feed IS NOT NULL GROUP BY i.feed`);
   const byFeed = Object.fromEntries(stats.map((r) => [r.feed, r]));
   const postsByFeed = Object.fromEntries(used.map((r) => [r.feed, r.posts]));
+  const checkByFeed = Object.fromEntries(checks.map(({ feed, ...c }) => [feed, c]));
 
   return {
     sources: sources.map((s) => ({
@@ -104,6 +109,7 @@ async function listSources() {
       total: byFeed[s.name]?.total ?? 0,
       last_published: byFeed[s.name]?.last_published ?? null,
       posts: postsByFeed[s.name] ?? 0,
+      check: checkByFeed[s.name] ?? null,
     })),
   };
 }
