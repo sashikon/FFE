@@ -1993,10 +1993,22 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
           <div className="space-y-1">
             <div className="flex items-start justify-between gap-1">
               <p className="text-[10px] text-zinc-300 font-medium leading-tight flex-1">{pinTitle}</p>
-              <button
-                onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
-                className="shrink-0 text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
-              >{t('edit','ред.')}</button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => { setEditTitle(pinTitle); setEditDesc(pinDesc); setEditingSeo(true); }}
+                  className="text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
+                >{t('edit','ред.')}</button>
+                <button
+                  onClick={async () => {
+                    await apiPatch(`/api/admin/render/${render.id}/seo`, { pin_title: '', pin_description: '' });
+                    setPinTitle('');
+                    setPinDesc('');
+                    setPinTitleAlt(null);
+                  }}
+                  className="text-[9px] text-zinc-700 hover:text-red-400 transition-colors"
+                  title={t('Delete','Удалить')}
+                >×</button>
+              </div>
             </div>
             {pinTitleAlt && (
               <button
@@ -2023,6 +2035,11 @@ function GalleryRenderCard({ render, outfit, onDelete, onAnalyzed, onPinterestMa
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-[9px] text-zinc-700">Pinterest SEO:</span>
+            <button
+              onClick={() => { setEditTitle(''); setEditDesc(''); setEditingSeo(true); }}
+              className="text-[9px] text-zinc-600 hover:text-zinc-300 transition-colors"
+              title={t('Add manually','Добавить вручную')}
+            >+</button>
             {['en', 'ru'].map(l => (
               <button key={l} onClick={() => handleGenerateSeo(l)} disabled={generatingSeo} className="flex items-center gap-0.5 text-[9px] text-zinc-500 hover:text-violet-400 transition-colors disabled:opacity-40">
                 {generatingSeo && seoLang === l ? <Loader2 size={9} className="animate-spin" /> : <Sparkles size={9} />} {l.toUpperCase()}
