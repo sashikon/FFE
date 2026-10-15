@@ -36,10 +36,20 @@ async function publishDue() {
 }
 
 // Прогон не чаще интервала — даже если сервис перезапускался (деплой, падение)
+// О пропущенном прогоне нужно сказать вслух: молчащая лента со стороны
+// неотличима от работающей. Пишем не чаще раза в сутки, чтобы не надоедать
+async function warnSkipped(problem) {
+  console.error(`[pipeline] пропущен: ${problem}`);
+  const last = await getState('skip_warned_at').catch(() => null);
+  if (last && Date.now() - new Date(last).getTime() < 24 * HOUR) return;
+  await setState('skip_warned_at', new Date().toISOString()).catch(() => {});
+  await sendHtml(OWNER, `⚠️ Прогон не запускается, лента не обновляется.\nПричина: ${escapeHtml(problem)}`).catch(() => {});
+}
+
 async function pipelineIfDue() {
   const problem = await checkTelegram();
   if (problem) {
-    console.error(`[pipeline] пропущен: ${problem}`);
+    await warnSkipped(problem);
     return;
   }
   const resent = await resendUndelivered();

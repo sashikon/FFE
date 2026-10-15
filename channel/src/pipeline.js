@@ -333,6 +333,7 @@ async function draftFromItem(itemId) {
 // ─── Прогон целиком ──────────────────────────────────────────────────────────
 
 let running = false;
+let startedAt = null;
 
 const TIMEOUT_MIN = Number(process.env.PIPELINE_TIMEOUT_MIN || 40);
 
@@ -343,13 +344,21 @@ const timeoutIn = (minutes) => new Promise((_, reject) => {
 // onStage — сообщить, на каком шаге прогон: он идёт минутами, и со стороны
 // неотличим живой прогон от упавшего
 async function runPipeline({ onStage = () => {} } = {}) {
+  // Зависший шаг (запрос без таймаута) оставлял running = true навсегда:
+  // сбор ленты молча прекращался до следующего деплоя. Через два предела считаем прогон потерянным
+  if (running && startedAt && Date.now() - startedAt > TIMEOUT_MIN * 2 * 60_000) {
+    console.warn(`[pipeline] прошлый прогон висит ${Math.round((Date.now() - startedAt) / 60000)} мин — начинаю новый`);
+    running = false;
+  }
   if (running) return { skipped: true };
   running = true;
+  startedAt = Date.now();
   // отметка в базе переживает перезапуск: иначе оборванный деплоем прогон исчезает молча
   await setState('run_started', new Date().toISOString()).catch(() => {});
   const work = runPipelineInner(onStage);
   work.finally(async () => {
     running = false;
+    startedAt = null;
     await setState('run_started', null).catch(() => {});
   });
   // ждём не дольше предела — сам прогон при этом продолжается
