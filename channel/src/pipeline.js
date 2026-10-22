@@ -355,11 +355,18 @@ async function runPipeline({ onStage = () => {} } = {}) {
   startedAt = Date.now();
   // отметка в базе переживает перезапуск: иначе оборванный деплоем прогон исчезает молча
   await setState('run_started', new Date().toISOString()).catch(() => {});
-  const work = runPipelineInner(onStage);
+  await setState('run_error', null).catch(() => {});
+  // шаг пишем и в базу: админка смотрит со стороны и иначе не отличит живой прогон от зависшего
+  const report = (text) => {
+    setState('run_stage', text).catch(() => {});
+    onStage(text);
+  };
+  const work = runPipelineInner(report);
   work.finally(async () => {
     running = false;
     startedAt = null;
     await setState('run_started', null).catch(() => {});
+    await setState('run_stage', null).catch(() => {});
   });
   // ждём не дольше предела — сам прогон при этом продолжается
   return Promise.race([work, timeoutIn(TIMEOUT_MIN)]);
@@ -391,8 +398,9 @@ async function runPipelineInner(onStage) {
         await draftPost(insightId);
         drafted++;
       } catch (e) {
-        // Черновик уже сохранён — его дошлёт resendUndelivered; дальше не тратим модель впустую
-        if (e instanceof TelegramError) {
+        // Черновик уже сохранён — его дошлёт resendUndelivered; дальше не тратим модель впустую.
+        // transient — обрыв сети до Telegram: ведёт себя так же, текст уже написан и лежит в базе
+        if (e instanceof TelegramError || e.transient) {
           console.error(`[pipeline] Telegram недоступен, прогон остановлен: ${e.message}`);
           break;
         }

@@ -141,6 +141,60 @@ function BrandLogo() {
 }
 
 // Массовое определение формата — для постов, сделанных до появления форматов
+// Прогон: когда собиралась лента в последний раз, на каком шаге она сейчас и кнопка «запустить».
+// Кнопка нужна именно здесь: когда связь с Telegram рвётся, команда /run в боте недоступна,
+// и сбор нечем запустить, хотя сам сбор от Telegram не зависит
+function RunPanel() {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const { data, mutate } = useSWR('/api/channel-run', fetcher, { refreshInterval: 15000 });
+
+  const start = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await fetch('/api/channel-run', { method: 'POST' });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      setNote({ ok: 'Прогон запущен. Он идёт несколько минут, черновики появятся во вкладке «Не утверждено»' });
+      mutate();
+    } catch (e) {
+      setNote({ error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tg = data?.telegram && !data.telegram.ok ? data.telegram : null;
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <button disabled={busy || data?.running} onClick={start} className={btnPrimary}>
+        {data?.running ? 'Прогон идёт…' : busy ? 'Запускаю…' : '▶️ Собрать ленту сейчас'}
+      </button>
+      <span className="text-xs text-zinc-400">
+        {data?.running
+          ? `⏳ ${data.minutes} мин: ${data.stage || 'начинается'}`
+          : data?.last_run
+            ? `Последний прогон: ${fmtDate(data.last_run)} · сам запускается каждые ${data.interval_hours} ч`
+            : data ? 'Прогонов ещё не было' : 'Проверяю состояние…'}
+      </span>
+      {data?.error && !data.running && (
+        <span className="text-xs text-rose-400">Прошлый прогон упал: {data.error}</span>
+      )}
+      {tg && (
+        <span className={`text-xs ${tg.transient ? 'text-amber-400' : 'text-rose-400'}`}>
+          {tg.transient
+            ? `⚠️ Связь с Telegram рвётся: ${tg.problem}. Лента собирается, черновики дойдут в бот позже`
+            : `❌ Telegram: ${tg.problem}`}
+        </span>
+      )}
+      {note?.ok && <span className="text-xs text-emerald-400">{note.ok}</span>}
+      {note?.error && <span className="text-xs text-rose-400">{note.error}</span>}
+    </div>
+  );
+}
+
 function BulkFormats({ posts, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -841,6 +895,8 @@ export default function ChannelPage() {
 
         <main className="max-w-4xl mx-auto px-6 py-8">
           <p className="text-sm text-zinc-500 mb-6">Изменения отсюда видны и в боте: черновик в Telegram помечается «изменён в админке», а новая версия приходит туда же.</p>
+
+          <RunPanel />
 
           <BrandLogo />
 

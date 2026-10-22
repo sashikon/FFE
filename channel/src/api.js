@@ -1,11 +1,11 @@
 const http = require('http');
 const crypto = require('crypto');
-const { pool } = require('./db');
+const { pool, getState, setState } = require('./db');
 const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
 const trends = require('./trends');
-const { draftFromItem, draftFromTrend, trendItemCount } = require('./pipeline');
+const { draftFromItem, draftFromTrend, trendItemCount, runPipeline } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
@@ -214,6 +214,50 @@ function send(res, code, body) {
 
 const escapeText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// ─── Прогон вручную ──────────────────────────────────────────────────────────
+// В боте есть /run, но когда Telegram недоступен, запустить сбор нечем — и лента
+// стоит, пока не починится связь. Поэтому те же кнопка и статус есть в админке
+
+async function runStatus() {
+  const [started, stage, last, finished, failed] = await Promise.all([
+    getState('run_started'), getState('run_stage'),
+    getState('last_pipeline_at'), getState('last_pipeline_finished'), getState('run_error'),
+  ]);
+  // без повторов: статус опрашивают часто, и ждать минуту обрыва связи здесь незачем
+  const trouble = await tg.checkTelegram({ retries: 0 }).catch((e) => ({ problem: e.message, transient: true }));
+  return {
+    running: Boolean(started),
+    started_at: started || null,
+    minutes: started ? Math.round((Date.now() - new Date(started).getTime()) / 60000) : null,
+    stage: stage || null,
+    last_run: last || null,
+    last_finished: finished || null,
+    error: failed || null,
+    interval_hours: Number(process.env.PIPELINE_INTERVAL_HOURS || 6),
+    telegram: trouble ? { ok: false, problem: trouble.problem, transient: Boolean(trouble.transient) } : { ok: true },
+  };
+}
+
+// Прогон идёт минутами: отвечаем сразу, ход видно в статусе, черновики — во вкладке «Не утверждено»
+async function startRun() {
+  const status = await runStatus();
+  if (status.running) {
+    return { code: 409, body: { error: `Прогон уже идёт ${status.minutes} мин: ${status.stage || 'начинается'}` } };
+  }
+  await setState('last_pipeline_at', new Date().toISOString()).catch(() => {});
+  runPipeline()
+    .then((r) => {
+      console.log(`[api] прогон из админки: формат «${r.format}», черновиков ${r.drafted} из ${r.candidates}`);
+      return setState('run_error', null).catch(() => {});
+    })
+    .catch((e) => {
+      console.error('[api] прогон из админки упал', e);
+      return setState('run_error', e.message).catch(() => {});
+    });
+  return { code: 202, body: { ok: true, started: true } };
+}
+
+
 function startApi() {
   if (!TOKEN) {
     console.log('[api] CHANNEL_API_TOKEN не задан — API для админки выключен');
@@ -257,6 +301,13 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (url.pathname === '/api/run') {
+        if (req.method === 'GET') return send(res, 200, await runStatus());
+        if (req.method === 'POST') {
+          const { code, body } = await startRun();
+          return send(res, code, body);
+        }
+      }
       if (req.method === 'GET' && url.pathname === '/api/channel') {
         const { title, username, url: link } = await channelLink();
         return send(res, 200, { channel: { title, username, url: link } });
