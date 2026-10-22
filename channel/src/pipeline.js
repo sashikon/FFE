@@ -10,6 +10,7 @@ const { withBrandLogo } = require('./brand');
 const { runTrends } = require('./trends');
 const { researchOrigin } = require('./research');
 const { cleanInvisible, findSlop, describeSlop } = require('./slop');
+const studies = require('./studies');
 const { sendReview, escapeHtml, TelegramError } = require('./telegram');
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 4);
@@ -258,6 +259,47 @@ async function draftFromSource({ title, summary, url, source, layer = 'culture' 
   return { postId, format: format.title };
 }
 
+// ─── Пост из исследования автора ─────────────────────────────────────────────
+// Дорога та же, что у новости: сюжет → справка → скелет → разбор → текст → литредактура.
+// Отличий два: частность берётся не из ленты, а из присланного текста, и сюжетов
+// в нём бывает два. Сколько именно — решает планировщик в studies.js, по смыслу, не по объёму
+async function draftFromStudy(studyId) {
+  const study = await studies.getStudy(studyId);
+  if (!study) throw new Error(`исследования #${studyId} нет`);
+  const plan = await studies.planStudy(study);
+
+  const made = [];
+  for (const [i, part] of plan.posts.entries()) {
+    const { rows: [cluster] } = await pool.query(
+      `INSERT INTO clusters (status, score, lens, score_reason, study_id)
+       VALUES ('scored', 5, $1, $2, $3) RETURNING id`,
+      [part.lens, `исследование автора: ${plan.why}`.slice(0, 400), study.id]
+    );
+    // Выписка из исследования ложится заметкой: дальше конвейер работает с ней,
+    // как с любой частностью, и ничего про её происхождение знать не обязан.
+    // Адрес служебный и не http — в подпись «По материалам» он не попадёт
+    await pool.query(
+      `INSERT INTO items (source, feed, layer, url, title, summary, published_at, cluster_id)
+       VALUES ($1, 'Исследования автора', 'culture', $2, $3, $4, NOW(), $5)`,
+      [`Исследование «${study.title}»`, `study:${study.id}#${i + 1}:${Date.now()}`, part.title, part.material, cluster.id]
+    );
+    const format = formatByKey(part.format) || formatForNextSlot();
+    try {
+      const insightId = await makeInsight(cluster.id, format, true);
+      if (!insightId) continue;
+      made.push({ postId: await draftPost(insightId), format: format.title, title: part.title });
+    } catch (e) {
+      console.error(`[studies] #${study.id}, сюжет ${i + 1} не вышел`, e);
+      await pool.query(`UPDATE clusters SET status = 'failed', error_msg = $1 WHERE id = $2`, [e.message, cluster.id]);
+    }
+  }
+
+  await pool.query(`UPDATE studies SET status = $1 WHERE id = $2`, [made.length ? 'drafted' : 'failed', study.id]);
+  if (!made.length) throw new Error('ни один сюжет исследования не дал черновика');
+  console.log(`[studies] #${study.id}: черновиков ${made.length}`);
+  return { why: plan.why, posts: made };
+}
+
 // Черновик из уже сохранённой заметки (например, разобранного скриншота соцсети)
 // Пост из темы трендов: берём заметки, в которых тема всплывала, и делаем из них
 // один сюжет — так пишется текст не про одну новость, а про то, что за ними общего
@@ -415,4 +457,4 @@ async function runPipelineInner(onStage) {
   }
 }
 
-module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromItem, draftFromTrend, trendItemCount, pickFormat, scoreNew, __draftPost: draftPost };
+module.exports = { runPipeline, redraft, cleanSlop, draftFromSource, draftFromStudy, draftFromItem, draftFromTrend, trendItemCount, pickFormat, scoreNew, __draftPost: draftPost };

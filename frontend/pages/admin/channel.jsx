@@ -837,6 +837,13 @@ export default function ChannelPage() {
   const [highlight, setHighlight] = useState(null);
   const [search, setSearch] = useState('');
 
+  // приход со страницы исследований: ?post=12 — показываем именно этот пост.
+  // Ищем по номеру, а не выбираем вкладку: статус поста к этому моменту может быть любым
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('post');
+    if (id) setSearch(`#${id}`);
+  }, []);
+
   // переход из календаря к тексту поста
   const openPost = (id, status) => {
     setTab(status === 'published' ? 'published' : 'approved');
@@ -887,6 +894,7 @@ export default function ChannelPage() {
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
+            <a href="/admin/research" className="text-sm text-zinc-400 hover:text-white transition-colors">Исследования</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
             <a href="/admin/assembly" className="text-sm text-zinc-400 hover:text-white transition-colors">Как собирается</a>
             <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>

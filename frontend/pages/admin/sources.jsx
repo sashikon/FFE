@@ -116,6 +116,7 @@ export default function SourcesPage() {
           <div className="flex items-center gap-4">
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
+            <a href="/admin/research" className="text-sm text-zinc-400 hover:text-white transition-colors">Исследования</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
             <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>
