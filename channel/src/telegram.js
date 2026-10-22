@@ -28,15 +28,55 @@ class TelegramError extends Error {
   }
 }
 
-async function api(method, body = {}) {
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!data.ok) throw new TelegramError(method, data);
-  return data.result;
+// Сеть до api.telegram.org отваливается сама по себе: на Railway это видно как «fetch failed»
+// без объяснений. Это не отказ Telegram и не ошибка настроек, поэтому у такой ошибки
+// стоит метка transient — по ней вызывающий код решает повторить, а не сдаваться
+class NetworkError extends Error {
+  constructor(cause) {
+    super(`сеть до Telegram недоступна (${cause})`);
+    this.transient = true;
+  }
+}
+
+// Пауза между повторами держит процесс: с unref() node выходил посреди ожидания,
+// и одноразовый прогон (npm run run-once) завершался молча, ничего не отправив
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+// Запрос без таймаута висит бесконечно и держит на себе весь прогон, поэтому 25 секунд
+// и два повтора: короткий обрыв связи переживаем молча
+const NET_TIMEOUT_MS = 25_000;
+
+async function api(method, body = {}, { retries = 2 } = {}) {
+  let last = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt) await sleep(attempt * 2000);
+    let res;
+    try {
+      res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+      });
+    } catch (e) {
+      last = new NetworkError(e.cause?.code || e.name || e.message);
+      continue;
+    }
+    const data = await res.json().catch(() => null);
+    if (!data) {
+      last = new NetworkError(`ответ не разобрался, HTTP ${res.status}`);
+      continue;
+    }
+    if (data.ok) return data.result;
+    // 429 — просьба подождать: это тоже не поломка, ждём столько, сколько просят
+    if (data.error_code === 429 && attempt < retries) {
+      last = new TelegramError(method, data);
+      await sleep((data.parameters?.retry_after || 1) * 1000);
+      continue;
+    }
+    throw new TelegramError(method, data);
+  }
+  throw last;
 }
 
 // Слоган канала ставится кодом при показе и публикации (а не хранится в тексте),
@@ -163,17 +203,33 @@ async function resendUndelivered() {
   return rows.length;
 }
 
-// Проверка связи перед тратой на модель: webhook перехватывает сообщения, а неверный OWNER — черновики
-async function checkTelegram() {
-  const hook = await api('getWebhookInfo');
-  if (hook.url) {
-    return `у бота включён webhook (${new URL(hook.url).host}) — сообщения уходят туда. Удалите его или возьмите новый бот`;
-  }
-  if (!OWNER) return 'TELEGRAM_OWNER_CHAT_ID пуст: напишите боту /start, чтобы узнать свой id';
+// Проверка связи перед тратой на модель: webhook перехватывает сообщения, а неверный OWNER — черновики.
+// Возвращает null, если всё в порядке, иначе { problem, transient }. transient — сбой сети:
+// настройки целы, чинить нечего, надо просто повторить позже
+async function checkTelegram({ retries = 2 } = {}) {
+  const net = (e) => ({ problem: `${e.message} — повторю позже`, transient: true });
+  let hook;
   try {
-    await api('sendChatAction', { chat_id: OWNER, action: 'typing' });
+    hook = await api('getWebhookInfo', {}, { retries });
   } catch (e) {
-    return `не могу написать владельцу ${OWNER}: ${e.message}. Проверьте TELEGRAM_OWNER_CHAT_ID и что вы нажали Start в чате с ботом`;
+    if (e.transient) return net(e);
+    return { problem: `Telegram отказал: ${e.message}`, transient: false };
+  }
+  if (hook.url) {
+    return {
+      problem: `у бота включён webhook (${new URL(hook.url).host}) — сообщения уходят туда. Удалите его или возьмите новый бот`,
+      transient: false,
+    };
+  }
+  if (!OWNER) return { problem: 'TELEGRAM_OWNER_CHAT_ID пуст: напишите боту /start, чтобы узнать свой id', transient: false };
+  try {
+    await api('sendChatAction', { chat_id: OWNER, action: 'typing' }, { retries });
+  } catch (e) {
+    if (e.transient) return net(e);
+    return {
+      problem: `не могу написать владельцу ${OWNER}: ${e.message}. Проверьте TELEGRAM_OWNER_CHAT_ID и что вы нажали Start в чате с ботом`,
+      transient: false,
+    };
   }
   return null;
 }
@@ -264,5 +320,5 @@ module.exports = {
   downloadFile,
   downloadBuffer,
   normalizeChannel,
-  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, channelLinks, TelegramError, OWNER,
+  api, sendHtml, sendReview, markReviewed, publish, escapeHtml, resendUndelivered, checkTelegram, checkChannel, channelInfo, channelLinks, TelegramError, NetworkError, OWNER,
 };
