@@ -5,11 +5,12 @@ const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
 const trends = require('./trends');
-const { draftFromItem, draftFromTrend, trendItemCount, runPipeline } = require('./pipeline');
+const { draftFromItem, draftFromTrend, trendItemCount, runPipeline, draftFromStudy } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
 const pinterest = require('./pinterest');
+const studies = require('./studies');
 const tg = require('./telegram');
 
 // Закрытый API для страницы «Канал» в админке игры: список постов и действия с ними.
@@ -214,6 +215,17 @@ function send(res, code, body) {
 
 const escapeText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// ─── Исследования автора ─────────────────────────────────────────────────────
+// Текст приходит из админки и уходит в работу в фоне: планирование и два черновика
+// идут минутами, держать на это открытым запрос браузера незачем
+
+function studyInBackground(id) {
+  draftFromStudy(id).catch(async (e) => {
+    console.error(`[api] исследование #${id} не разобралось`, e);
+    await studies.failStudy(id, e.message).catch(() => {});
+  });
+}
+
 // ─── Прогон вручную ──────────────────────────────────────────────────────────
 // В боте есть /run, но когда Telegram недоступен, запустить сбор нечем — и лента
 // стоит, пока не починится связь. Поэтому те же кнопка и статус есть в админке
@@ -301,6 +313,23 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (url.pathname === '/api/studies') {
+        if (req.method === 'GET') return send(res, 200, await studies.listStudies());
+        if (req.method === 'POST') {
+          // исследование бывает на сотню страниц — предел чтения поднят против обычного
+          const { title, text, note } = await readJson(req, 4 * 1024 * 1024);
+          const study = await studies.saveStudy({ title, text, note });
+          studyInBackground(study.id);
+          return send(res, 202, { ok: true, study: { id: study.id, title: study.title } });
+        }
+      }
+      const studyRetry = url.pathname.match(/^\/api\/studies\/(\d+)\/draft$/);
+      if (req.method === 'POST' && studyRetry) {
+        const id = Number(studyRetry[1]);
+        if (!(await studies.getStudy(id))) return send(res, 404, { error: 'Not found' });
+        studyInBackground(id);
+        return send(res, 202, { ok: true, pending: true });
+      }
       if (url.pathname === '/api/run') {
         if (req.method === 'GET') return send(res, 200, await runStatus());
         if (req.method === 'POST') {
@@ -378,6 +407,7 @@ function startApi() {
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
       if (e instanceof actions.ActionError) return send(res, 409, { error: e.message });
+      if (e.badRequest) return send(res, 400, { error: e.message });
       console.error('[api]', e);
       return send(res, 500, { error: 'Internal error' });
     }

@@ -322,6 +322,7 @@ export default function TrendsPage() {
           <div className="flex items-center gap-4">
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">Канал</a>
+            <a href="/admin/research" className="text-sm text-zinc-400 hover:text-white transition-colors">Исследования</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
             <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>
           </div>
