@@ -40,10 +40,20 @@ async function checkStatus(postId, action) {
 const suffix = (via) => (via === 'admin' ? ' (из админки)' : '');
 
 // Прислать в бот актуальную версию черновика, а старое сообщение пометить
+// Черновик в Telegram — отражение поста, а не сам пост. Если Telegram недоступен,
+// правка уже сохранена в базе, review_message_id снят, и resendUndelivered дошлёт
+// свежую версию, когда связь вернётся. Поэтому не роняем действие, а возвращаем
+// предупреждение: иначе автор видит «Internal error» и не знает, сохранилась ли правка
 async function refreshReview(postId, label) {
   await tg.markReviewed(postId, label);
   await pool.query('UPDATE posts SET review_message_id = NULL WHERE id = $1', [postId]);
-  await tg.sendReview(postId);
+  try {
+    await tg.sendReview(postId);
+    return null;
+  } catch (e) {
+    console.warn(`[actions] #${postId}: черновик в Telegram не обновился: ${e.message}`);
+    return `Изменения сохранены. Черновик в Telegram обновить не удалось: ${e.message}. Пришлю свежую версию, когда связь вернётся.`;
+  }
 }
 
 async function approve(postId, via = 'bot') {
@@ -77,7 +87,8 @@ async function reject(postId, via = 'bot') {
 async function removeImage(postId, via = 'bot') {
   const status = await checkStatus(postId, 'noimg');
   await pool.query('UPDATE posts SET image_url = NULL, image_ref = NULL WHERE id = $1', [postId]);
-  if (status !== 'approved') await refreshReview(postId, `🖼 Без картинки${suffix(via)} — см. ниже`);
+  if (status !== 'approved') return refreshReview(postId, `🖼 Без картинки${suffix(via)} — см. ниже`);
+  return null;
 }
 
 // Выбор картинки из библиотеки игры (эскиз или рендер). imageId = null — без картинки
@@ -91,7 +102,8 @@ async function setImage(postId, imageId, via = 'admin') {
     const url = await withBrandLogo(image.image_url);
     await pool.query('UPDATE posts SET image_url = $1, image_ref = $2 WHERE id = $3', [url, imageId, postId]);
   }
-  if (status !== 'approved') await refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
+  if (status !== 'approved') return refreshReview(postId, `🖼 Картинка изменена${suffix(via)} — см. ниже`);
+  return null;
 }
 
 // Формат поста: задаём вручную или определяем по тексту (для старых постов без формата)
@@ -99,8 +111,8 @@ async function setFormat(postId, formatKey, via = 'admin') {
   const status = await checkStatus(postId, 'format');
   if (formatKey && !formatByKey(formatKey)) throw new ActionError('Неизвестный формат');
   await pool.query('UPDATE posts SET format = $1 WHERE id = $2', [formatKey || null, postId]);
-  if (status !== 'approved') await refreshReview(postId, `🗓 Формат изменён${suffix(via)} — см. ниже`);
-  return formatKey;
+  const warning = status !== 'approved' ? await refreshReview(postId, `🗓 Формат изменён${suffix(via)} — см. ниже`) : null;
+  return { format: formatKey, warning };
 }
 
 async function detectFormat(postId) {
@@ -122,8 +134,8 @@ async function detectFormat(postId) {
     },
     maxTokens: 500,
   });
-  await setFormat(postId, res.format);
-  return { format: res.format, title: formatByKey(res.format)?.title, reason: res.reason };
+  const { warning } = await setFormat(postId, res.format);
+  return { format: res.format, title: formatByKey(res.format)?.title, reason: res.reason, warning };
 }
 
 // Определить формат у всех постов, где он не задан (посты до появления форматов)
@@ -152,7 +164,7 @@ async function editText(postId, text) {
   if (clean.length > 3800) throw new ActionError(`Слишком длинно для Telegram: ${clean.length} знаков из 3800`);
   const { rows: [old] } = await pool.query('SELECT text FROM posts WHERE id = $1', [postId]);
   await pool.query('UPDATE posts SET text = $1 WHERE id = $2', [clean, postId]);
-  if (status !== 'approved') await refreshReview(postId, '✏️ Изменён в админке — см. ниже');
+  const warning = status !== 'approved' ? await refreshReview(postId, '✏️ Изменён в админке — см. ниже') : null;
 
   // Память правок: из ручной правки тоже пробуем вывести общее правило — в фоне
   learnFromEdit(postId, old.text, clean)
@@ -160,6 +172,8 @@ async function editText(postId, text) {
       reply_markup: { inline_keyboard: [[{ text: '✖️ Не запоминать', callback_data: `delrule:${learned.id}` }]] },
     } : {}))
     .catch((e) => console.warn(`[learn] из правки не вышло: ${e.message}`));
+
+  return warning;
 }
 
 // Правка через модель по комментарию + память правок. Долго — вызывающий не ждёт завершения

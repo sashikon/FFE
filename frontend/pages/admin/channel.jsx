@@ -588,7 +588,8 @@ function FormatPicker({ post, onChanged }) {
   const set = async (value) => {
     setBusy(true);
     try {
-      await postAction(post.id, 'format', value === 'auto' ? { auto: true } : { format: value || null });
+      const r = await postAction(post.id, 'format', value === 'auto' ? { auto: true } : { format: value || null });
+      if (r?.warning) window.alert(r.warning);
       onChanged();
     } catch (e) {
       window.alert(e.message);
@@ -623,7 +624,7 @@ function PostCard({ post, onChanged, highlighted }) {
   const [text, setText] = useState(post.text);
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(null); // { kind: 'ok' | 'error', text }
+  const [message, setMessage] = useState(null); // { kind: 'ok' | 'warn' | 'error', text }
 
   const [showBones, setShowBones] = useState(false);
   const status = STATUS[post.status] || { label: post.status, cls: 'bg-zinc-800 text-zinc-300' };
@@ -642,8 +643,10 @@ function PostCard({ post, onChanged, highlighted }) {
     setBusy(true);
     setMessage(null);
     try {
-      await fn();
-      setMessage({ kind: 'ok', text: okText });
+      // сервис может сохранить правку, но не суметь обновить черновик в Telegram —
+      // тогда вместо бодрого «Готово» показываем, что именно не доехало
+      const result = await fn();
+      setMessage(result?.warning ? { kind: 'warn', text: result.warning } : { kind: 'ok', text: okText });
       setMode(null);
       onChanged();
     } catch (e) {
@@ -824,7 +827,7 @@ function PostCard({ post, onChanged, highlighted }) {
           )}
           {busy && <span className="text-xs text-zinc-500">…</span>}
           {message && (
-            <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{message.text}</span>
+            <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : message.kind === 'warn' ? 'text-amber-400' : 'text-rose-400'}`}>{message.text}</span>
           )}
         </div>
       )}

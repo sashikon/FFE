@@ -180,21 +180,21 @@ async function handleWrite(req, res, id, op) {
   if (op === 'action') {
     const fn = ACTIONS[body.action];
     if (!fn) return send(res, 400, { error: 'Неизвестное действие' });
-    await fn(id);
-    return send(res, 200, { ok: true });
+    const warning = await fn(id);
+    return send(res, 200, { ok: true, warning: typeof warning === 'string' ? warning : null });
   }
   if (op === 'format') {
     if (body.auto) return send(res, 200, { ok: true, ...(await actions.detectFormat(id)) });
-    await actions.setFormat(id, body.format || null);
-    return send(res, 200, { ok: true });
+    const { warning } = await actions.setFormat(id, body.format || null);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'image') {
-    await actions.setImage(id, body.image_id || null);
-    return send(res, 200, { ok: true });
+    const warning = await actions.setImage(id, body.image_id || null);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'text') {
-    await actions.editText(id, body.text);
-    return send(res, 200, { ok: true });
+    const warning = await actions.editText(id, body.text);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'redraft') {
     // Правка через модель идёт 1–2 минуты — отвечаем сразу, результат появится в списке и в боте
@@ -408,8 +408,14 @@ function startApi() {
     } catch (e) {
       if (e instanceof actions.ActionError) return send(res, 409, { error: e.message });
       if (e.badRequest) return send(res, 400, { error: e.message });
+      // Обрыв связи — не наша поломка: называем причину вместо «Internal error»,
+      // иначе автор видит безымянную ошибку и не знает, что делать
+      if (e.transient) {
+        console.error('[api]', e.message);
+        return send(res, 503, { error: e.message });
+      }
       console.error('[api]', e);
-      return send(res, 500, { error: 'Internal error' });
+      return send(res, 500, { error: `Внутренняя ошибка: ${e.message}` });
     }
   }).listen(port, () => console.log(`[api] listening on :${port}`));
 }
