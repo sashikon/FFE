@@ -16,6 +16,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleString('ru-RU', { day: 'numeric'
 const plain = (t) => (t || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 
 const STATUS = {
+  uploading: { label: 'загружается', cls: 'bg-zinc-800 text-zinc-400' },
   new: { label: 'в очереди', cls: 'bg-zinc-800 text-zinc-300' },
   planned: { label: 'пишу тексты', cls: 'bg-amber-500/15 text-amber-300' },
   drafted: { label: 'готово', cls: 'bg-emerald-500/15 text-emerald-300' },
@@ -31,15 +32,96 @@ const POST_STATUS = {
   superseded: 'заменён',
 };
 
-// Файл читаем в браузере и кладём в то же поле: на сервер уходит обычный текст,
-// и разбирать форматы файлов сервису канала не приходится
-const TEXT_FILES = '.txt,.md,.markdown,.rtf';
+// ─── Чтение файла в браузере ─────────────────────────────────────────────────
+// Текст уходит на сервер уже текстом, поэтому разбирать форматы приходится здесь.
+// .docx — это zip с word/document.xml; распаковываем средствами самого браузера,
+// без сторонних библиотек: DecompressionStream умеет deflate-raw
+
+const inflateRaw = async (bytes) => {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Response(stream).text();
+};
+
+// Абзацы и переносы сохраняем, остальную разметку Word выбрасываем
+const xmlToText = (xml) => xml
+  .replace(/<\/w:p>/g, '\n')
+  .replace(/<w:br\s*\/?>/g, '\n')
+  .replace(/<w:tab\s*\/?>/g, '\t')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+async function docxText(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const view = new DataView(buf.buffer);
+  // конец центрального каталога лежит в хвосте файла
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('Файл не похож на .docx');
+
+  const count = view.getUint16(eocd + 10, true);
+  let p = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  for (let n = 0; n < count; n++) {
+    if (view.getUint32(p, true) !== 0x02014b50) break;
+    const method = view.getUint16(p + 10, true);
+    const compSize = view.getUint32(p + 20, true);
+    const nameLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const offset = view.getUint32(p + 42, true);
+    const name = decoder.decode(buf.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (name !== 'word/document.xml') continue;
+    // у локального заголовка свои длины имени и extra — от них считаем начало данных
+    const start = offset + 30 + view.getUint16(offset + 26, true) + view.getUint16(offset + 28, true);
+    const raw = buf.subarray(start, start + compSize);
+    const xml = method === 0 ? decoder.decode(raw) : await inflateRaw(raw);
+    const text = xmlToText(xml);
+    if (!text) throw new Error('В документе не нашлось текста');
+    return text;
+  }
+  throw new Error('Внутри .docx нет текста документа');
+}
+
+async function readFile(file) {
+  const ext = (file.name.match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
+  if (ext === 'docx') return docxText(file);
+  if (ext === 'doc') throw new Error('Старый .doc не читается — пересохраните в .docx');
+  if (ext === 'pdf') throw new Error('PDF пока не читается — пересохраните в .docx или скопируйте текст в поле ниже');
+  if (ext === 'rtf') throw new Error('RTF пока не читается — пересохраните в .docx или .txt');
+  if (ext === 'pages') throw new Error('Pages пока не читается — экспортируйте в .docx или .txt');
+  const text = await file.text();
+  // бинарный файл, прочитанный как текст, выдаёт себя нечитаемыми знаками
+  if (/\u0000/.test(text.slice(0, 4000))) throw new Error('Это не текстовый файл — пришлите .docx, .txt или .md');
+  return text;
+}
+
+// Vercel не пропускает запрос больше 4,5 МБ, поэтому текст уходит кусками.
+// 300 000 знаков кириллицы — это около 600 КБ, с запасом
+const CHUNK = 300_000;
+
+async function step(name, id, body) {
+  const q = new URLSearchParams({ step: name, ...(id ? { id: String(id) } : {}) });
+  const r = await fetch(`/api/channel-studies/upload?${q}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
 
 function UploadForm({ minChars, onSent }) {
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(null);
   const [problem, setProblem] = useState(null);
   const fileRef = useRef(null);
 
@@ -47,22 +129,32 @@ function UploadForm({ minChars, onSent }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setProblem(null);
-    const body = await file.text();
-    setText(body);
-    if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
+    setBusy(true);
+    try {
+      const body = await readFile(file);
+      setText(body);
+      if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
+    } catch (err) {
+      setProblem(err.message);
+      if (fileRef.current) fileRef.current.value = '';
+    } finally {
+      setBusy(false);
+    }
   };
 
   const send = async () => {
     setBusy(true);
     setProblem(null);
     try {
-      const r = await fetch('/api/channel-studies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, text, note }),
-      });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      const body = text.trim();
+      const { study } = await step('upload', null, { title, note });
+      const parts = Math.ceil(body.length / CHUNK);
+      for (let i = 0; i < parts; i++) {
+        setSending({ done: i, parts });
+        await step('part', study.id, { text: body.slice(i * CHUNK, (i + 1) * CHUNK) });
+      }
+      setSending({ done: parts, parts });
+      await step('start', study.id, {});
       setTitle('');
       setNote('');
       setText('');
@@ -72,6 +164,7 @@ function UploadForm({ minChars, onSent }) {
       setProblem(e.message);
     } finally {
       setBusy(false);
+      setSending(null);
     }
   };
 
@@ -82,7 +175,7 @@ function UploadForm({ minChars, onSent }) {
       <h2 className="text-sm text-zinc-300 mb-1">Загрузить исследование</h2>
       <p className="text-xs text-zinc-500 mb-4">
         Статья, глава, заметки, расшифровка доклада. Из текста выйдет один пост или два — решает смысл, а не объём:
-        два только если в тексте две мысли, каждая из которых держится сама.
+        два только если в тексте две мысли, каждая из которых держится сама. Длина не ограничена.
       </p>
 
       <div className="flex flex-wrap gap-3 mb-3">
@@ -95,7 +188,6 @@ function UploadForm({ minChars, onSent }) {
         <input
           ref={fileRef}
           type="file"
-          accept={TEXT_FILES}
           onChange={pickFile}
           className="text-xs text-zinc-500 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:text-xs file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700"
         />
@@ -105,7 +197,7 @@ function UploadForm({ minChars, onSent }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={12}
-        placeholder="Вставьте текст исследования сюда — или выберите файл .txt / .md выше"
+        placeholder="Вставьте текст исследования сюда — или выберите файл .docx, .txt, .md выше"
         className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 font-sans leading-relaxed"
       />
 
@@ -118,7 +210,7 @@ function UploadForm({ minChars, onSent }) {
 
       <div className="mt-4 flex flex-wrap items-center gap-4">
         <button disabled={busy || !enough} onClick={send} className={btnPrimary}>
-          {busy ? 'Отправляю…' : 'Разобрать и написать'}
+          {sending ? `Отправляю ${sending.done} из ${sending.parts}…` : busy ? 'Читаю…' : 'Разобрать и написать'}
         </button>
         <span className="text-xs text-zinc-500">
           {text.trim().length
@@ -135,7 +227,7 @@ function StudyCard({ study, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(null);
   const status = STATUS[study.status] || STATUS.new;
-  const working = study.status === 'new' || study.status === 'planned';
+  const working = ['uploading', 'new', 'planned'].includes(study.status);
 
   const again = async () => {
     setBusy(true);

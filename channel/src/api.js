@@ -316,12 +316,28 @@ function startApi() {
       if (url.pathname === '/api/studies') {
         if (req.method === 'GET') return send(res, 200, await studies.listStudies());
         if (req.method === 'POST') {
-          // исследование бывает на сотню страниц — предел чтения поднят против обычного
-          const { title, text, note } = await readJson(req, 4 * 1024 * 1024);
+          // одним куском — только короткий текст; длинный идёт через /upload частями
+          const { title, text, note } = await readJson(req, 8 * 1024 * 1024);
           const study = await studies.saveStudy({ title, text, note });
           studyInBackground(study.id);
           return send(res, 202, { ok: true, study: { id: study.id, title: study.title } });
         }
+      }
+      // Загрузка частями: предела на размер исследования нет
+      if (req.method === 'POST' && url.pathname === '/api/studies/upload') {
+        const { title, note } = await readJson(req);
+        return send(res, 200, { ok: true, study: await studies.startUpload({ title, note }) });
+      }
+      const studyPart = url.pathname.match(/^\/api\/studies\/(\d+)\/part$/);
+      if (req.method === 'POST' && studyPart) {
+        const { text } = await readJson(req, 8 * 1024 * 1024);
+        return send(res, 200, { ok: true, chars: await studies.appendText(Number(studyPart[1]), text) });
+      }
+      const studyStart = url.pathname.match(/^\/api\/studies\/(\d+)\/start$/);
+      if (req.method === 'POST' && studyStart) {
+        const done = await studies.finishUpload(Number(studyStart[1]));
+        studyInBackground(done.id);
+        return send(res, 202, { ok: true, study: done });
       }
       const studyRetry = url.pathname.match(/^\/api\/studies\/(\d+)\/draft$/);
       if (req.method === 'POST' && studyRetry) {
