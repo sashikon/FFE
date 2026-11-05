@@ -58,6 +58,7 @@
 ```bash
 npm --prefix frontend run build      # проверить сборку админки и публичных страниц
 node --check channel/src/<файл>.js   # быстрая проверка синтаксиса
+npm --prefix backend test            # тесты бэкенда (ключевые слова пинов)
 cd channel && npm run collect        # собрать ленту (нужен DATABASE_URL)
 cd channel && npm run run-once       # один прогон конвейера
 ```
