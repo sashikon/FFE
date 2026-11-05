@@ -209,7 +209,12 @@ function listAdminPages() {
 }
 
 async function checkPages({ base, cookie }) {
-  const browser = await chromium.launch().catch((e) => {
+  // Свой браузер playwright-core; если его нет — тот, что стоит в системе
+  // (в облачной среде Claude он лежит в /opt/pw-browsers/chromium и обновляется
+  // отдельно от нашей версии playwright-core)
+  const browser = await chromium.launch().catch(async (e) => {
+    const system = process.env.CHECK_ADMIN_CHROMIUM || '/opt/pw-browsers/chromium';
+    if (existsSync(system)) return chromium.launch({ executablePath: system });
     throw new Error(`Не запустился браузер. На своём компьютере поставьте его один раз: npx playwright-core install chromium\n${e.message.split('\n')[0]}`);
   });
   try {

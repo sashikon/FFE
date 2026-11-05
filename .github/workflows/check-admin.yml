@@ -17,7 +17,10 @@ on:
 
 jobs:
   check-admin:
-    runs-on: ubuntu-latest
+    # Не ubuntu-latest: в ноябре 2026 он стал Ubuntu 26.04, а закреплённый
+    # playwright-core 1.56.1 ставить на неё браузер отказывается.
+    # Поднимая playwright-core, проверьте, можно ли вернуть ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
