@@ -59,6 +59,7 @@ export default function AssemblyPage() {
           <h1 className="text-xl font-serif tracking-wide">Как собирается пост</h1>
           <div className="flex items-center gap-4">
             <a href="/admin/channel" className="text-sm text-zinc-400 hover:text-white transition-colors">← Канал</a>
+            <a href="/admin/research" className="text-sm text-zinc-400 hover:text-white transition-colors">Исследования</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
           </div>

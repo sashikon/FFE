@@ -1,15 +1,16 @@
 const http = require('http');
 const crypto = require('crypto');
-const { pool } = require('./db');
+const { pool, getState, setState } = require('./db');
 const { formatByKey } = require('./formats');
 const sources = require('./sources');
 const { buildSchedule } = require('./schedule');
 const trends = require('./trends');
-const { draftFromItem, draftFromTrend, trendItemCount } = require('./pipeline');
+const { draftFromItem, draftFromTrend, trendItemCount, runPipeline, draftFromStudy } = require('./pipeline');
 const { findSlop } = require('./slop');
 const actions = require('./actions');
 const { refreshLibrary, STALE_MS } = require('./library');
 const pinterest = require('./pinterest');
+const studies = require('./studies');
 const tg = require('./telegram');
 
 // Закрытый API для страницы «Канал» в админке игры: список постов и действия с ними.
@@ -28,6 +29,17 @@ function authorized(req) {
   const got = Buffer.from(String(req.headers['x-channel-token'] || ''));
   const want = Buffer.from(TOKEN);
   return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+// Канал, куда публикуем: название и ссылки. Ответ Telegram кешируем на 10 минут
+let channelCache = { at: 0, value: null };
+async function channelLink() {
+  if (channelCache.value && Date.now() - channelCache.at < 10 * 60 * 1000) return channelCache.value;
+  const info = await tg.channelInfo().catch(() => null);
+  const chat = info?.chat || null;
+  const links = tg.channelLinks(chat);
+  channelCache = { at: Date.now(), value: { title: chat?.title ?? null, username: chat?.username ?? null, url: links.url, post: links.post } };
+  return channelCache.value;
 }
 
 async function listPosts(status, q = '') {
@@ -49,10 +61,13 @@ async function listPosts(status, q = '') {
     [STATUSES[status] || STATUSES.all, needle, byId]
   );
   const { rows: counts } = await pool.query(`SELECT status, COUNT(*)::int AS n FROM posts GROUP BY status`);
+  const channel = await channelLink();
   return {
+    channel: { title: channel.title, url: channel.url },
     posts: rows.map((p) => ({
       ...p,
       format_title: formatByKey(p.format)?.title ?? null,
+      channel_url: channel.post(p.channel_message_id),
       slop: findSlop(p.text).map((h) => h.match),
     })),
     counts: Object.fromEntries(counts.map((c) => [c.status, c.n])),
@@ -65,8 +80,12 @@ async function listSources() {
     SELECT feed,
            COUNT(*) FILTER (WHERE fetched_at > NOW() - INTERVAL '7 days')::int AS week,
            COUNT(*)::int AS total,
-           MAX(published_at) AS last_published
+           -- у заметок без даты публикации берём время сбора, иначе MAX их не видит
+           MAX(COALESCE(published_at, fetched_at)) AS last_published
     FROM items WHERE feed IS NOT NULL GROUP BY feed`);
+  const { rows: checks } = await pool.query(
+    `SELECT feed, checked_at, ok, error, last_ok_at, seen, too_old, filtered, dup, added, newest_seen
+     FROM source_checks`);
   const { rows: used } = await pool.query(`
     SELECT i.feed, COUNT(DISTINCT p.id)::int AS posts
     FROM items i
@@ -75,6 +94,7 @@ async function listSources() {
     WHERE i.feed IS NOT NULL GROUP BY i.feed`);
   const byFeed = Object.fromEntries(stats.map((r) => [r.feed, r]));
   const postsByFeed = Object.fromEntries(used.map((r) => [r.feed, r.posts]));
+  const checkByFeed = Object.fromEntries(checks.map(({ feed, ...c }) => [feed, c]));
 
   return {
     sources: sources.map((s) => ({
@@ -90,6 +110,7 @@ async function listSources() {
       total: byFeed[s.name]?.total ?? 0,
       last_published: byFeed[s.name]?.last_published ?? null,
       posts: postsByFeed[s.name] ?? 0,
+      check: checkByFeed[s.name] ?? null,
     })),
   };
 }
@@ -159,21 +180,21 @@ async function handleWrite(req, res, id, op) {
   if (op === 'action') {
     const fn = ACTIONS[body.action];
     if (!fn) return send(res, 400, { error: 'Неизвестное действие' });
-    await fn(id);
-    return send(res, 200, { ok: true });
+    const warning = await fn(id);
+    return send(res, 200, { ok: true, warning: typeof warning === 'string' ? warning : null });
   }
   if (op === 'format') {
     if (body.auto) return send(res, 200, { ok: true, ...(await actions.detectFormat(id)) });
-    await actions.setFormat(id, body.format || null);
-    return send(res, 200, { ok: true });
+    const { warning } = await actions.setFormat(id, body.format || null);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'image') {
-    await actions.setImage(id, body.image_id || null);
-    return send(res, 200, { ok: true });
+    const warning = await actions.setImage(id, body.image_id || null);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'text') {
-    await actions.editText(id, body.text);
-    return send(res, 200, { ok: true });
+    const warning = await actions.editText(id, body.text);
+    return send(res, 200, { ok: true, warning });
   }
   if (op === 'redraft') {
     // Правка через модель идёт 1–2 минуты — отвечаем сразу, результат появится в списке и в боте
@@ -193,6 +214,61 @@ function send(res, code, body) {
 }
 
 const escapeText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// ─── Исследования автора ─────────────────────────────────────────────────────
+// Текст приходит из админки и уходит в работу в фоне: планирование и два черновика
+// идут минутами, держать на это открытым запрос браузера незачем
+
+function studyInBackground(id) {
+  draftFromStudy(id).catch(async (e) => {
+    console.error(`[api] исследование #${id} не разобралось`, e);
+    await studies.failStudy(id, e.message).catch(() => {});
+  });
+}
+
+// ─── Прогон вручную ──────────────────────────────────────────────────────────
+// В боте есть /run, но когда Telegram недоступен, запустить сбор нечем — и лента
+// стоит, пока не починится связь. Поэтому те же кнопка и статус есть в админке
+
+async function runStatus() {
+  const [started, stage, last, finished, failed] = await Promise.all([
+    getState('run_started'), getState('run_stage'),
+    getState('last_pipeline_at'), getState('last_pipeline_finished'), getState('run_error'),
+  ]);
+  // без повторов: статус опрашивают часто, и ждать минуту обрыва связи здесь незачем
+  const trouble = await tg.checkTelegram({ retries: 0 }).catch((e) => ({ problem: e.message, transient: true }));
+  return {
+    running: Boolean(started),
+    started_at: started || null,
+    minutes: started ? Math.round((Date.now() - new Date(started).getTime()) / 60000) : null,
+    stage: stage || null,
+    last_run: last || null,
+    last_finished: finished || null,
+    error: failed || null,
+    interval_hours: Number(process.env.PIPELINE_INTERVAL_HOURS || 6),
+    telegram: trouble ? { ok: false, problem: trouble.problem, transient: Boolean(trouble.transient) } : { ok: true },
+  };
+}
+
+// Прогон идёт минутами: отвечаем сразу, ход видно в статусе, черновики — во вкладке «Не утверждено»
+async function startRun() {
+  const status = await runStatus();
+  if (status.running) {
+    return { code: 409, body: { error: `Прогон уже идёт ${status.minutes} мин: ${status.stage || 'начинается'}` } };
+  }
+  await setState('last_pipeline_at', new Date().toISOString()).catch(() => {});
+  runPipeline()
+    .then((r) => {
+      console.log(`[api] прогон из админки: формат «${r.format}», черновиков ${r.drafted} из ${r.candidates}`);
+      return setState('run_error', null).catch(() => {});
+    })
+    .catch((e) => {
+      console.error('[api] прогон из админки упал', e);
+      return setState('run_error', e.message).catch(() => {});
+    });
+  return { code: 202, body: { ok: true, started: true } };
+}
+
 
 function startApi() {
   if (!TOKEN) {
@@ -237,6 +313,50 @@ function startApi() {
         return send(res, 200, await listLibrary({ force: url.searchParams.get('refresh') === '1' }));
       }
       if (req.method === 'GET' && url.pathname === '/api/sources') return send(res, 200, await listSources());
+      if (url.pathname === '/api/studies') {
+        if (req.method === 'GET') return send(res, 200, await studies.listStudies());
+        if (req.method === 'POST') {
+          // одним куском — только короткий текст; длинный идёт через /upload частями
+          const { title, text, note } = await readJson(req, 8 * 1024 * 1024);
+          const study = await studies.saveStudy({ title, text, note });
+          studyInBackground(study.id);
+          return send(res, 202, { ok: true, study: { id: study.id, title: study.title } });
+        }
+      }
+      // Загрузка частями: предела на размер исследования нет
+      if (req.method === 'POST' && url.pathname === '/api/studies/upload') {
+        const { title, note } = await readJson(req);
+        return send(res, 200, { ok: true, study: await studies.startUpload({ title, note }) });
+      }
+      const studyPart = url.pathname.match(/^\/api\/studies\/(\d+)\/part$/);
+      if (req.method === 'POST' && studyPart) {
+        const { text } = await readJson(req, 8 * 1024 * 1024);
+        return send(res, 200, { ok: true, chars: await studies.appendText(Number(studyPart[1]), text) });
+      }
+      const studyStart = url.pathname.match(/^\/api\/studies\/(\d+)\/start$/);
+      if (req.method === 'POST' && studyStart) {
+        const done = await studies.finishUpload(Number(studyStart[1]));
+        studyInBackground(done.id);
+        return send(res, 202, { ok: true, study: done });
+      }
+      const studyRetry = url.pathname.match(/^\/api\/studies\/(\d+)\/draft$/);
+      if (req.method === 'POST' && studyRetry) {
+        const id = Number(studyRetry[1]);
+        if (!(await studies.getStudy(id))) return send(res, 404, { error: 'Not found' });
+        studyInBackground(id);
+        return send(res, 202, { ok: true, pending: true });
+      }
+      if (url.pathname === '/api/run') {
+        if (req.method === 'GET') return send(res, 200, await runStatus());
+        if (req.method === 'POST') {
+          const { code, body } = await startRun();
+          return send(res, code, body);
+        }
+      }
+      if (req.method === 'GET' && url.pathname === '/api/channel') {
+        const { title, username, url: link } = await channelLink();
+        return send(res, 200, { channel: { title, username, url: link } });
+      }
       if (req.method === 'GET' && url.pathname === '/api/social') {
         return send(res, 200, await listSocial({ kind: url.searchParams.get('kind') || null, platform: url.searchParams.get('platform') || null }));
       }
@@ -303,8 +423,15 @@ function startApi() {
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
       if (e instanceof actions.ActionError) return send(res, 409, { error: e.message });
+      if (e.badRequest) return send(res, 400, { error: e.message });
+      // Обрыв связи — не наша поломка: называем причину вместо «Internal error»,
+      // иначе автор видит безымянную ошибку и не знает, что делать
+      if (e.transient) {
+        console.error('[api]', e.message);
+        return send(res, 503, { error: e.message });
+      }
       console.error('[api]', e);
-      return send(res, 500, { error: 'Internal error' });
+      return send(res, 500, { error: `Внутренняя ошибка: ${e.message}` });
     }
   }).listen(port, () => console.log(`[api] listening on :${port}`));
 }

@@ -8,8 +8,11 @@ const { analyzeAesthetics, analyzeModel } = require('../llm/aesthetics');
 const { enqueue } = require('../queue');
 const { requireAdminToken } = require('../middleware/auth');
 const Anthropic = require('@anthropic-ai/sdk');
-const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, createPin, exchangeCodeForToken } = require('../pinterest');
+const { fetchAllPins, fetchPinById, fetchPinAnalytics, getBoards, getUserAccount, createPin, exchangeCodeForToken } = require('../pinterest');
+const { suggestBoards } = require('../llm/board');
+const { getSettings, saveSettings } = require('../settings');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
+const { previewVisuals, otherLangCount, exportVisualsCsv } = require('../visualsExport');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
 
@@ -497,6 +500,16 @@ router.get('/pinterest-preview', async (req, res, next) => {
     const onlyNew      = req.query.new === 'true';
     const rendersOnly  = req.query.renders === 'true';
 
+    // Коллажи и другие визуалы из «Композиций» с SEO-разметкой на этом языке
+    if (req.query.collages === 'true') {
+      const { export_board: exportBoard, collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      return res.json({
+        outfits: await previewVisuals(lang),
+        other_lang: await otherLangCount(lang),
+        default_board: collageCsvBoard || exportBoard,
+      });
+    }
+
     if (rendersOnly) {
       // Per-render mode: one row per un-exported render
       const { rows } = await pool.query(
@@ -536,7 +549,8 @@ router.get('/pinterest-preview', async (req, res, next) => {
 router.get('/pinterest-export', async (req, res, next) => {
   try {
     const lang  = req.query.lang  || 'en';
-    const board = req.query.board || 'FFE';
+    const { export_board: exportBoard } = await getSettings('pinterest');
+    const board = req.query.board || exportBoard;
     const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
@@ -544,6 +558,22 @@ router.get('/pinterest-export', async (req, res, next) => {
     const onlyNew      = req.query.new === 'true';
     const rendersOnly  = req.query.renders === 'true';
     const ids          = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
+
+    // Коллажи из «Композиций»: те же колонки, своя выборка и своя отметка о выгрузке
+    if (req.query.collages === 'true') {
+      // Доска для коллажей: выбранная в окне экспорта, иначе прошлый выбор, иначе общая доска выгрузки
+      const { collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      const chosen = String(req.query.board || '').trim().slice(0, 100);
+      const collageBoard = chosen || collageCsvBoard || exportBoard;
+      const result = await exportVisualsCsv({ lang, ids: req.query.ids, board: collageBoard });
+      if (result && chosen && chosen !== collageCsvBoard) {
+        await saveSettings('pinterest', { collage_csv_board: chosen }).catch((e) => console.error('save collage board', e));
+      }
+      if (!result) return res.status(404).json({ error: `Нет коллажей с SEO-разметкой на языке ${lang.toUpperCase()}` });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="pinterest_${lang}_collages_${new Date().toISOString().slice(0, 10)}.csv"`);
+      return res.send(result.csv);
+    }
 
     let rows;
 
@@ -1170,16 +1200,17 @@ router.post('/pinterest/import-pins', async (req, res, next) => {
     const { pins } = req.body;
     if (!Array.isArray(pins)) return res.status(400).json({ error: 'pins array required' });
 
+    const { sketch_board: sketchBoard, collage_board: collageBoard } = await getSettings('pinterest');
     let sketchUpdated = 0, renderUpdated = 0;
 
     for (const pin of pins) {
-      if (pin.board === 'Fashion sketch') {
+      if (pin.board === sketchBoard) {
         const r = await pool.query(
           'UPDATE outfits SET sketch_pin_id = $1 WHERE id = $2',
           [pin.pin_id, pin.outfit_id]
         );
         if (r.rowCount > 0) sketchUpdated++;
-      } else if (pin.board !== 'Collage Item Pins') {
+      } else if (pin.board !== collageBoard) {
         const r = await pool.query(
           `UPDATE outfit_renders SET pinterest_pin_id = $1
            WHERE id = (SELECT id FROM outfit_renders WHERE outfit_id = $2 ORDER BY created_at DESC LIMIT 1)`,
@@ -1283,11 +1314,73 @@ router.post('/pinterest/fetch-analytics', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/pinterest/suggest-boards — { ids: [renderId, ...] }
+// Подбирает доску каждому рендеру по его разбору: эстетики, описание модели, текст пина
+router.post('/pinterest/suggest-boards', requireAdminToken, async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+    if (!ids.length) return res.status(400).json({ error: 'ids required' });
+
+    const { rows: renders } = await pool.query(
+      `SELECT r.id, r.aesthetics, r.model_appearance, r.pin_title, r.pin_description,
+              COALESCE(o.title_en, o.title) AS title
+       FROM outfit_renders r JOIN outfits o ON o.id = r.outfit_id
+       WHERE r.id = ANY($1)`,
+      [ids]
+    );
+    if (!renders.length) return res.status(404).json({ error: 'renders not found' });
+
+    const boards = await getBoards();
+    if (!boards.length) return res.status(400).json({ error: 'Нет досок: подключите аккаунт Pinterest' });
+
+    const suggestions = await suggestBoards(boards, renders);
+    const analyzed = renders.filter((r) => r.aesthetics).length;
+    res.json({ suggestions, analyzed, total: renders.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/settings/pinterest — названия досок нового аккаунта
+router.get('/settings/pinterest', requireAdminToken, async (_req, res, next) => {
+  try {
+    res.json({ settings: await getSettings('pinterest') });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/settings/pinterest — { export_board, sketch_board, collage_board }
+router.put('/settings/pinterest', requireAdminToken, async (req, res, next) => {
+  try {
+    res.json({ settings: await saveSettings('pinterest', req.body || {}) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/pinterest-boards — list boards
+// Ссылка на доску: Pinterest собирает её из имени профиля и названия доски
+const boardSlug = (name) => String(name || '')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '-')
+  .replace(/^-+|-+$/g, '');
+
 router.get('/pinterest-boards', requireAdminToken, async (req, res, next) => {
   try {
     const boards = await getBoards();
-    res.json({ boards });
+    const { profile } = await getSettings('pinterest');
+    let username = profile;
+    if (!username) {
+      username = await getUserAccount().then((a) => a?.username || '').catch(() => '');
+    }
+    res.json({
+      boards: boards.map((b) => ({
+        ...b,
+        url: username ? `https://www.pinterest.com/${username}/${boardSlug(b.name)}/` : null,
+      })),
+      profile: username || null,
+    });
   } catch (err) {
     next(err);
   }
@@ -1297,9 +1390,10 @@ router.get('/pinterest-boards', requireAdminToken, async (req, res, next) => {
 // body: { ids: [renderUUID, ...], board_id: "...", lang: "en" }
 router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next) => {
   try {
-    const { ids, board_id, lang = 'en' } = req.body;
+    // boards — необязательная карта { renderId: boardId }: каждый рендер уходит на свою доску
+    const { ids, board_id, boards = {}, lang = 'en' } = req.body;
     if (!ids?.length) return res.status(400).json({ error: 'ids required' });
-    if (!board_id)    return res.status(400).json({ error: 'board_id required' });
+    if (!board_id && !Object.keys(boards).length) return res.status(400).json({ error: 'board_id required' });
 
     const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
     const TITLE_MAX = 100;
@@ -1325,7 +1419,9 @@ router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next)
         const description = (row.pin_description || '').slice(0, DESC_MAX);
         const link = `${BASE_URL}/outfit/${row.outfit_id}`;
 
-        const pin = await createPin({ boardId: board_id, title, description, imageUrl: row.render_url, link });
+        const boardId = boards[row.render_id] || board_id;
+        if (!boardId) throw new Error('доска не выбрана');
+        const pin = await createPin({ boardId, title, description, imageUrl: row.render_url, link });
 
         await pool.query(
           `UPDATE outfit_renders

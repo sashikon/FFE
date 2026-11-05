@@ -37,6 +37,13 @@ const NOISE = [
 ];
 // В японском, китайском и корейском письме пробелов мало — там считаем знаки, а не слова
 const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+// Счётчик одного сбора: сколько записей было в ленте и куда каждая делась.
+// newest — самая свежая дата в ленте, чтобы отличать «давно не писала» от «всё отсеяли»
+const newStats = () => ({ seen: 0, too_old: 0, filtered: 0, dup: 0, added: 0, newest: null });
+const noteDate = (stats, d) => {
+  if (d && !Number.isNaN(d.getTime()) && (!stats.newest || d > stats.newest)) stats.newest = d;
+};
+
 const tooShort = (title) => (CJK.test(title)
   ? title.replace(/\s+/g, '').length < 8
   : title.split(/\s+/).length < 4);
@@ -104,12 +111,14 @@ async function collectRss(src) {
     throw new Error(`${e.message.split('\n')[0]} — ${describeBody(xml)}`);
   }
   const isGoogle = src.url.includes('news.google.com');
-  let added = 0;
+  const stats = newStats();
 
   for (const entry of feed.items || []) {
-    if (!entry.link || !entry.title) continue;
+    stats.seen++;
     const published = entry.isoDate ? new Date(entry.isoDate) : null;
-    if (published && Date.now() - published.getTime() > maxAge(src)) continue;
+    noteDate(stats, published);
+    if (!entry.link || !entry.title) { stats.filtered++; continue; }
+    if (published && Date.now() - published.getTime() > maxAge(src)) { stats.too_old++; continue; }
 
     // Google News дописывает « - Издание» к заголовку, а в описании дублирует заголовок
     let title = clean(entry.title);
@@ -128,9 +137,9 @@ async function collectRss(src) {
     }
     // Заголовок, совпадающий с названием издания, — это его главная страница, а не статья
     const sameAsSource = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === source.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-    if (sameAsSource || isNoise(title)) continue;
+    if (sameAsSource || isNoise(title)) { stats.filtered++; continue; }
     // У источника может быть свой фильтр по теме (например, только про одежду и стиль)
-    if (src.require && !src.require.test(title)) continue;
+    if (src.require && !src.require.test(title)) { stats.filtered++; continue; }
     const summary = isGoogle ? null : clean(entry.contentSnippet || entry.content || entry.summary);
 
     const { rowCount } = await pool.query(
@@ -139,9 +148,9 @@ async function collectRss(src) {
        ON CONFLICT (url) DO NOTHING`,
       [source, src.name, src.layer, normalizeUrl(entry.link), title, summary || null, published]
     );
-    added += rowCount;
+    if (rowCount) stats.added++; else stats.dup++;
   }
-  return added;
+  return stats;
 }
 
 // Launchmetrics без no-cache отвечает 304 с пустым телом
@@ -167,18 +176,21 @@ async function titleFromPage(url, src) {
 
 async function collectSitemap(src) {
   const xmls = await Promise.all([].concat(src.url).map(fetchText));
-  const fresh = xmls
+  const stats = newStats();
+  const all = xmls
     .flatMap((xml) => [...xml.matchAll(/<loc>([^<]+)<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/g)])
     .map(([, url, lastmod]) => ({ url: decode(url.trim()), published: new Date(lastmod) }))
-    .filter((e) => Date.now() - e.published.getTime() <= maxAge(src))
-    .filter((e) => !src.urlFilter || src.urlFilter.test(e.url))
-    .sort((a, b) => b.published - a.published)
-    .slice(0, SITEMAP_LIMIT);
-  if (!fresh.length) return 0;
+    .filter((e) => !src.urlFilter || src.urlFilter.test(e.url));
+  stats.seen = all.length;
+  all.forEach((e) => noteDate(stats, e.published));
+  const recent = all.filter((e) => Date.now() - e.published.getTime() <= maxAge(src));
+  stats.too_old = all.length - recent.length;
+  const fresh = recent.sort((a, b) => b.published - a.published).slice(0, SITEMAP_LIMIT);
+  if (!fresh.length) return stats;
 
   const { rows } = await pool.query('SELECT url FROM items WHERE url = ANY($1)', [fresh.map((e) => e.url)]);
   const known = new Set(rows.map((r) => r.url));
-  let added = 0;
+  stats.dup = known.size;
 
   for (const e of fresh.filter((f) => !known.has(f.url))) {
     let title;
@@ -186,15 +198,15 @@ async function collectSitemap(src) {
       title = src.titleFrom === 'slug' ? titleFromSlug(e.url) : await titleFromPage(e.url, src);
     } catch { title = null; }
     if (!title) title = titleFromSlug(e.url);
-    if (!title || isNoise(title)) continue;
+    if (!title || isNoise(title)) { stats.filtered++; continue; }
     const { rowCount } = await pool.query(
       `INSERT INTO items (source, feed, layer, url, title, published_at)
        VALUES ($1, $1, $2, $3, $4, $5) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, e.url, title, e.published]
     );
-    added += rowCount;
+    if (rowCount) stats.added++; else stats.dup++;
   }
-  return added;
+  return stats;
 }
 
 // Публичные Telegram-каналы: веб-версия t.me/s/<канал> отдаёт последние ~20 постов без API и ключей.
@@ -221,31 +233,60 @@ function telegramPosts(html, channel) {
 
 async function collectTelegram(src) {
   const html = await fetchText(`https://t.me/s/${src.channel}`);
-  let added = 0;
+  const stats = newStats();
   for (const p of telegramPosts(html, src.channel)) {
-    if (p.published && Date.now() - p.published.getTime() > maxAge(src)) continue;
+    stats.seen++;
+    noteDate(stats, p.published);
+    if (p.published && Date.now() - p.published.getTime() > maxAge(src)) { stats.too_old++; continue; }
     // Короткие подписи к фото и рекламные посты без текста — не новости
-    if (p.title.length + p.summary.length < 80 || isNoise(p.title)) continue;
+    if (p.title.length + p.summary.length < 80 || isNoise(p.title)) { stats.filtered++; continue; }
     const { rowCount } = await pool.query(
       `INSERT INTO items (source, feed, layer, url, title, summary, published_at)
        VALUES ($1, $1, $2, $3, $4, $5, $6) ON CONFLICT (url) DO NOTHING`,
       [src.name, src.layer, p.url, p.title, p.summary || null, p.published]
     );
-    added += rowCount;
+    if (rowCount) stats.added++; else stats.dup++;
   }
-  return added;
+  return stats;
 }
 
 const COLLECTORS = { sitemap: collectSitemap, telegram: collectTelegram };
 const collectSource = (src) => (COLLECTORS[src.type] || collectRss)(src);
 
+// Итог сбора пишем в базу: страница источников показывает по нему, сломана лента,
+// всё отсеяно фильтрами или издание давно не писало. Ошибка записи не должна ронять сбор
+async function saveCheck(name, result) {
+  try {
+    if (result.status === 'fulfilled') {
+      const s = result.value;
+      await pool.query(
+        `INSERT INTO source_checks (feed, checked_at, ok, error, last_ok_at, seen, too_old, filtered, dup, added, newest_seen)
+         VALUES ($1, NOW(), TRUE, NULL, NOW(), $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (feed) DO UPDATE SET checked_at = NOW(), ok = TRUE, error = NULL, last_ok_at = NOW(),
+           seen = $2, too_old = $3, filtered = $4, dup = $5, added = $6, newest_seen = $7`,
+        [name, s.seen, s.too_old, s.filtered, s.dup, s.added, s.newest]
+      );
+    } else {
+      // При ошибке счётчики и last_ok_at остаются от последнего удачного сбора
+      await pool.query(
+        `INSERT INTO source_checks (feed, checked_at, ok, error) VALUES ($1, NOW(), FALSE, $2)
+         ON CONFLICT (feed) DO UPDATE SET checked_at = NOW(), ok = FALSE, error = $2`,
+        [name, String(result.reason?.message || result.reason).slice(0, 500)]
+      );
+    }
+  } catch (e) {
+    console.warn(`[collect] не записал итог сбора ${name}: ${e.message}`);
+  }
+}
+
 async function collectAll() {
   const results = await Promise.allSettled(sources.map(collectSource));
   let total = 0;
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') total += r.value;
+  for (const [i, r] of results.entries()) {
+    if (r.status === 'fulfilled') total += r.value.added;
     else console.warn(`[collect] ${sources[i].name}: ${r.reason.message}`);
-  });
+    await saveCheck(sources[i].name, r);
+  }
   console.log(`[collect] new items: ${total}`);
   return total;
 }

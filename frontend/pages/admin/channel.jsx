@@ -141,6 +141,60 @@ function BrandLogo() {
 }
 
 // Массовое определение формата — для постов, сделанных до появления форматов
+// Прогон: когда собиралась лента в последний раз, на каком шаге она сейчас и кнопка «запустить».
+// Кнопка нужна именно здесь: когда связь с Telegram рвётся, команда /run в боте недоступна,
+// и сбор нечем запустить, хотя сам сбор от Telegram не зависит
+function RunPanel() {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const { data, mutate } = useSWR('/api/channel-run', fetcher, { refreshInterval: 15000 });
+
+  const start = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await fetch('/api/channel-run', { method: 'POST' });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      setNote({ ok: 'Прогон запущен. Он идёт несколько минут, черновики появятся во вкладке «Не утверждено»' });
+      mutate();
+    } catch (e) {
+      setNote({ error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tg = data?.telegram && !data.telegram.ok ? data.telegram : null;
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <button disabled={busy || data?.running} onClick={start} className={btnPrimary}>
+        {data?.running ? 'Прогон идёт…' : busy ? 'Запускаю…' : '▶️ Собрать ленту сейчас'}
+      </button>
+      <span className="text-xs text-zinc-400">
+        {data?.running
+          ? `⏳ ${data.minutes} мин: ${data.stage || 'начинается'}`
+          : data?.last_run
+            ? `Последний прогон: ${fmtDate(data.last_run)} · сам запускается каждые ${data.interval_hours} ч`
+            : data ? 'Прогонов ещё не было' : 'Проверяю состояние…'}
+      </span>
+      {data?.error && !data.running && (
+        <span className="text-xs text-rose-400">Прошлый прогон упал: {data.error}</span>
+      )}
+      {tg && (
+        <span className={`text-xs ${tg.transient ? 'text-amber-400' : 'text-rose-400'}`}>
+          {tg.transient
+            ? `⚠️ Связь с Telegram рвётся: ${tg.problem}. Лента собирается, черновики дойдут в бот позже`
+            : `❌ Telegram: ${tg.problem}`}
+        </span>
+      )}
+      {note?.ok && <span className="text-xs text-emerald-400">{note.ok}</span>}
+      {note?.error && <span className="text-xs text-rose-400">{note.error}</span>}
+    </div>
+  );
+}
+
 function BulkFormats({ posts, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -534,7 +588,8 @@ function FormatPicker({ post, onChanged }) {
   const set = async (value) => {
     setBusy(true);
     try {
-      await postAction(post.id, 'format', value === 'auto' ? { auto: true } : { format: value || null });
+      const r = await postAction(post.id, 'format', value === 'auto' ? { auto: true } : { format: value || null });
+      if (r?.warning) window.alert(r.warning);
       onChanged();
     } catch (e) {
       window.alert(e.message);
@@ -569,7 +624,7 @@ function PostCard({ post, onChanged, highlighted }) {
   const [text, setText] = useState(post.text);
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(null); // { kind: 'ok' | 'error', text }
+  const [message, setMessage] = useState(null); // { kind: 'ok' | 'warn' | 'error', text }
 
   const [showBones, setShowBones] = useState(false);
   const status = STATUS[post.status] || { label: post.status, cls: 'bg-zinc-800 text-zinc-300' };
@@ -588,8 +643,10 @@ function PostCard({ post, onChanged, highlighted }) {
     setBusy(true);
     setMessage(null);
     try {
-      await fn();
-      setMessage({ kind: 'ok', text: okText });
+      // сервис может сохранить правку, но не суметь обновить черновик в Telegram —
+      // тогда вместо бодрого «Готово» показываем, что именно не доехало
+      const result = await fn();
+      setMessage(result?.warning ? { kind: 'warn', text: result.warning } : { kind: 'ok', text: okText });
       setMode(null);
       onChanged();
     } catch (e) {
@@ -614,9 +671,16 @@ function PostCard({ post, onChanged, highlighted }) {
         <span className={`px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
         <FormatPicker post={post} onChanged={onChanged} />
         <span className="text-zinc-500">{when}</span>
-        <button onClick={copy} className="ml-auto text-zinc-400 hover:text-white transition-colors">
-          {copied ? 'Скопировано' : 'Копировать текст'}
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          {post.channel_url && (
+            <a href={post.channel_url} target="_blank" rel="noopener noreferrer" className="text-sky-300 hover:text-sky-200 transition-colors">
+              📣 В канале ↗
+            </a>
+          )}
+          <button onClick={copy} className="text-zinc-400 hover:text-white transition-colors">
+            {copied ? 'Скопировано' : 'Копировать текст'}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-5">
@@ -763,7 +827,7 @@ function PostCard({ post, onChanged, highlighted }) {
           )}
           {busy && <span className="text-xs text-zinc-500">…</span>}
           {message && (
-            <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{message.text}</span>
+            <span className={`text-xs ${message.kind === 'ok' ? 'text-emerald-400' : message.kind === 'warn' ? 'text-amber-400' : 'text-rose-400'}`}>{message.text}</span>
           )}
         </div>
       )}
@@ -775,6 +839,13 @@ export default function ChannelPage() {
   const [tab, setTab] = useState('draft');
   const [highlight, setHighlight] = useState(null);
   const [search, setSearch] = useState('');
+
+  // приход со страницы исследований: ?post=12 — показываем именно этот пост.
+  // Ищем по номеру, а не выбираем вкладку: статус поста к этому моменту может быть любым
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('post');
+    if (id) setSearch(`#${id}`);
+  }, []);
 
   // переход из календаря к тексту поста
   const openPost = (id, status) => {
@@ -791,6 +862,10 @@ export default function ChannelPage() {
     }
   });
 
+  // название канала и ссылка на него: во вкладке «Календарь» список постов не грузится,
+  // поэтому берём их отдельным запросом
+  const { data: channelInfo } = useSWR('/api/channel-info', fetcher);
+
   // поиск ищет по всем статусам: человек ищет конкретный пост, а не пост во вкладке
   const query = search.trim();
   const { data, error, isLoading, mutate } = useSWR(
@@ -800,6 +875,7 @@ export default function ChannelPage() {
     { refreshInterval: query ? 0 : 30000 }
   );
   const counts = data?.counts || {};
+  const channel = data?.channel || channelInfo?.channel;
 
   return (
     <>
@@ -809,18 +885,29 @@ export default function ChannelPage() {
       </Head>
       <div className="min-h-screen bg-black text-white font-sans">
         <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-serif tracking-wide">Канал о смыслах в моде</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-xl font-serif tracking-wide">Канал о смыслах в моде</h1>
+            {channel?.url && (
+              <a href={channel.url} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-300 hover:text-sky-200 transition-colors">
+                📣 {channel.title || 'Открыть канал'} ↗
+              </a>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <a href="/admin" className="text-sm text-zinc-400 hover:text-white transition-colors">← Образы</a>
             <a href="/admin/stats" className="text-sm text-zinc-400 hover:text-white transition-colors">Статистика</a>
             <a href="/admin/sources" className="text-sm text-zinc-400 hover:text-white transition-colors">Источники</a>
+            <a href="/admin/research" className="text-sm text-zinc-400 hover:text-white transition-colors">Исследования</a>
             <a href="/admin/trends" className="text-sm text-zinc-400 hover:text-white transition-colors">Тренды</a>
             <a href="/admin/assembly" className="text-sm text-zinc-400 hover:text-white transition-colors">Как собирается</a>
+            <a href="/admin/compositions" className="text-sm text-zinc-400 hover:text-white transition-colors">Композиции</a>
           </div>
         </header>
 
         <main className="max-w-4xl mx-auto px-6 py-8">
           <p className="text-sm text-zinc-500 mb-6">Изменения отсюда видны и в боте: черновик в Telegram помечается «изменён в админке», а новая версия приходит туда же.</p>
+
+          <RunPanel />
 
           <BrandLogo />
 
