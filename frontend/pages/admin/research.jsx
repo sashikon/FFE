@@ -105,8 +105,8 @@ async function readFile(file) {
 const CHUNK = 300_000;
 
 async function step(name, id, body) {
-  const q = new URLSearchParams({ step: name, ...(id ? { id: String(id) } : {}) });
-  const r = await fetch(`/api/channel-studies/upload?${q}`, {
+  const q = id ? `?id=${id}` : '';
+  const r = await fetch(`/api/channel-studies/${name}${q}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
