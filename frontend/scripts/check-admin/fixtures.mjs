@@ -112,11 +112,55 @@ export const channel = {
     publish_hours: [10, 19],
     timezone: 'Europe/Moscow',
   }),
+  // состояние прогона: панель наверху страницы «Канал»
+  '/api/run': () => ({
+    running: false,
+    started_at: null,
+    minutes: null,
+    stage: null,
+    last_run: daysAgo(0.2),
+    last_finished: daysAgo(0.2),
+    error: null,
+    interval_hours: 6,
+    telegram: { ok: true },
+  }),
+  // исследования автора: загруженный текст и то, что из него вышло
+  '/api/studies': () => ({
+    min_chars: 500,
+    studies: [
+      {
+        id: 1,
+        title: 'Подкладка как признак сословия',
+        note: 'важна часть про подкладку',
+        status: 'drafted',
+        chars: 24_000,
+        created_at: daysAgo(1),
+        error_msg: null,
+        plan: {
+          why: 'в тексте две независимые мысли',
+          posts: [
+            { title: 'Подкладка как признак сословия', thesis: 'Невидимое дороже видимого', format: FORMATS[0].key, lens: 'статус' },
+            { title: 'Слово «люкс» в русской рекламе', thesis: 'Ярлык пережил вещь', format: FORMATS[1].key, lens: 'знак' },
+          ],
+        },
+        posts: [
+          { id: 1, status: 'draft', format: FORMATS[0].key, format_title: FORMATS[0].title, text: 'Пост из исследования.' },
+        ],
+      },
+      { id: 2, title: 'Не разобралось', note: null, status: 'failed', chars: 900, created_at: daysAgo(2), error_msg: 'планировщик не нашёл в тексте ни одного сюжета', plan: null, posts: [] },
+    ],
+  }),
   '/api/assembly': () => ({ steps: STEPS, variables: VARIABLES }),
   '/api/formats': () => ({ formats: FORMATS.map(({ key, title, week, day: d, idea }) => ({ key, title, week, day: d, idea })) }),
   // ответы на действия: важен только код, тело страницы не читают
   'POST /api/posts/:id/:op': () => ({ ok: true }),
   'POST /api/posts/format-all': () => ({ ok: true, detected: 0 }),
+  'POST /api/run': () => ({ ok: true, started: true }),
+  'POST /api/studies': () => ({ ok: true, study: { id: 3, title: 'Новое исследование' } }),
+  'POST /api/studies/upload': () => ({ ok: true, study: { id: 3 } }),
+  'POST /api/studies/:id/part': () => ({ ok: true, chars: 1200 }),
+  'POST /api/studies/:id/start': () => ({ ok: true, study: { id: 3, title: 'Новое исследование', chars: 1200 } }),
+  'POST /api/studies/:id/draft': () => ({ ok: true, pending: true }),
   'POST /api/social/:id/draft': () => ({ ok: true, pending: true }),
   'POST /api/trends/:id/draft': () => ({ ok: true, pending: true, items: 1 }),
 };
@@ -176,4 +220,14 @@ export const backend = {
   '/api/admin/coverage': () => ({ renders: [{ id: 'r1', image_url: img, thumb_url: img, aesthetics, outfit_id: '11111111-aaaa-bbbb-cccc-000000000001', title: 'Тренч и балетки', outfit_thumb: img }] }),
   '/api/admin/mechanic-screenshots': () => ({ screenshots: { odd_one_out: [{ id: 1, mechanic_key: 'odd_one_out', image_url: img, created_at: daysAgo(3) }] } }),
   '/api/admin/pinterest-audience': () => ({ reports: [], strategy: null }),
+  // визуалы по композиции: страница /admin/compositions
+  '/api/admin/visuals': () => ({
+    visuals: [
+      { id: 'v1', image_url: img, thumb_url: img, public_id: 'visuals/v1', compositions: ['диагональ', 'рифма'], note: 'плащ и балетки', source_url: '', created_at: daysAgo(2), outfit_id: null, render_id: 'r1', outfit_title: 'Тренч и балетки', origin: 'render', clicks: 3, clicks_pinterest: 1, last_click_at: daysAgo(1), seo_title: 'Trench and flats', seo_title_alt: null, seo_description: 'Описание для пина', seo_lang: 'en', seo_with_strategy: false, collage_of: null, pinterest_exported_at: null },
+      { id: 'v2', image_url: img, thumb_url: img, public_id: 'visuals/v2', compositions: [], note: '', source_url: 'https://example.com', created_at: daysAgo(4), outfit_id: null, render_id: null, outfit_title: null, origin: 'upload', clicks: 0, clicks_pinterest: 0, last_click_at: null, seo_title: null, seo_title_alt: null, seo_description: null, seo_lang: null, seo_with_strategy: null, collage_of: null, pinterest_exported_at: null },
+    ],
+    compositions: [{ name: 'диагональ', count: 1 }, { name: 'рифма', count: 1 }],
+    total: 2,
+    seo_strategy: null,
+  }),
 };

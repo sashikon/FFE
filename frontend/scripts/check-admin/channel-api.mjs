@@ -21,14 +21,30 @@ export function parseChannelApi(file) {
 
   const routes = [];
   let current = null;
+  // адрес может стоять заголовком блока, а методы разбираться внутри:
+  //   if (url.pathname === '/api/run') { if (req.method === 'GET') … }
+  let blockPath = null;
+  let blockIndent = '';
   for (const line of router.split('\n')) {
+    const indent = line.match(/^(\s*)/)[1];
     const method = line.match(/req\.method === '(\w+)'/)?.[1];
     const exact = line.match(/url\.pathname === '([^']+)'/)?.[1];
     const byMatch = method && Object.keys(matchers).find((name) => new RegExp(`&& ${name}\\)`).test(line));
-    if (method && (exact || byMatch)) {
+    if (blockPath && indent === blockIndent && line.trim() === '}') {
+      blockPath = null;
+      current = null;
+      continue;
+    }
+    if (!method && exact && /\{\s*$/.test(line)) {
+      blockPath = exact;
+      blockIndent = indent;
+      current = null;
+      continue;
+    }
+    if (method && (exact || byMatch || blockPath)) {
       current = {
         method,
-        path: exact || null,
+        path: exact || blockPath || null,
         pattern: byMatch ? matchers[byMatch] : null,
         query: new Set(),
         body: new Set(),

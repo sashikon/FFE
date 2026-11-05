@@ -149,26 +149,35 @@ async function checkProxies({ base, cookie, mock, routes }) {
     const rel = relative(join(FRONTEND, 'pages'), file).replace(/\\/g, '/');
     const urlPath = `/${rel.replace(/\.js$/, '').replace(/\/index$/, '')}`
       .replace(/\[(\w+)\]/g, (_, name) => SEGMENT_VALUES[name] || '1');
-    const method = /req\.method !== 'POST'/.test(src) ? 'POST' : 'GET';
+    // Метод не угадываем по тексту файла: прокси бывает и на два метода сразу,
+    // и с общим помощником в lib, где проверки метода в самом файле нет.
+    // Пробуем оба и смотрим, что дошло до сервиса канала; 405 — это просто «не этот метод»
 
     // все параметры, какие читает API канала, с узнаваемыми значениями
     const qs = new URLSearchParams({ id: '1' });
     for (const name of allQuery) qs.set(name, QUERY_VALUES[name] || `v-${name}`);
     const body = Object.fromEntries(allBody.map((name) => [name, `v-${name}`]));
 
-    const before = mock.seen.length;
     const problemsBefore = problems.length;
-    const res = await fetch(`${base}${urlPath}?${qs}`, {
-      method,
-      headers: { cookie: `${cookie.name}=${cookie.value}`, ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}) },
-      body: method === 'POST' ? JSON.stringify(body) : undefined,
-    });
-    const calls = mock.seen.slice(before);
     const where = `pages/${rel}`;
-    if (res.status >= 500) fail(where, `${method} ${urlPath} ответил ${res.status}`);
-    if (!calls.length) { fail(where, `${method} ${urlPath} не дошёл до сервиса канала (ответ ${res.status})`); continue; }
+    const calls = [];
+    const codes = [];
+    for (const method of ['GET', 'POST']) {
+      const before = mock.seen.length;
+      const res = await fetch(`${base}${urlPath}?${qs}`, {
+        method,
+        headers: { cookie: `${cookie.name}=${cookie.value}`, ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}) },
+        body: method === 'POST' ? JSON.stringify(body) : undefined,
+      });
+      codes.push(`${method} ${res.status}`);
+      if (res.status >= 500) fail(where, `${method} ${urlPath} ответил ${res.status}`);
+      calls.push(...mock.seen.slice(before));
+    }
+    if (!calls.length) { fail(where, `${urlPath} не дошёл до сервиса канала (${codes.join(', ')})`); continue; }
+    // один и тот же вызов из GET и из POST — это один вызов, жаловаться дважды незачем
+    const unique = [...new Map(calls.map((c) => [`${c.method} ${c.path} ${JSON.stringify(c.query)} ${JSON.stringify(c.body)}`, c])).values()];
 
-    for (const call of calls) {
+    for (const call of unique) {
       if (call.token !== CHANNEL_TOKEN) fail(where, 'не передал x-channel-token');
       const route = routeFor(routes, call.method, call.path);
       if (!route) { fail(where, `ходит на ${call.method} ${call.path}, а такого адреса в channel/src/api.js нет`); continue; }
@@ -180,7 +189,7 @@ async function checkProxies({ base, cookie, mock, routes }) {
         if (!call.body || typeof call.body !== 'object' || !(name in call.body)) fail(where, `не передаёт поле «${name}» в теле ${call.method} ${route.label}`);
       }
     }
-    console.log(`  ${problems.length > problemsBefore ? '✗' : '✓'} ${where} → ${calls.map((c) => `${c.method} ${c.path}`).join(', ')}`);
+    console.log(`  ${problems.length > problemsBefore ? '✗' : '✓'} ${where} → ${unique.map((c) => `${c.method} ${c.path}`).join(', ')}`);
   }
 
   // адрес API канала, до которого не ведёт ни один прокси: админка его не видит
