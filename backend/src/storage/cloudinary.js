@@ -66,8 +66,23 @@ async function brandLogoInfo() {
   }
 }
 
+// Визуал для раздела «Композиции»: принимает путь к файлу или адрес картинки в сети
+async function uploadVisual(fileOrUrl) {
+  const result = await cloudinary.uploader.upload(fileOrUrl, {
+    folder: 'ffe/visuals',
+    transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+  });
+  const thumbUrl = cloudinary.url(result.public_id, {
+    width: 480,
+    crop: 'limit',
+    quality: 'auto',
+    fetch_format: 'auto',
+  });
+  return { imageUrl: result.secure_url, thumbUrl, publicId: result.public_id };
+}
+
 async function deleteImage(publicId) {
   await cloudinary.uploader.destroy(publicId);
 }
 
-module.exports = { uploadImage, uploadSvg, uploadScreenshot, deleteImage, uploadBrandLogo, brandLogoInfo, BRAND_LOGO_ID };
+module.exports = { uploadImage, uploadVisual, uploadSvg, uploadScreenshot, deleteImage, uploadBrandLogo, brandLogoInfo, BRAND_LOGO_ID };

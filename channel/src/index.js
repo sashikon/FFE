@@ -36,13 +36,32 @@ async function publishDue() {
 }
 
 // Прогон не чаще интервала — даже если сервис перезапускался (деплой, падение)
+// О пропущенном прогоне нужно сказать вслух: молчащая лента со стороны
+// неотличима от работающей. Пишем не чаще раза в сутки, чтобы не надоедать
+async function warnSkipped(problem) {
+  console.error(`[pipeline] пропущен: ${problem}`);
+  const last = await getState('skip_warned_at').catch(() => null);
+  if (last && Date.now() - new Date(last).getTime() < 24 * HOUR) return;
+  await setState('skip_warned_at', new Date().toISOString()).catch(() => {});
+  await sendHtml(OWNER, `⚠️ Прогон не запускается, лента не обновляется.\nПричина: ${escapeHtml(problem)}`).catch(() => {});
+}
+
 async function pipelineIfDue() {
-  const problem = await checkTelegram();
-  if (problem) {
-    console.error(`[pipeline] пропущен: ${problem}`);
+  const trouble = await checkTelegram();
+  // Поломка настроек (webhook, пустой OWNER, бот не пускает к владельцу) прогон останавливает:
+  // черновики было бы некуда отдавать. Сбой сети — нет: сбор ленты и разбор от Telegram не зависят,
+  // а неотправленные черновики лежат в базе и уйдут следующим resendUndelivered
+  if (trouble && !trouble.transient) {
+    await warnSkipped(trouble.problem);
     return;
   }
-  const resent = await resendUndelivered();
+  if (trouble) console.warn(`[pipeline] ${trouble.problem}; лента собирается, доставку черновиков повторю`);
+
+  // Доставка может упасть по той же причине — это не повод отменять прогон
+  const resent = await resendUndelivered().catch((e) => {
+    console.warn(`[pipeline] дослать черновики не удалось: ${e.message}`);
+    return 0;
+  });
   if (resent) console.log(`[pipeline] дослано черновиков: ${resent}`);
 
   const last = await getState('last_pipeline_at');
@@ -103,8 +122,8 @@ async function start() {
   await runMigrations();
   console.log('[start] database ok, checking Telegram');
 
-  const problem = await checkTelegram();
-  if (problem) console.error(`[telegram] ${problem}`);
+  const trouble = await checkTelegram();
+  if (trouble) console.error(`[telegram] ${trouble.problem}`);
   else console.log(`[telegram] ok, owner ${OWNER}`);
 
   // Склейка чисел — чистая арифметика по базе, без обращений к модели: делаем сразу
@@ -143,4 +162,4 @@ async function start() {
 
 if (require.main === module) start().catch((err) => { console.error(err); process.exit(1); });
 
-module.exports = { remindIfDue };
+module.exports = { remindIfDue, pipelineIfDue };
