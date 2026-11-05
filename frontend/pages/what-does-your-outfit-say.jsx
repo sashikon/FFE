@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 
-const SITE_URL = 'https://ffe-blush.vercel.app';
+import { SITE_URL } from '../lib/site';
 
 export default function WhatDoesYourOutfitSay() {
   const router = useRouter();

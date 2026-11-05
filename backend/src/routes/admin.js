@@ -552,7 +552,7 @@ router.get('/pinterest-export', async (req, res, next) => {
     const lang  = req.query.lang  || 'en';
     const { export_board: exportBoard } = await getSettings('pinterest');
     const board = req.query.board || exportBoard;
-    const BASE_URL = 'https://ffe-blush.vercel.app';
+    const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
 
@@ -1344,7 +1344,7 @@ router.post('/pinterest-post-renders', requireAdminToken, async (req, res, next)
     if (!ids?.length) return res.status(400).json({ error: 'ids required' });
     if (!board_id && !Object.keys(boards).length) return res.status(400).json({ error: 'board_id required' });
 
-    const BASE_URL = 'https://ffe-blush.vercel.app';
+    const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
     const TITLE_MAX = 100;
     const DESC_MAX  = 500;
 

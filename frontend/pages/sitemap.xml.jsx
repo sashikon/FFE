@@ -1,4 +1,4 @@
-const SITE = 'https://ffe-blush.vercel.app';
+import { SITE_URL as SITE } from '../lib/site';
 
 export default function Sitemap() {
   return null;

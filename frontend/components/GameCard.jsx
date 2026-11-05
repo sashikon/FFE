@@ -37,6 +37,7 @@ const FALLBACK = {
 import ImageViewer from './ImageViewer';
 import ProgressBar from './ProgressBar';
 import ResultScreen from './ResultScreen';
+import { SITE_URL } from '../lib/site';
 
 const COLOR_MAP = {
   // RU
@@ -202,7 +203,7 @@ export default function GameCard({ imageSrc: initialImageSrc, svgLayers, renders
 
     sendPinterestEvent(
       'game_complete',
-      `https://ffe-blush.vercel.app/outfit/${outfitId}`,
+      `${SITE_URL}/outfit/${outfitId}`,
       { score: finalScore, total: gameData.length }
     );
   };

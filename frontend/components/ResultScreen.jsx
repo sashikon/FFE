@@ -1,6 +1,7 @@
 import { RotateCcw, Share2, Check, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'next-i18next/pages';
+import { SITE_URL } from '../lib/site';
 
 const FALLBACK = {
   'result.title': 'Шифр разгадан',
@@ -61,7 +62,7 @@ export default function ResultScreen({ score, total, outfitId, onRestart, onNext
   const perfect = score === total;
 
   const getShareUrl = () => {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://ffe-blush.vercel.app';
+    const base = typeof window !== 'undefined' ? window.location.origin : SITE_URL;
     const lang = i18n?.language;
     const prefix = lang === 'en' ? '/en' : '';
     return outfitId ? `${base}${prefix}/outfit/${outfitId}` : base;

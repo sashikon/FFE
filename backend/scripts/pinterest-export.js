@@ -11,7 +11,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'https://ffe-blush.vercel.app';
+const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
 const TITLE_MAX = 100;
 const DESC_MAX = 500;
 const PINS_PER_BATCH = 200; // Pinterest hard limit per upload

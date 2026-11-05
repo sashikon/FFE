@@ -5,7 +5,7 @@ const pool = require('./db');
 // В экспорт идут только визуалы с SEO-разметкой на нужном языке
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const BASE_URL = 'https://ffe-blush.vercel.app';
+const BASE_URL = (process.env.SITE_URL || 'https://ffe-blush.vercel.app').replace(/\/$/, '');
 const RU_BASE_KEYWORDS = ['мода', 'образ', 'стиль', 'идеи образов', 'композиция', 'насмотренность'];
 const EN_BASE_KEYWORDS = ['outfit ideas', 'fashion', 'style inspo', 'aesthetic outfits', 'fashion composition'];
 
