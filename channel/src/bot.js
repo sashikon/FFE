@@ -40,8 +40,9 @@ async function cmdStatus(chatId) {
     FROM posts`);
   const channel = await tg.checkChannel().catch((e) => ({ ok: false, problem: e.message }));
   const running = await getState('run_started');
+  const stage = await getState('run_stage');
   const runLine = running
-    ? `⏳ Прогон идёт ${Math.round((Date.now() - new Date(running).getTime()) / 60000)} мин`
+    ? `⏳ Прогон идёт ${Math.round((Date.now() - new Date(running).getTime()) / 60000)} мин${stage ? `: ${stage}` : ''}`
     : null;
   const last = await getState('last_pipeline_at');
   const lastRun = last

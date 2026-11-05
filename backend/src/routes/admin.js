@@ -13,6 +13,7 @@ const { suggestBoards } = require('../llm/board');
 const { getSettings, saveSettings } = require('../settings');
 const { uploadImage, uploadSvg, uploadScreenshot } = require('../storage/cloudinary');
 const { buildKeywords } = require('../pinterestKeywords');
+const { previewVisuals, otherLangCount, exportVisualsCsv } = require('../visualsExport');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000 });
 
@@ -500,6 +501,16 @@ router.get('/pinterest-preview', async (req, res, next) => {
     const onlyNew      = req.query.new === 'true';
     const rendersOnly  = req.query.renders === 'true';
 
+    // Коллажи и другие визуалы из «Композиций» с SEO-разметкой на этом языке
+    if (req.query.collages === 'true') {
+      const { export_board: exportBoard, collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      return res.json({
+        outfits: await previewVisuals(lang),
+        other_lang: await otherLangCount(lang),
+        default_board: collageCsvBoard || exportBoard,
+      });
+    }
+
     if (rendersOnly) {
       // Per-render mode: one row per un-exported render
       const { rows } = await pool.query(
@@ -548,6 +559,22 @@ router.get('/pinterest-export', async (req, res, next) => {
     const onlyNew      = req.query.new === 'true';
     const rendersOnly  = req.query.renders === 'true';
     const ids          = req.query.ids ? req.query.ids.split(',').filter(Boolean) : null;
+
+    // Коллажи из «Композиций»: те же колонки, своя выборка и своя отметка о выгрузке
+    if (req.query.collages === 'true') {
+      // Доска для коллажей: выбранная в окне экспорта, иначе прошлый выбор, иначе общая доска выгрузки
+      const { collage_csv_board: collageCsvBoard } = await getSettings('pinterest');
+      const chosen = String(req.query.board || '').trim().slice(0, 100);
+      const collageBoard = chosen || collageCsvBoard || exportBoard;
+      const result = await exportVisualsCsv({ lang, ids: req.query.ids, board: collageBoard });
+      if (result && chosen && chosen !== collageCsvBoard) {
+        await saveSettings('pinterest', { collage_csv_board: chosen }).catch((e) => console.error('save collage board', e));
+      }
+      if (!result) return res.status(404).json({ error: `Нет коллажей с SEO-разметкой на языке ${lang.toUpperCase()}` });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="pinterest_${lang}_collages_${new Date().toISOString().slice(0, 10)}.csv"`);
+      return res.send(result.csv);
+    }
 
     let rows;
 

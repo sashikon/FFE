@@ -1,9 +1,15 @@
 // Слои: industry — бизнес моды, production — производство и материал, culture — культура и потребление.
-// Все адреса проверены 2026-09-19. type: 'sitemap' — для изданий без RSS, type: 'telegram' — публичные каналы (см. collect.js). Издания, которые закрывают RSS (BoF, Vogue Business…),
+// Проверены и не работают (не добавлять снова):
+//   Vogue Business — свой RSS и карта сайта отвечают 403, а Google News с 10.2026 отдаёт
+//     для voguebusiness.com пустые заголовки (« - Vogue»); запрос по названию издания
+//     приводит на vogue.com, то есть на обычный Vogue, который уже есть в списке;
+//   Fashion Dive — издание закрылось в августе 2025, лента с тех пор не обновляется.
+// Все адреса проверены 2026-10-15. type: 'sitemap' — для изданий без RSS, type: 'telegram' — публичные каналы (см. collect.js). Издания, которые закрывают RSS (BoF, FashionUnited…),
 // берём через Google News с фильтром по домену: приходят заголовок и лид — для смысла достаточно.
 
-const gnews = (query) =>
-  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=en-US&gl=US&ceid=US:en`;
+const gnews = (query, days = 3) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:${days}d&hl=en-US&gl=US&ceid=US:en`;
+
 const gnewsRu = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:3d&hl=ru&gl=RU&ceid=RU:ru`;
 // Индия: издания выходят реже, окно шире (см. maxAgeDays у источника)
@@ -20,11 +26,10 @@ module.exports = [
   // industry
   { name: 'WWD', description: 'Главное американское издание о бизнесе моды: сделки, назначения, розница.', tags: ['сша', 'бизнес', 'ежедневно'], layer: 'industry', url: 'https://wwd.com/feed/' },
   { name: 'Business of Fashion', description: 'Аналитика индустрии: стратегии брендов, деньги, разборы рынка.', tags: ['мир', 'бизнес', 'аналитика'], layer: 'industry', url: gnews('site:businessoffashion.com/articles') },
-  { name: 'Vogue Business', description: 'Мода как индустрия: потребитель, технологии, маркетинг.', tags: ['мир', 'бизнес', 'аналитика'], layer: 'industry', url: gnews('site:voguebusiness.com') },
   { name: 'FashionUnited', description: 'Новости индустрии и рынка труда моды, много Европы.', tags: ['европа', 'бизнес'], layer: 'industry', url: gnews('site:fashionunited.com/news') },
   { name: 'Drapers', description: 'Британская розница и марки: как продаётся мода в Великобритании.', tags: ['британия', 'ритейл'], layer: 'industry', url: 'https://www.drapersonline.com/rss' },
   { name: 'The Industry', description: 'Британские новости моды и ритейла, быстрые заметки.', tags: ['британия', 'ритейл'], layer: 'industry', url: 'https://www.theindustry.fashion/feed/' },
-  { name: 'Fashion Dive', description: 'Короткие деловые новости моды для американского рынка.', tags: ['сша', 'бизнес'], layer: 'industry', url: 'https://www.fashiondive.com/feeds/news/' },
+  { name: 'Modern Retail', description: 'Как бренды продают: маркетплейсы, DTC, розница и мода внутри неё.', tags: ['сша', 'бизнес', 'ритейл'], layer: 'industry', url: 'https://www.modernretail.co/feed/' },
   { name: 'Retail Dive', description: 'Розница целиком: магазины, логистика, поведение покупателя.', tags: ['сша', 'ритейл'], layer: 'industry', url: 'https://www.retaildive.com/feeds/news/' },
   { name: 'Glossy', description: 'Мода, красота и медиа: маркетинг, соцсети, новые каналы продаж.', tags: ['сша', 'маркетинг'], layer: 'industry', url: 'https://www.glossy.co/feed/' },
   // Jing Daily — люкс и потребитель Китая; RSS нет, берём из карты сайта
@@ -120,5 +125,5 @@ module.exports = [
 
   { name: 'GN: dress code', description: 'Поиск новостей о дресс-кодах и форме: где правила одежды меняются.', tags: ['мир', 'общество', 'поиск'], layer: 'culture', url: gnews('"dress code" OR uniform clothing') },
   // для формата «Психология стиля»
-  { name: 'GN: clothing psychology', description: 'Поиск исследований о психологии одежды и восприятия.', tags: ['мир', 'психология', 'наука', 'поиск'], layer: 'culture', url: gnews('"enclothed cognition" OR "fashion psychology" OR (clothing study perception)') },
+  { name: 'GN: clothing psychology', description: 'Поиск исследований о психологии одежды и восприятия.', tags: ['мир', 'психология', 'наука', 'поиск'], layer: 'culture', url: gnews('"enclothed cognition" OR "psychology of clothing" OR "fashion psychology"', 14), maxAgeDays: 14 },
 ];

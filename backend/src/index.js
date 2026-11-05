@@ -12,6 +12,8 @@ const uploadRouter = require('./routes/upload');
 const adminRouter = require('./routes/admin');
 const statsRouter = require('./routes/stats');
 const eventsRouter = require('./routes/events');
+const visualsRouter = require('./routes/visuals');
+const visualClicksRouter = require('./routes/visualClicks');
 const { analyzeOutfit } = require('./llm/pipeline');
 const { enqueue } = require('./queue');
 
@@ -37,6 +39,8 @@ app.use('/api', uploadRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', statsRouter);
 app.use('/api', eventsRouter);
+app.use('/api', visualsRouter);
+app.use('/api', visualClicksRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
