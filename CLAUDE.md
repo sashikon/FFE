@@ -47,6 +47,7 @@
 
 ## Грабли, на которые уже наступали
 
+- **В схеме структурированного ответа нет ограничений длины.** `maxItems`, `minItems`, `minLength`, `minimum` и прочие API отвергает с 400 («For 'array' type, property 'maxItems' is not supported»). Разрешены типы, `enum`, `const`, `anyOf`, `allOf`, `$ref`, строковые форматы и обязательный `additionalProperties: false`. Пределы вроде «один-два поста» держат промпт словами и код; схему стережёт `npm --prefix channel test`.
 - **Браузерный User-Agent ломает ленты.** Полный Chrome-подобный `User-Agent` включает защиту у Launchmetrics, Just Style и Who What Wear. Нужен короткий `Mozilla/5.0`.
 - **Подсказки Google подбираются по началу строки:** `bra` → «brawl stars», `skirt` → «skirt steak». Спасают якорь `«{термин} trend»`, запрос по русской подписи и отбор моделью.
 - **У Pinterest нет России** в списке регионов трендов. Российский спрос — только через Google Trends.
@@ -62,6 +63,7 @@ npm --prefix frontend run build      # проверить сборку адми�
 npm --prefix frontend run check:admin  # после сборки: страницы админки в браузере + прокси к каналу
 node --check channel/src/<файл>.js   # быстрая проверка синтаксиса
 npm --prefix backend test            # тесты бэкенда (ключевые слова пинов)
+npm --prefix channel test            # схемы ответов модели: что примет структурированный вывод
 cd channel && npm run collect        # собрать ленту (нужен DATABASE_URL)
 cd channel && npm run run-once       # один прогон конвейера
 ```

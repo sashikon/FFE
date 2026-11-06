@@ -139,12 +139,18 @@ async function listStudies() {
   };
 }
 
+// Повтор разбора: сразу помечаем, что работа пошла. Иначе карточка минуту
+// висит с прежней ошибкой, и кнопка выглядит так, будто не сработала
+async function markWorking(id) {
+  await pool.query(`UPDATE studies SET status = 'new', error_msg = NULL WHERE id = $1`, [id]);
+}
+
 async function failStudy(id, message) {
   await pool.query(`UPDATE studies SET status = 'failed', error_msg = $1 WHERE id = $2`, [message, id]);
 }
 
 module.exports = {
   saveStudy, getStudy, planStudy, listStudies, failStudy,
-  startUpload, appendText, finishUpload,
+  startUpload, appendText, finishUpload, markWorking,
   MIN_CHARS, PLAN_LIMIT,
 };

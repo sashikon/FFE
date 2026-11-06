@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "run-once": "node src/cli.js run",
-    "collect": "node src/cli.js collect"
+    "collect": "node src/cli.js collect",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
