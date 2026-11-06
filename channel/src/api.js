@@ -226,6 +226,24 @@ function studyInBackground(id) {
   });
 }
 
+// ─── Что за код сейчас работает ──────────────────────────────────────────────
+// Вопрос «доехал ли деплой» возникает каждый раз, когда правка не видна, и ответ
+// приходится искать в Railway. Сервис знает это о себе сам: Railway кладёт
+// коммит и ветку в переменные окружения при сборке
+
+const STARTED_AT = new Date().toISOString();
+
+function version() {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA || null;
+  return {
+    commit: sha ? sha.slice(0, 7) : null,
+    // сообщение коммита — первая строка; в нём виден номер слитого PR
+    message: (process.env.RAILWAY_GIT_COMMIT_MESSAGE || '').split('\n')[0] || null,
+    branch: process.env.RAILWAY_GIT_BRANCH || null,
+    started_at: STARTED_AT,
+  };
+}
+
 // ─── Прогон вручную ──────────────────────────────────────────────────────────
 // В боте есть /run, но когда Telegram недоступен, запустить сбор нечем — и лента
 // стоит, пока не починится связь. Поэтому те же кнопка и статус есть в админке
@@ -246,6 +264,7 @@ async function runStatus() {
     last_finished: finished || null,
     error: failed || null,
     interval_hours: Number(process.env.PIPELINE_INTERVAL_HOURS || 6),
+    version: version(),
     telegram: trouble ? { ok: false, problem: trouble.problem, transient: Boolean(trouble.transient) } : { ok: true },
   };
 }
@@ -279,7 +298,7 @@ function startApi() {
   http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
-      if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
+      if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, version: version() });
 
       // Адрес возврата Pinterest: сюда браузер владельца приходит после разрешения.
       // Заголовка с нашим токеном тут быть не может, поэтому защита — одноразовый state
