@@ -123,6 +123,7 @@ export const channel = {
     error: null,
     interval_hours: 6,
     telegram: { ok: true },
+    version: { commit: 'a1b2c3d', message: 'Merge pull request #116', branch: 'main', started_at: daysAgo(0.5) },
   }),
   // исследования автора: загруженный текст и то, что из него вышло
   '/api/studies': () => ({

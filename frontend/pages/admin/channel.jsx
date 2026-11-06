@@ -182,6 +182,14 @@ function RunPanel() {
       {data?.error && !data.running && (
         <span className="text-xs text-rose-400">Прошлый прогон упал: {data.error}</span>
       )}
+      {/* какой код сейчас работает в сервисе канала: иначе на вопрос «доехал ли деплой»
+          приходится искать ответ в Railway */}
+      {data?.version?.started_at && (
+        <span className="text-xs text-zinc-600" title={[data.version.message, data.version.commit && `коммит ${data.version.commit}`, data.version.branch].filter(Boolean).join(' · ')}>
+          код от {fmtDate(data.version.started_at)}
+          {data.version.commit ? ` · ${data.version.commit}` : ''}
+        </span>
+      )}
       {tg && (
         <span className={`text-xs ${tg.transient ? 'text-amber-400' : 'text-rose-400'}`}>
           {tg.transient
