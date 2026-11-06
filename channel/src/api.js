@@ -343,6 +343,9 @@ function startApi() {
       if (req.method === 'POST' && studyRetry) {
         const id = Number(studyRetry[1]);
         if (!(await studies.getStudy(id))) return send(res, 404, { error: 'Not found' });
+        // отметку ставим до ответа: админка обновляет список сразу и должна увидеть,
+        // что разбор пошёл, а не прежнюю ошибку
+        await studies.markWorking(id);
         studyInBackground(id);
         return send(res, 202, { ok: true, pending: true });
       }
