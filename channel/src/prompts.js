@@ -326,10 +326,11 @@ const STUDY_PLAN_SCHEMA = {
   type: 'object',
   properties: {
     why: { type: 'string' },
+    // Ограничения на длину массива в схеме структурированного ответа не поддерживаются
+    // (API отвечает 400: «For 'array' type, property 'maxItems' is not supported»).
+    // «Один или два» сказано в промпте словами, а предел держит код в studies.js
     posts: {
       type: 'array',
-      minItems: 1,
-      maxItems: 2,
       items: {
         type: 'object',
         properties: {
